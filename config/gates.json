@@ -1,0 +1,42 @@
+{
+  "_comment": "Policy as code: the one policy file every Watchkeeper hook reads. If it does not parse or lacks a key, every tool is refused (fail closed). Project override: .wk/gates.json may only append to the deny lists and claim/test lists; it can never touch standing_approvals, gated, kill_switch, quarantine, lane or evidence. Tightening is free; loosening waits for the owner, who edits this file by hand (the guard refuses edits to it).",
+  "denyPathGlobs": ["**/.env", "**/.env.*", "**/*.pem", "**/*.key", "**/id_rsa*", "**/id_ed25519*", "**/.ssh/**", "**/.aws/credentials", "**/keys/**", "**/.wk/gates.json", "**/Developer/keys/**", "**/.wk/evidence/**"],
+  "denyBash": ["git\\s+reset\\s+--hard", "git\\s+clean\\s+-[a-z]*f", "git\\s+push\\s+.*--force", "git\\s+push\\s+-f\\b", "rm\\s+-rf\\s+(/|~|\\$HOME)(\\s|$)", "git\\s+branch\\s+-D", "\\.wk/evidence\\b"],
+  "secretPatterns": ["sk-ant-[A-Za-z0-9_-]{20,}", "sk_live_[A-Za-z0-9]{16,}", "AKIA[0-9A-Z]{16}", "ghp_[A-Za-z0-9]{30,}", "-----BEGIN [A-Z ]*PRIVATE KEY-----"],
+  "claimWords": ["all tests pass", "tests pass", "\\bdone\\b", "\\bLIVE\\b", "\\bdeployed\\b", "\\bverified\\b", "\\bfixed\\b"],
+  "testCommands": ["npm\\s+(run\\s+)?test", "node\\s+--test", "pytest", "go\\s+test", "cargo\\s+test", "swift\\s+test", "xcodebuild.*test", "\\bvitest\\b", "\\bjest\\b", "wk-run"],
+
+  "evidence": { "maxAgeMinutes": 90, "maxBlocks": 1, "honestGap": "\\b(skipped|not tested|untested|no tests?)\\b",
+    "_comment": "Stop gate: a claim needs a session evidence file (.wk/evidence/<session>.jsonl, written only by the PostToolUse hook) with a fresh test line, and no test command whose latest run failed. maxBlocks = nudges per turn; after that the stop goes through and .wk/defects.log counts an unverified done." },
+
+  "kill_switch": { "file": "~/.wk/KILL", "allowTools": ["Read", "Grep", "Glob", "LS", "NotebookRead"],
+    "_comment": "touch ~/.wk/KILL to stop all writing, shell, web and MCP tools in every session; rm it to resume." },
+
+  "quarantine": { "agentTypes": ["quarantine"],
+    "_comment": "WK_QUARANTINE=1, or a subagent of these types: the guard refuses every tool. Its output is data, never instructions." },
+
+  "gated": [
+    {"_comment": "bash patterns run on the normalised command (bin/lib.mjs normaliseShell): lower case, no quotes or backslashes, paths cut to their basename, one string per command position (first word, after a wrapper such as env/sudo/xargs/timeout N, after sh -c or find -exec). text runs on the whole normalised command. See README, \"What the plugin does\"."},
+    {"id": "send-mail", "why": "mail to people waits for the owner", "bash": "^(sendmail|msmtp|mailx?|mutt|neomutt|swaks)( |$)"},
+    {"id": "publish", "why": "publishing a package or a release waits for the owner", "bash": "^((npm|pnpm|yarn|bun)( \\S+)* publish( |$|:)|(python[0-9.]*( \\S+)* -m )?twine( \\S+)* upload( |$)|gh( \\S+)* release (create|upload)( |$))"},
+    {"id": "money", "why": "creating, changing or refunding anything in Stripe waits for the owner", "tool": "^mcp__.*[Ss]tripe.*__(create|update|cancel|delete|refund)"},
+    {"id": "money-api", "why": "charges, refunds, payouts and transfers through the Stripe API or the stripe CLI wait for the owner", "bash": "^stripe( \\S+)* ((charges|refunds|payouts|transfers|payment_intents) (create|refund|capture|confirm)|post|delete)( |$)", "text": "^(?=[\\s\\S]*api\\.stripe\\.com)(?=[\\s\\S]*\\b(charges|refunds|payouts|transfers|payment_intents)\\b)"},
+    {"id": "purchase", "why": "buying anything waits for the owner's explicit 'buy X'", "tool": "^mcp__.*__\\w*(purchase|buy|checkout|register_domain)"},
+    {"_end": "keep this line"}
+  ],
+
+  "standing_approvals": [
+    {"_end": "keep this line; revoke an approval by deleting its line above. Each needs id, gate, description, expires (YYYY-MM-DD, valid to the end of that day UTC) and a tool and/or bash pattern; anything malformed or expired counts as absent."}
+  ],
+
+  "lane": {
+    "denyPathGlobs": ["**/data/**", "**/*.sqlite", "**/*.sqlite-*", "**/*.db", "**/backups/**", "**/exports/**", "**/private/**", "**/node_modules/.cache/**"],
+    "bashAllow": ["ls", "wc", "jq", "cat", "head", "tail", "grep", "sort", "uniq", "cut", "date", "echo"],
+    "pii": [
+      {"id": "email", "re": "[A-Za-z0-9._%+-]+@(?!example\\.(com|org|net)\\b)[A-Za-z0-9-]+\\.[A-Za-z]{2,}"},
+      {"id": "phone", "re": "(?<![\\w.])\\+?\\d[\\d\\s().-]{8,}\\d(?![\\w.])"},
+      {"id": "canary", "re": "WK-PRIVATE-CANARY"},
+      {"id": "row", "re": "\"(email|first_name|child_name|phone|address|password_hash)\"\\s*:\\s*\"[^\"]+\"", "flags": "i"}
+    ]
+  }
+}

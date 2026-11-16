@@ -1,0 +1,8 @@
+#!/usr/bin/env bash
+# wk-run <command...>: run a test/build command; full log to .wk/logs, print only counts, failures and the last 20 lines.
+mkdir -p .wk/logs; L=".wk/logs/$(date +%Y%m%d-%H%M%S)-$$.log"
+"$@" >"$L" 2>&1; rc=$?
+echo "lines: $(wc -l <"$L" | tr -d ' ')  failures: $(grep -ciE '(^|[^a-z])(fail|error|✗|assertionerror)' "$L")"
+grep -iE '(^|[^a-z])(fail|error|✗|assertionerror)' "$L" | head -15 | cut -c1-200
+echo '--- last 20 ---'; tail -20 "$L" | cut -c1-200
+echo "WK_EXIT=$rc WK_LOG=$L"; exit $rc

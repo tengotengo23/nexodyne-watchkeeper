@@ -1,0 +1,29 @@
+{
+  "_comment": "The Gemini queue (P2-223). routes: kind -> the suggested model and the fallback when the plan lacks it. In Antigravity the model menu (or an automation's or a subagent's tier) sets the model; a plugin cannot pin one, so a task only suggests it and the session records the model it used. keywords: no kind given, the first kind here with a word in the title or text wins, else default_kind. hook_pass_decision: the fallback for what the PreToolUse hook prints when the guard lets one of its 8 known tools through; each machine's own choice in ~/.wk/antigravity-hook.json (set by wk-antigravity install) comes first, and every other tool gets ask. allow: Antigravity runs the call without asking you. ask: Antigravity asks you first; an unattended run (the hourly automation) then refuses the call. force_ask: Antigravity asks every time, even for calls you allowed before.",
+  "routes": {
+    "read":   { "model": "gemini-3.8-flash-medium",  "fallback": "gemini-3.8-flash-low",          "for": "read, search, summarize, list; no edits" },
+    "quick":  { "model": "gemini-4-hydrogen-medium", "fallback": "gemini-4-hydrogen-low",         "for": "renames, boilerplate, docs, small scripts, tests for clear functions" },
+    "code":   { "model": "gemini-4-hydrogen-xhigh",  "fallback": "gemini-4-hydrogen-high",        "for": "everyday coding: a feature or fix in one area (Hydrogen Extra)" },
+    "ui":     { "model": "gemini-4-hydrogen-xhigh",  "fallback": "gemini-4-hydrogen-high",        "for": "screens, layout, styles" },
+    "plan":   { "model": "gemini-pro-orchestrator",  "fallback": "gemini-pro-orchestrator-argon", "for": "multi-file features, refactors" },
+    "hard":   { "model": "gemini-4-carbon-high",     "fallback": "gemini-4-argon-high",           "for": "hard bugs, concurrency, migrations, architecture" },
+    "review": { "model": "gemini-4-argon-high",      "fallback": "gemini-4-argon-medium",         "for": "a second opinion on a change, read-only" },
+    "legal":  { "model": "gemini-4-carbon-high",     "fallback": "gemini-4-argon-high",           "for": "legal wording (terms, privacy, licences, consent); ask Claude first (ask-claude), and the owner approves before use" }
+  },
+  "_legal_comment": "legal uses the hard lane's models because they are the strongest of these routes; a task gets it when its words match panel/src/legal-words.js (no keyword copy here).",
+  "keywords": {
+    "hard":   ["concurrency", "race condition", "deadlock", "migration", "migrate", "architecture", "memory leak", "flaky", "hard bug", "data loss"],
+    "review": ["review", "second opinion", "audit the change"],
+    "plan":   ["refactor", "multi-file", "restructure", "across the app", "new feature", "redesign the code"],
+    "ui":     ["ui", "screen", "layout", "style", "styles", "css", "button", "dark mode", "colour", "color", "font", "responsive"],
+    "read":   ["summarise", "summarize", "summary", "list all", "find where", "search for", "explain", "read through", "report on"],
+    "quick":  ["rename", "typo", "boilerplate", "docs", "readme", "comment", "small script", "lint", "format", "bump", "unit test", "unit tests"]
+  },
+  "default_kind": "code",
+  "max_tasks_per_day": 12,
+  "test_timeout_min": 10,
+  "later_hours": 24,
+  "sessions_keep": 500,
+  "hook_pass_decision": "ask",
+  "automation_prompt": "Every hour: if ~/.wk/KILL exists, stop. Otherwise use the wk-take-task skill to take the next Watchkeeper task, do it, and finish with done. If nothing is queued, stop."
+}

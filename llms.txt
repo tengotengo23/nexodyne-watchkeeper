@@ -1,0 +1,22 @@
+# Watchkeeper
+
+> A free, MIT-licensed companion for Claude Code: a panel for Antigravity and VS Code that shows every Claude Code session and its subagents, and a Claude Code plugin with tool guards, a spend ledger, an evidence gate on "done" and an optional task queue for Gemini in Antigravity. Keeps its data in local files; sends nothing to Nexodyne; no telemetry. What can leave your computer, each only once you set it up: the `claude -p` runs it starts (on your own Claude Code login), an optional Stripe snapshot from your own account, the updater's fetch of this repository's release tags, and an optional phone link to a server of your own. By Nexodyne.
+
+Install the plugin in Claude Code with `/plugin install watchkeeper --marketplace tengotengo23/nexodyne-watchkeeper` (before Claude Code 2.1.275, two lines: `/plugin marketplace add tengotengo23/nexodyne-watchkeeper`, then `/plugin install watchkeeper@nexodyne`). Install the panel from the `.vsix` in the repository's Releases ("Extensions → … → Install from VSIX…"); it works in Antigravity, VS Code, Cursor, Windsurf and VSCodium.
+
+## Docs
+
+- [README](https://github.com/tengotengo23/nexodyne-watchkeeper/blob/main/README.md): what each part does, what it reads, writes and sends, settings, requirements, uninstall.
+- [Panel listing](https://github.com/tengotengo23/nexodyne-watchkeeper/blob/main/panel/README.md): the panel on its own, and what the plugin adds.
+- [Data contract](https://github.com/tengotengo23/nexodyne-watchkeeper/blob/main/docs/DATA-CONTRACT.md): every file under ~/.wk and its fields.
+- [Policy file](https://github.com/tengotengo23/nexodyne-watchkeeper/blob/main/config/gates.json): the one file every hook reads; gated classes, standing approvals, kill switch, evidence gate.
+
+## Install
+
+- [Releases](https://github.com/tengotengo23/nexodyne-watchkeeper/releases): the panel as a .vsix for "Install from VSIX…", for Antigravity and editors built on VS Code 1.90 or later.
+- [Repository](https://github.com/tengotengo23/nexodyne-watchkeeper): the plugin, the panel's source and the tests.
+
+## Optional
+
+- [Phone link notes](https://github.com/tengotengo23/nexodyne-watchkeeper/blob/main/docs/REMOTE.md): off by default; needs a companion server that is not published yet.
+- [LICENSE](https://github.com/tengotengo23/nexodyne-watchkeeper/blob/main/LICENSE): MIT, Nexodyne Limited. Independent of Anthropic and Google.

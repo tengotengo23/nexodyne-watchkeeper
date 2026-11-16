@@ -1,0 +1,7 @@
+{
+  "_comment": "The model picker (bin/model-pick.mjs, P2-227). Each lane is an order: the first model the plan has wins. The picker moves to the next model only when Claude Code says the model is not available (an api_error 404, 'There's an issue with the selected model'); a busy answer (429, 529, overloaded, rate limit) never changes the model. Models found unavailable are skipped for cache_hours. A newer Fable needs one change: put its id first in \"legal\" (for example \"claude-fable-5-3\").",
+  "legal": ["claude-fable-5-2", "fable", "opus", "sonnet"],
+  "legal_effort_job": "xhigh",
+  "legal_effort_ask": "max",
+  "cache_hours": 24
+}

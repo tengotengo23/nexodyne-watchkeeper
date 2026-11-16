@@ -1,0 +1,170 @@
+/* The W panel (P2-205). Theme colours come from the IDE; one accent (gold) for the W and the pace bar. */
+:root { --wk-accent: #ccaa3d; --wk-accent-soft: rgba(204, 170, 61, 0.22); }
+body.vscode-light { --wk-accent: #8b6e00; --wk-accent-soft: rgba(139, 110, 0, 0.18); }
+body.vscode-high-contrast, body.vscode-high-contrast-light { --wk-accent: var(--vscode-contrastActiveBorder, var(--vscode-focusBorder)); --wk-accent-soft: transparent; }
+
+*, *::before, *::after { box-sizing: border-box; }
+html, body { margin: 0; padding: 0; }
+body {
+  font-family: var(--vscode-font-family, system-ui, sans-serif);
+  font-size: var(--vscode-font-size, 13px);
+  color: var(--vscode-foreground);
+  background: var(--vscode-sideBar-background, transparent);
+  line-height: 1.45;
+  overflow-wrap: anywhere;
+}
+main { padding: 0.6em 1em 2em; max-width: 100%; }
+.num, .big-num, dd, .row-meta, .count, .updated { font-variant-numeric: tabular-nums; }
+code { font-family: var(--vscode-editor-font-family, monospace); font-size: 0.92em; overflow-wrap: anywhere; }
+
+h2 {
+  font-size: 0.82em; font-weight: 600; letter-spacing: 0.05em; text-transform: uppercase;
+  margin: 1.6em 0 0.6em; padding-top: 0.9em;
+  border-top: 1px solid var(--vscode-sideBarSectionHeader-border, var(--vscode-widget-border, rgba(128, 128, 128, 0.25)));
+  color: var(--vscode-sideBarTitle-foreground, var(--vscode-foreground));
+}
+h3 { font-size: 0.92em; font-weight: 600; margin: 1.1em 0 0.4em; }
+p { margin: 0.35em 0; }
+.hint, .row-meta, .updated, .status-note, dt, .count { color: var(--vscode-descriptionForeground); }
+.hint { font-size: 0.92em; }
+.empty { font-weight: 600; }
+.warn { display: flex; gap: 0.4em; align-items: baseline; color: var(--vscode-editorWarning-foreground, var(--vscode-foreground)); font-size: 0.92em; }
+
+/* Status line */
+.top { display: flex; flex-wrap: wrap; align-items: flex-start; justify-content: space-between; gap: 0.4em 0.8em; }
+.top > .slot { flex: 1 1 10em; min-width: 0; }
+.top-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 0.3em 0.6em; }
+.status { display: flex; align-items: center; gap: 0.45em; margin: 0; font-size: 1.25em; font-weight: 600; }
+.status-note { margin: 0.15em 0 0; font-size: 0.92em; }
+.updated { font-size: 0.85em; }
+.shape { width: 0.9em; height: 0.9em; flex: none; fill: currentColor; stroke: none; vertical-align: -0.1em; margin-right: 0.35em; }
+.status .shape { margin-right: 0; }
+.shape.hollow { fill: none; stroke: currentColor; stroke-width: 1.6; stroke-linecap: round; stroke-linejoin: round; }
+.status-running .shape { color: var(--wk-accent); }
+
+/* Pace */
+.big { display: flex; flex-wrap: wrap; align-items: baseline; gap: 0.15em 0.5em; margin: 0.2em 0 0.5em; }
+.big-num { font-size: 2.1em; font-weight: 600; line-height: 1.1; }
+.big-label { color: var(--vscode-descriptionForeground); }
+.bar { display: block; width: 100%; height: 1.15em; overflow: visible; }
+.bar-track { fill: var(--vscode-input-background, rgba(128, 128, 128, 0.18)); stroke: var(--vscode-widget-border, rgba(128, 128, 128, 0.4)); stroke-width: 1; vector-effect: non-scaling-stroke; }
+.bar-fill { fill: var(--wk-accent); }
+.mark { stroke: var(--vscode-foreground); vector-effect: non-scaling-stroke; }
+.mark-line { stroke-width: 2; stroke-dasharray: 3 2; }
+.mark-hold { stroke-width: 3; }
+.mark-land { stroke-width: 2; stroke-dasharray: 1 2; }
+.legend { list-style: none; margin: 0.35em 0 0.5em; padding: 0; display: flex; flex-wrap: wrap; gap: 0.2em 1em; font-size: 0.9em; color: var(--vscode-descriptionForeground); }
+.legend li { display: flex; align-items: center; gap: 0.35em; }
+.glyph { width: 0.7em; height: 1em; flex: none; }
+.sentence { font-weight: 500; }
+
+/* Spend */
+.grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(7.5em, 1fr)); gap: 0.4em 1em; margin: 0.4em 0; }
+.grid div { min-width: 0; }
+dt { font-size: 0.88em; }
+dd { margin: 0; font-weight: 600; }
+
+/* Rows, sessions, members */
+.rows, .sessions, .members { list-style: none; margin: 0; padding: 0; }
+.rows > li { display: flex; flex-direction: column; padding: 0.35em 0; border-bottom: 1px solid var(--vscode-widget-border, rgba(128, 128, 128, 0.18)); min-width: 0; }
+.rows > li:last-child { border-bottom: 0; }
+ol.rows { counter-reset: none; }
+.row-main { min-width: 0; }
+.row-meta { font-size: 0.88em; display: block; }
+.row-action { display: block; margin-top: 0.3em; }
+.area { font-weight: 600; }
+.item-id { font-variant-numeric: tabular-nums; margin-left: 0.3em; }
+.session { border: 1px solid var(--vscode-widget-border, rgba(128, 128, 128, 0.25)); border-radius: 4px; margin: 0.45em 0; min-width: 0; }
+.session summary { cursor: pointer; padding: 0.45em 0.6em; list-style-position: outside; margin-left: 1em; }
+.session summary::marker { color: var(--vscode-descriptionForeground); }
+.s-title { display: block; font-weight: 600; }
+.members { padding: 0 0.6em 0.5em 1.6em; }
+.member { display: flex; flex-direction: column; padding: 0.35em 0 0.35em 0.6em; border-left: 2px solid var(--vscode-widget-border, rgba(128, 128, 128, 0.35)); margin: 0.25em 0; min-width: 0; }
+.member-running { border-left-color: var(--wk-accent); }
+.member.more { color: var(--vscode-descriptionForeground); font-size: 0.9em; }
+.role { font-size: 0.78em; font-weight: 700; letter-spacing: 0.04em; text-transform: uppercase; color: var(--vscode-descriptionForeground); }
+.role-main { color: var(--vscode-foreground); }
+.badge { display: inline-block; font-size: 0.85em; font-weight: 600; padding: 0 0.4em; border: 1px solid var(--vscode-widget-border, rgba(128, 128, 128, 0.45)); border-radius: 3px; color: var(--vscode-foreground); }
+.clamp { display: -webkit-box; -webkit-line-clamp: 4; -webkit-box-orient: vertical; overflow: hidden; }
+
+/* Waiting for you (P2-223): one calm list; every note sits under the buttons it belongs to */
+.waiting > li.wait { padding: 0.6em 0; gap: 0.25em; }
+.wait-title { font-weight: 600; margin: 0.1em 0; }
+.wait-text { margin: 0.1em 0; }
+.wait-detail { white-space: pre-line; }
+.wait-rec { margin: 0.15em 0; padding-left: 0.6em; border-left: 2px solid var(--wk-accent); }
+.rec-label { font-weight: 600; }
+.wait .actions { margin: 0.35em 0 0.1em; }
+.confirm-note { margin: 0.2em 0 0; font-size: 0.92em; font-weight: 600; color: var(--vscode-editorWarning-foreground, var(--vscode-foreground)); }
+.answer-box { margin: 0.35em 0 0.1em; }
+.answer-box textarea { min-height: 4.2em; }
+.count-n { font-weight: 400; color: var(--vscode-descriptionForeground); margin-left: 0.25em; }
+.link-btn {
+  font: inherit; font-size: 0.92em; cursor: pointer; background: none; border: 0; padding: 0 0.1em; margin: 0;
+  color: var(--vscode-textLink-foreground, var(--wk-accent)); text-decoration: underline; text-underline-offset: 0.15em;
+}
+.link-btn:hover { color: var(--vscode-textLink-activeForeground, var(--vscode-textLink-foreground, var(--wk-accent))); }
+
+/* Gemini (P2-223) */
+.task-title { font-weight: 600; }
+.routes { margin: 0.8em 0 0.2em; }
+.routes summary { cursor: pointer; font-weight: 600; padding: 0.2em 0; }
+.routes summary::marker { color: var(--vscode-descriptionForeground); }
+
+/* Input */
+.label { display: block; font-weight: 600; margin-bottom: 0.3em; }
+input[type="text"], input[type="number"], select {
+  display: block; width: 100%; max-width: 100%; margin-bottom: 0.6em;
+  font: inherit; color: var(--vscode-input-foreground); background: var(--vscode-input-background);
+  border: 1px solid var(--vscode-input-border, var(--vscode-widget-border, rgba(128, 128, 128, 0.45))); border-radius: 2px; padding: 0.3em 0.5em;
+}
+select { color: var(--vscode-dropdown-foreground, var(--vscode-input-foreground)); background: var(--vscode-dropdown-background, var(--vscode-input-background)); border-color: var(--vscode-dropdown-border, var(--vscode-input-border, var(--vscode-widget-border, rgba(128, 128, 128, 0.45)))); text-overflow: ellipsis; }
+#task-text { margin-bottom: 0.6em; }
+textarea {
+  display: block; width: 100%; max-width: 100%; min-height: 5.5em; resize: vertical;
+  font: inherit; color: var(--vscode-input-foreground); background: var(--vscode-input-background);
+  border: 1px solid var(--vscode-input-border, var(--vscode-widget-border, rgba(128, 128, 128, 0.45))); border-radius: 2px; padding: 0.4em 0.5em;
+}
+.count { font-size: 0.85em; min-height: 1.2em; margin: 0.15em 0; }
+.actions { display: flex; flex-wrap: wrap; gap: 0.5em; margin: 0.4em 0; }
+.feedback { min-height: 1.3em; font-weight: 600; }
+.feedback-error { color: var(--vscode-errorForeground); }
+.control-state { display: flex; align-items: baseline; font-weight: 600; }
+
+/* P2-227: jobs, projects and the phone */
+.job-form { margin-bottom: 0.6em; }
+.job-form select, .job-form input[type="number"] { max-width: 100%; }
+.jobs details > summary { cursor: pointer; padding: 0.3em 0; list-style-position: outside; margin-left: 1em; overflow-wrap: anywhere; }
+.jobs details > summary::marker { color: var(--vscode-descriptionForeground); }
+.job-title { font-weight: 600; }
+.job-out { margin: 0.4em 0; padding-left: 1.6em; max-height: 22em; overflow-y: auto; font-family: var(--vscode-editor-font-family, monospace); font-size: 0.9em; }
+.job-out:empty { display: none; }
+.job-out li { margin: 0.15em 0; white-space: pre-wrap; overflow-wrap: anywhere; }
+.job-out .ev-permission_denied { color: var(--vscode-errorForeground); }
+.job-out .ev-result { font-weight: 600; }
+.projects .row-main, .phone-keys .row-main { overflow-wrap: anywhere; }
+.local-only { font-style: italic; }
+
+/* Buttons */
+.btn {
+  font: inherit; cursor: pointer; border-radius: 2px; padding: 0.3em 0.8em; max-width: 100%; text-align: center;
+  color: var(--vscode-button-foreground); background: var(--vscode-button-background);
+  border: 1px solid var(--vscode-button-border, transparent);
+}
+.btn:hover { background: var(--vscode-button-hoverBackground, var(--vscode-button-background)); }
+.btn-secondary { color: var(--vscode-button-secondaryForeground, var(--vscode-foreground)); background: var(--vscode-button-secondaryBackground, transparent); border-color: var(--vscode-button-border, var(--vscode-widget-border, rgba(128, 128, 128, 0.45))); }
+.btn-secondary:hover { background: var(--vscode-button-secondaryHoverBackground, var(--vscode-toolbar-hoverBackground, transparent)); }
+.btn-small { font-size: 0.9em; padding: 0.15em 0.6em; }
+.btn:disabled { opacity: 0.65; cursor: default; }
+:focus { outline: none; }
+:focus-visible, summary:focus-visible, textarea:focus, input:focus, select:focus { outline: 1px solid var(--vscode-focusBorder); outline-offset: 2px; }
+
+/* Movement: a short fade, the same in both motion modes (the owner uses Reduce Motion; fades, never off). */
+.fade { animation: wk-fade 240ms ease-out; }
+@keyframes wk-fade { from { opacity: 0.35; } to { opacity: 1; } }
+@media (prefers-reduced-motion: reduce) {
+  .fade { animation: wk-fade 240ms ease-out; }
+  * { scroll-behavior: auto; }
+}
+
+[hidden] { display: none !important; }

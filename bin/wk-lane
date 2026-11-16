@@ -1,0 +1,21 @@
+#!/usr/bin/env node
+// Launch the unattended lane: clean environment (no personal rows, no login), prompt scanned before any model call.
+// usage: wk-lane [--check-env] --roots DIR[:DIR] -- <prompt file>   (WK_CLAUDE overrides the claude binary, for tests)
+import fs from 'node:fs'; import { spawnSync } from 'node:child_process';
+import { scanPII, pinState, PIN_MSG } from './lib.mjs';
+const a = process.argv.slice(2), has = f => a.includes(f), val = f => a[a.indexOf(f) + 1];
+const KEEP = ['PATH', 'HOME', 'LANG', 'TMPDIR', 'ANTHROPIC_API_KEY', 'CLAUDE_PLUGIN_ROOT', 'CLAUDE_PROJECT_DIR'];
+const env = Object.fromEntries(Object.entries(process.env).filter(([k]) => KEEP.includes(k) || k.startsWith('WK_')));
+env.WK_LANE = '1'; if (has('--roots')) env.WK_LANE_ROOTS = val('--roots');
+// pin the policy for this run: the hash is computed now and handed to every hook through the environment, which the lane's model
+// cannot change for its parent. A pin already set (env or ~/.wk/policy.sha256) must match, or the lane does not start.
+const ps = pinState();
+if (!ps.current) { console.error('wk-lane: the policy file cannot be read; not started.'); process.exit(2); }
+if (ps.state === 'mismatch') { console.error(`wk-lane: ${PIN_MSG}; not started.`); process.exit(2); }
+env.WK_POLICY_SHA256 = process.env.WK_POLICY_SHA256 = ps.current;
+if (has('--check-env')) { console.log(JSON.stringify(Object.keys(env).sort())); process.exit(0); }
+const pf = a[a.indexOf('--') + 1]; if (!pf) { console.error('usage: wk-lane --roots DIRS -- promptfile'); process.exit(64); }
+const prompt = fs.readFileSync(pf, 'utf8'); const hits = scanPII(prompt);
+if (hits.length) { console.error(`wk-lane: prompt holds private data (${hits.join(', ')}); not sent.`); process.exit(2); }
+const r = spawnSync(process.env.WK_CLAUDE || 'claude', ['-p', prompt, '--output-format', 'json'], { env, encoding: 'utf8', stdio: ['ignore', 'inherit', 'inherit'] });
+process.exit(r.status ?? 1);

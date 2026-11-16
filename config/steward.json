@@ -1,0 +1,47 @@
+{
+  "_comment": "Steward defaults (P2-187). You override single values in ~/.wk/steward.json (mode, week.anchor, week.weeklyUsd, call.model ...). The self-tuning moves only the knobs under tuning.knobs, always inside these bounds, one change at a time. The pace numbers come from the owner's answer to Q90 (11 Nov 2026): aim for 90 to 100% of the week used at the Monday 06:00 reset, the owner's own use included; keep 20 points free for the owner's tabs until the last 24 hours, then release them. So ceiling 0.80 (1 minus the 20-point reserve), lastHours 24 (the reserve is released for the last 24 hours), landTo 0.98 (inside the band, a sliver left for the owner's last-hour tabs).",
+  "mode": "login",
+  "week": { "anchor": "2026-01-05T02:00:00Z", "weeklyUsd": 20.94 },
+  "call": {
+    "model": "sonnet", "probeModel": "haiku", "effort": "low", "capUsd": 0.1, "probeCapUsd": 0.05, "timeoutMs": 240000,
+    "maxPerDay": 6, "minGapMin": 45, "lockMaxMin": 30
+  },
+  "pace": {
+    "ceiling": 0.80, "landTo": 0.98, "lastHours": 24, "aheadSlack": 0.03,
+    "meterMaxAgeH": 12, "meterFreshMin": 20, "ownerActiveMin": 10, "unknownMaxCallsPerDay": 2, "fiveHourHold": 0.9,
+    "phase": "shadow", "ramp": { "shadow": 0.25, "half": 0.5, "full": 1 }
+  },
+  "rotation": { "window": 42 },
+  "inbox": { "perProject": 5, "total": 12, "autoMax": 40 },
+  "dedupe": { "jaccard": 0.7 },
+  "limits": { "titleMax": 90, "whyMax": 220, "askMax": 180, "qaMax": 2, "briefMaxTokens": 2400 },
+  "gates": {
+    "waitKinds": ["money"],
+    "askKinds": ["outreach"],
+    "autoKinds": ["code", "design", "content", "research", "admin"],
+    "askImpact": 4,
+    "waitWords": ["price", "pricing", "refund", "payment", "invoice", "stripe", "domain name", "purchase", "buy ", "subscription", "billing", "tax", "publish", "announce", "press release", "send email", "cold email", "newsletter", "ad spend", "advertis", "hire ", "password", "api key", "credential", "dns ", "deploy to prod"]
+  },
+  "lenses": {
+    "finish": "what is unfinished, half-done or stalled, and the smallest step that closes it",
+    "features": "one feature a real user of this project would miss, from the goal and the audience",
+    "fixes": "what is broken, flaky, untested or confusing; use the counts in FACTS",
+    "content": "text, pages, help or stories that are missing or weak, and who would read them",
+    "growth": "one honest way more of the right people find and keep using it",
+    "outreach": "who could use this and how to reach them politely and lawfully (drafts only)",
+    "competitors": "what comparable things do better, and one thing to match or beat",
+    "money": "how it could earn or save money without hurting trust (proposals only)",
+    "risk": "what could hurt it: security, privacy, law, dependency, single point of failure",
+    "delight": "a small thing that would make a user smile or tell a friend"
+  },
+  "tuning": {
+    "minHoursBetweenChanges": 20, "noise": 0.15, "window": 12, "cooldownDays": 7,
+    "evalSamples": { "answers": 4, "ticks": 6 },
+    "knobs": {
+      "ideasPerCall": { "min": 2, "max": 5, "step": 1, "default": 4 },
+      "minImpact": { "min": 1, "max": 4, "step": 1, "default": 2 },
+      "pastIdeasInBrief": { "min": 10, "max": 40, "step": 5, "default": 20 },
+      "wildcardEvery": { "min": 3, "max": 10, "step": 1, "default": 5 }
+    }
+  }
+}

@@ -1,0 +1,48 @@
+{
+  "name": "watchkeeper-panel",
+  "displayName": "Watchkeeper",
+  "description": "See your Claude Code sessions and the subagents they started, in a panel beside your code; with the Watchkeeper plugin, also usage pace, spend, jobs and the Gemini queue. The panel itself makes no network calls; sends nothing to Nexodyne; no telemetry.",
+  "version": "0.6.1",
+  "publisher": "nexodyne",
+  "license": "MIT",
+  "homepage": "https://github.com/tengotengo23/nexodyne-watchkeeper",
+  "repository": { "type": "git", "url": "https://github.com/tengotengo23/nexodyne-watchkeeper.git" },
+  "bugs": { "url": "https://github.com/tengotengo23/nexodyne-watchkeeper/issues" },
+  "engines": { "vscode": "^1.90.0" },
+  "categories": ["AI", "Visualization", "Other"],
+  "keywords": ["claude code", "claude-code", "claude", "anthropic", "subagents", "agents", "sessions", "token usage", "usage", "cost", "dashboard", "antigravity", "gemini", "monitor"],
+  "icon": "media/icon.png",
+  "main": "./extension.js",
+  "activationEvents": ["onView:watchkeeper.panel"],
+  "capabilities": { "untrustedWorkspaces": { "supported": "limited", "description": "In a folder you have not trusted, Watchkeeper shows your sessions but runs nothing: answering, deciding, adding a task, jobs and the phone controls are off." }, "virtualWorkspaces": true },
+  "contributes": {
+    "viewsContainers": {
+      "activitybar": [{ "id": "watchkeeper", "title": "Watchkeeper", "icon": "media/w.svg" }]
+    },
+    "views": {
+      "watchkeeper": [{ "type": "webview", "id": "watchkeeper.panel", "name": "Sessions", "icon": "media/w.svg" }]
+    },
+    "commands": [
+      { "command": "watchkeeper.refresh", "title": "Refresh", "category": "Watchkeeper", "icon": "$(refresh)" }
+    ],
+    "menus": {
+      "view/title": [{ "command": "watchkeeper.refresh", "when": "view == watchkeeper.panel", "group": "navigation" }]
+    },
+    "configuration": {
+      "title": "Watchkeeper",
+      "properties": {
+        "watchkeeper.pluginPath": { "type": "string", "default": "", "markdownDescription": "Folder of the Watchkeeper plugin (holds `bin/wk-ledger.mjs` and `config/gates.json`). Empty: found automatically, first `~/Projects/watchkeeper`, then the plugin as Claude Code installed it.", "scope": "machine" },
+        "watchkeeper.dataDir": { "type": "string", "default": "~/.wk", "markdownDescription": "The Watchkeeper plugin's data folder (ledger, meter, notes).", "scope": "machine" },
+        "watchkeeper.claudeDir": { "type": "string", "default": "~/.claude", "markdownDescription": "Claude Code's folder (session transcripts live in `projects/`).", "scope": "machine" },
+        "watchkeeper.orchestrationDir": { "type": "string", "default": "", "markdownDescription": "Optional: a folder that holds `locks/`, one file per locked area, first line `pid|label|since`. Empty: the `orchestration` folder of the open workspace, if it has one. Questions come only from the folder named as \"orchestration\" in `~/.wk/remote.json`.", "scope": "machine" }
+      }
+    }
+  },
+  "scripts": {
+    "test": "node --test test/data.test.js test/extension.test.js test/waiting.test.js test/remote.test.js",
+    "render": "node test/render.mjs",
+    "icon": "node scripts/icon.mjs",
+    "package": "node scripts/package.mjs",
+    "bundle": "node scripts/bundle.mjs"
+  }
+}

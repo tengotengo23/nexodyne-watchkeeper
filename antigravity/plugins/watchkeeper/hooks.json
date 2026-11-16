@@ -1,0 +1,14 @@
+{
+  "watchkeeper": {
+    "enabled": true,
+    "PreToolUse": [
+      {
+        "matcher": "",
+        "hooks": [{ "type": "command", "command": "\"{{NODE}}\" \"{{WK_BIN_DIR}}/wk-guard-agy.mjs\"", "timeout": 30 }]
+      }
+    ],
+    "Stop": [
+      { "type": "command", "command": "\"{{NODE}}\" \"{{WK_BIN_DIR}}/wk-gemini-log.mjs\"", "timeout": 10 }
+    ]
+  }
+}

@@ -1,0 +1,1 @@
+{"type":"result","subtype":"success","is_error":false,"api_error_status":null,"terminal_reason":"completed","num_turns":1,"total_cost_usd":0.1553126,"stop_reason":"end_turn","result":"ok","session_id":"sess-ok","modelUsage":{"claude-haiku-5-5":{"costUSD":0.0001268},"claude-fable-5-2":{"costUSD":0.15518579999999998}}}

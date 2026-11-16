@@ -1,0 +1,26 @@
+{
+  "_comment": "Copy to ~/.wk/projects.json (wk-steward init does it) and edit. weight 1-10 = share of visits. goal, audience and number are YOUR words: the steward treats them as facts. Never put emails, phone numbers or customer data here; a brief that holds any is refused.",
+  "projects": [
+    {
+      "id": "my-site",
+      "name": "My site",
+      "path": "~/Projects/my-site",
+      "kind": "site",
+      "weight": 3,
+      "goal": "A small site that teaches one skill and earns a first sale.",
+      "audience": "Beginners who want a plain first step.",
+      "number": "Visitors who start the first lesson each week."
+    },
+    {
+      "id": "my-app",
+      "name": "My app",
+      "path": "~/Projects/my-app",
+      "kind": "app",
+      "weight": 1,
+      "goal": "Ship version 1.0 to the store.",
+      "audience": "Parents of young children.",
+      "number": "Installs in the first month.",
+      "paused": true
+    }
+  ]
+}

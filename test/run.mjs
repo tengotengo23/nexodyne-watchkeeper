@@ -30,7 +30,18 @@ t('project .wk/ ignores itself: the first log writes .wk/.gitignore ("*"); one t
 t('non-claim passes', () => { say('Here is the plan.'); assert.equal(gate().stdout, ''); });
 t('start hook silent without worklog', () => assert.equal(run('wk-start.mjs', {}).stdout, ''));
 t('start hook capped', () => { fs.mkdirSync(path.join(tmp, 'worklog'), { recursive: true }); fs.writeFileSync(path.join(tmp, 'worklog/STATE.md'), '## Now\n' + 'x'.repeat(900) + '\n'.repeat(1) + '- b\n'.repeat(20)); const o = run('wk-start.mjs', {}, [], { WK_START_BYTES: '500' }).stdout; assert.ok(o.length <= 502 && o.includes('Now')); });
-t('optimise dry run diff, apply backs up', () => { const f = path.join(tmp, 's.json'); fs.writeFileSync(f, '{"autoCompactWindow":1000000}'); const r = spawnSync('node', [path.join(B, 'wk-optimise.mjs'), '--file', f, '--apply'], { encoding: 'utf8' }); assert.match(r.stdout, /applied/); assert.equal(JSON.parse(fs.readFileSync(f)).env.CLAUDE_AUTOCOMPACT_PCT_OVERRIDE, '65'); assert.ok(fs.readdirSync(tmp).some(x => x.includes('wk-backup'))); });
+t('optimise dry run diff, apply backs up; the default model goes in env.ANTHROPIC_MODEL and the model key stays as it was (P2-250)', () => {
+  const f = path.join(tmp, 's.json'), opt = (...a) => spawnSync('node', [path.join(B, 'wk-optimise.mjs'), '--file', f, ...a], { encoding: 'utf8' });
+  fs.writeFileSync(f, '{"autoCompactWindow":1000000,"model":"claude-fable-5-2"}');
+  const dry = opt(); assert.match(dry.stdout, /env\.ANTHROPIC_MODEL/); assert.ok(!/^model:/m.test(dry.stdout), 'the tool no longer proposes the model key');
+  assert.match(dry.stdout, /New sessions start on Sonnet\. \/model picks a stronger model for one session\. To undo, remove env\.ANTHROPIC_MODEL\./);
+  assert.equal(JSON.parse(fs.readFileSync(f)).env, undefined, 'a dry run changes nothing');
+  const r = opt('--apply'); assert.match(r.stdout, /applied/);
+  const s = JSON.parse(fs.readFileSync(f));
+  assert.equal(s.model, 'claude-fable-5-2'); assert.equal(s.env.ANTHROPIC_MODEL, 'sonnet'); assert.equal(s.modelSettings['claude-fable-5-2'].effortLevel, 'high');
+  assert.equal(s.env.CLAUDE_AUTOCOMPACT_PCT_OVERRIDE, '65'); assert.ok(fs.readdirSync(tmp).some(x => x.startsWith('s.json.wk-backup-')), 'the backup exists');
+  assert.match(opt().stdout, /settings already at the baseline/);
+});
 t('ledger spike (the dollar pace is gone: wk-ledger pace now reads the meter, see test/ledger.pace.test.mjs)', () => { const l = path.join(tmp, 'p.jsonl'), env = { ...process.env, WK_LEDGER: l, WK_TZ_UTC: '1', WK_NOW: '2026-11-08T12:00:00Z', WK_WEEKLY_USD: '7' };
   const row = (d, c) => JSON.stringify({ at: d + 'T10:00:00Z', cost_usd: c }); fs.writeFileSync(l, [row('2026-11-05', 1), row('2026-11-06', 1), row('2026-11-07', 1), row('2026-11-08', 0.5)].join('\n'));
   const run = c => spawnSync('node', [path.join(B, 'wk-ledger.mjs'), c], { encoding: 'utf8', env });
@@ -40,7 +51,7 @@ t('ledger spike (the dollar pace is gone: wk-ledger pace now reads the meter, se
 t('ledger add + p80 stop + context', () => { const env = { ...process.env, WK_LEDGER: path.join(tmp, 'l.jsonl') }; let r = spawnSync('node', [path.join(B, 'wk-ledger.mjs'), 'add', 'T-1', '1'], { input: JSON.stringify({ total_cost_usd: 3, num_turns: 4, usage: { input_tokens: 5 } }), encoding: 'utf8', env }); assert.equal(r.status, 3);
   fs.writeFileSync(path.join(tmp, 'c.jsonl'), [100000, 300000, 400000].map(c => JSON.stringify({ message: { usage: { input_tokens: 1, cache_read_input_tokens: c } } })).join('\n')); r = spawnSync('node', [path.join(B, 'wk-ledger.mjs'), 'context', path.join(tmp, 'c.jsonl')], { encoding: 'utf8' }); assert.match(r.stdout, /WARN/); });
 t('wk-run reports failures only', () => { const r = spawnSync(path.join(B, 'wk-run'), ['sh', '-c', 'echo fine; echo "FAIL x"; exit 1'], { cwd: tmp, encoding: 'utf8' }); assert.equal(r.status, 1); assert.match(r.stdout, /WK_EXIT=1/); });
-t('role agents carry window, turns, model', () => { for (const a of ['scout', 'builder', 'reviewer']) { const f = fs.readFileSync(path.resolve('agents', a + '.md'), 'utf8'); for (const k of ['model:', 'effort:', 'maxTurns:', 'autoCompactWindow:']) assert.ok(f.includes(k), a + ' ' + k); } });
+t('role agents carry window, turns, model', () => { for (const a of ['scout', 'builder', 'reviewer']) { const f = fs.readFileSync(path.resolve('agents', a + '.md'), 'utf8'); for (const k of ['model:', 'effort:', 'maxTurns:', 'autoCompactWindow:']) assert.ok(f.includes(k), a + ' ' + k); assert.ok(f.includes('in one message'), a + ' tells the agent to batch tool calls (P2-250)'); } });
 // ---- F27: lane privacy ----
 const snap = path.join(tmp, 'snapshots'); fs.mkdirSync(snap, { recursive: true });
 fs.writeFileSync(path.join(snap, 'totals.json'), '{"members":412,"quizTakers":3321}');

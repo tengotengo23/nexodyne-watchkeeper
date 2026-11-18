@@ -43,7 +43,8 @@ test('the argv is exactly the brief\'s, for every model and mode, and no forbidd
   assert.deepEqual(claudeArgv({ id, model: 'sonnet', mode: 'auto', max_turns: 150 }),
     ['-p', '--output-format', 'stream-json', '--verbose', '--permission-mode', 'auto', '--permission-prompts', 'none', '--model', 'sonnet', '--max-turns', '150', '--append-system-prompt', systemLine(id)]);
   assert.deepEqual(claudeArgv({ id, model: 'opus', mode: 'plan', max_turns: 3, session_id: 'sess-9' }).slice(-2), ['--resume', 'sess-9']);
-  assert.match(systemLine(id), /^Started from the owner's phone through Watchkeeper \(job J-20261116-1902-a3f9\)\. The owner is not at the Mac: work on your own, follow CLAUDE\.md, and end with a short plain summary of what you did and what needs the owner\. Never print \.env files, keys or tokens: name them instead\.$/);
+  assert.match(systemLine(id), /^Started from the owner's phone through Watchkeeper \(job J-20261116-1902-a3f9\)\. The owner is not at the Mac: work on your own, follow CLAUDE\.md, and end with a short plain summary of what you did and what needs the owner\. Never print \.env files, keys or tokens: name them instead\. Send independent tool calls in one message and chain shell steps in one command: every request re-reads the whole context\.$/);
+  assert.ok(systemLine(id).includes('in one message'), 'the job line tells the job to batch tool calls');
   for (const model of ['sonnet', 'opus', 'fable', 'haiku']) for (const mode of ['auto', 'acceptEdits', 'plan']) {
     const a = claudeArgv({ id, model, mode, max_turns: 400, session_id: 's' });
     for (const f of FORBIDDEN) assert.ok(!a.some(x => x.includes(f)), `${f} in ${a}`);

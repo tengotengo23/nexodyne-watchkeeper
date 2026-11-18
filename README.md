@@ -1,4 +1,4 @@
-# Watchkeeper · v0.6.1
+# Watchkeeper · v0.6.2
 
 Watchkeeper is a free, MIT-licensed panel and plugin for people who run many Claude Code sessions and subagents: the panel, beside your code in Antigravity or an editor built on VS Code, lists every session and the workers it started; the plugin guards tool calls, keeps a spend ledger for the headless runs it starts, and sends back a "done" that has no test behind it. Gemini in Antigravity can join as an optional second worker. Your data stays in local files; nothing goes to Nexodyne, and there is no telemetry.
 

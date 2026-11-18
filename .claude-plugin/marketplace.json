@@ -9,7 +9,7 @@
       "name": "watchkeeper",
       "source": "./",
       "description": "Guards, a spend ledger and an evidence gate for Claude Code: a lean start-up, path and secret guards, gated mail, publishing, money and purchases, a nudge back on a 'done' with no test behind it, a kill switch, a ledger of the headless runs it starts, and a steward you can schedule that paces itself on your plan's weekly limit. Optional task queue for Gemini in Antigravity. Keeps its data in local files; sends nothing to Nexodyne; no telemetry.",
-      "version": "0.6.1",
+      "version": "0.6.2",
       "author": { "name": "Nexodyne" },
       "homepage": "https://github.com/tengotengo23/nexodyne-watchkeeper",
       "repository": "https://github.com/tengotengo23/nexodyne-watchkeeper",

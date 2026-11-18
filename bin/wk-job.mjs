@@ -40,7 +40,7 @@ const stopFlag = id => path.join(dirOf(id), 'stop');
 const pad = n => String(n).padStart(2, '0');
 export const newJobId = (d = new Date()) => `J-${d.getFullYear()}${pad(d.getMonth() + 1)}${pad(d.getDate())}-${pad(d.getHours())}${pad(d.getMinutes())}-${crypto.randomBytes(2).toString('hex')}`;
 const claudeBin = () => process.env.WK_CLAUDE_BIN || 'claude';
-export const systemLine = id => `Started from the owner's phone through Watchkeeper (job ${id}). The owner is not at the Mac: work on your own, follow CLAUDE.md, and end with a short plain summary of what you did and what needs the owner. Never print .env files, keys or tokens: name them instead.`;
+export const systemLine = id => `Started from the owner's phone through Watchkeeper (job ${id}). The owner is not at the Mac: work on your own, follow CLAUDE.md, and end with a short plain summary of what you did and what needs the owner. Never print .env files, keys or tokens: name them instead. Send independent tool calls in one message and chain shell steps in one command: every request re-reads the whole context.`;
 
 // ---------------------------------------------------------------- the one argv
 // A legal job (legal: true) may also run a model from the legal order in config/models.json, with --effort.

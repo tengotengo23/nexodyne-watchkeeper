@@ -1,7 +1,7 @@
 {
   "name": "watchkeeper",
   "displayName": "Watchkeeper",
-  "version": "0.6.1",
+  "version": "0.6.2",
   "description": "Gemini takes work from the Watchkeeper queue, works in its own git worktree, and Watchkeeper checks the result before the owner answers with one press. Also asks Claude for the owner's answer.",
   "author": { "name": "Nexodyne" }
 }

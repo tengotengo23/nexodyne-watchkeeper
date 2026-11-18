@@ -107,6 +107,12 @@ test('keys, trust, reject, enable and disable on the command line', () => {
   assert.match(cli(['enable']).stdout, /^Phone control is on\.$/m);
   assert.equal(L.readRemote().enabled, true);
   assert.match(cli(['disable']).stdout, /Phone control is off/); assert.equal(L.readRemote().enabled, false);
+  // login: Face ID by default; only the Mac's command line switches to the panel's own sign-in
+  assert.equal(L.readRemote().login, 'passkey'); assert.match(cli(['status']).stdout, /Login: Face ID/);
+  assert.match(cli(['login', 'panel']).stdout, /panel's own sign-in/); assert.equal(L.readRemote().login, 'panel');
+  assert.match(cli(['status']).stdout, /Login: the panel's own sign-in \(no Face ID\)/);
+  assert.notEqual(cli(['login', 'nonsense']).status, 0);
+  assert.match(cli(['login', 'passkey']).stdout, /Face ID on every command/); assert.equal(L.readRemote().login, 'passkey');
   assert.equal(cli(['frob']).status, 2); assert.equal(cli(['keys', '--nope']).status, 2);
 });
 

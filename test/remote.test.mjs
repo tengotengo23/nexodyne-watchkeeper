@@ -184,3 +184,25 @@ test('the outgoing scan hides the review\'s extra shapes; gates.json (wk-guard\'
   assert.deepEqual(g.secretPatterns, ['sk-ant-[A-Za-z0-9_-]{20,}', 'sk_live_[A-Za-z0-9]{16,}', 'AKIA[0-9A-Z]{16}', 'ghp_[A-Za-z0-9]{30,}', '-----BEGIN [A-Z ]*PRIVATE KEY-----']);
   for (const re of L.OUTGOING_SECRETS) assert.ok(!g.secretPatterns.includes(re), re);
 });
+
+// Owner's choice, 19 Nov 2026: the panel's own sign-in is the only one. Opt-in, set only on the Mac (wk-bridge login panel).
+test('login panel: unsigned panel commands pass only when the Mac chose it, and keep every other check', () => {
+  const panel = { ...remote, login: 'panel' };
+  const env = (kind, args, extra = {}) => ({ command: P.command(kind, args), auth: { via: 'panel', ...extra } });
+  const ok = L.checkEnvelope(env('ping'), { remote: panel, keys: { keys: [] }, seen: new L.Seen(seenFile()) });
+  assert.equal(ok.ok, true, ok.reason); assert.equal(ok.via, 'panel'); assert.equal(ok.verified, true);
+  // prompt kinds run without a fresh Face ID in this mode
+  const job = L.checkEnvelope(env('job-start', { project: 'site', prompt: 'hi', model: 'haiku', mode: 'plan' }), { remote: panel, keys: { keys: [] }, seen: null });
+  assert.equal(job.ok, true, job.reason);
+  // default (Face ID) mode refuses it, naming the fix; nothing counts against the budget
+  const off = L.checkEnvelope(env('ping'), { remote, keys, seen: null });
+  assert.equal(off.ok, false); assert.equal(off.verified, false); assert.match(off.reason, /wk-bridge login panel/);
+  assert.equal(L.readRemote().login, 'passkey');
+  // phone control off, an extra field, an unknown kind, a bad argument and a replay still fail
+  assert.match(L.checkEnvelope(env('ping'), { remote: { ...panel, enabled: false }, keys, seen: null }).reason, /off on the Mac/);
+  assert.equal(L.checkEnvelope(env('ping', {}, { grant: {} }), { remote: panel, keys, seen: null }).ok, false);
+  assert.match(L.checkEnvelope(env('format-disk'), { remote: panel, keys, seen: null }).reason, /Not something/);
+  assert.match(L.checkEnvelope(env('job-start', { project: 'site', prompt: 'x', model: 'haiku', mode: 'bypassPermissions' }), { remote: panel, keys, seen: null }).reason, /not valid/);
+  const seen = new L.Seen(seenFile()), e1 = env('ping');
+  assert.equal(L.checkEnvelope(e1, { remote: panel, keys, seen }).ok, true);
+});

@@ -29,6 +29,10 @@ wk-bridge on the Mac (launchd) --> checks every signature --> panel/src/actions.
 
 `node bin/wk-bridge.mjs status` shows the server, the link and the last push. `disable` switches phone control off; `uninstall` stops the link (the plist moves to `~/.wk/backups/`).
 
+## Login: Face ID or the panel's own sign-in
+Default: every command carries a Face ID signature (below). If you do not want a second sign-in on top of your panel's own, run `node bin/wk-bridge.mjs login panel` **on the Mac** (the phone cannot do it; `login passkey` goes back). The Mac then accepts commands marked `{"via":"panel"}` without a signature, including job start and reply, and the panel page stops asking for Face ID. No phone key needs to be set up or trusted. The Mac still checks, in order: phone control is on, the command was not seen before, its age, the allowlist, valid arguments, the rate limits, the stop switch, and every job's own limits and permission checks (`FORBIDDEN`). A forged envelope in Face ID mode still counts nothing against the budget; in panel mode a command that passes counts like any other.
+The cost, plainly: the panel's sign-in and your server become the only locks. Anyone who has the panel password, or who controls your server, can start Claude jobs on the Mac in your projects (with Claude's permission checks on) until you run `wk-bridge login passkey` or `wk-bridge disable`. Use a strong panel password.
+
 ## What the Mac checks for every command
 In order, and the first failure is the answer (logged in `~/.wk/remote-log.jsonl`):
 1. Phone control is on, else "Phone control is off on the Mac."

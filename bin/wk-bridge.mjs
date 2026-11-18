@@ -6,6 +6,7 @@
 //   wk-bridge run [--once] [--transport-cmd <exe>]   -> the link (launchd runs this); --transport-cmd replaces ssh (tests: a fake server)
 //   wk-bridge trust <id> · reject <id> · keys [--json]   -> phone keys (trust happens only here, on the Mac)
 //   wk-bridge enable · disable      -> phone control on or off (on is never possible from the phone)
+//   wk-bridge login panel|passkey   -> the panel's own sign-in is the only one (no Face ID), or Face ID on every command (default); only here
 //   wk-bridge status [--json] · install · uninstall      -> the launchd agent org.nexodyne.wk-bridge
 // Exit: 0 done, 1 refused or failed, 2 bad input. Files: ~/.wk/remote*.json(l) (or $WK_HOME). docs/REMOTE.md has the whole story.
 // Every command from the phone: signature and allowlist checked (remote-lib), then the same code as the Antigravity panel runs it
@@ -95,7 +96,7 @@ export async function buildModel(remote, now = Date.now(), { freeMbFn = freeMb }
   delete m.paths;  // the Mac's folders are not the phone's business
   m.jobs = (Array.isArray(m.jobs) ? m.jobs : []).map(j => { const { tail, ...rest } = j; return rest; });   // the web fetches events itself
   const ph = m.phone || {};
-  m.phone = { enabled: remote.enabled, trusted: ph.trusted || [], pending: ph.pending || [] };
+  m.phone = { enabled: remote.enabled, login: remote.login, trusted: ph.trusted || [], pending: ph.pending || [] };
   m.mac = { name: MAC_LABEL, free_mb: Math.round(Number(freeMbFn()) || 0), low_ram: lowRam(remote) };
   m.bridge = { version: VERSION, pushed_at: now };
   const counter = { hidden: 0 };
@@ -431,13 +432,13 @@ export function statusLines() {
   const r = readRemote(), k = readKeys(), p = readPending(), s = status();
   const key = path.resolve(expand(r.key));
   const alive = Number.isInteger(s.pid) && (() => { try { process.kill(s.pid, 0); return true; } catch (e) { return e.code === 'EPERM'; } })();
-  const o = { enabled: r.enabled, trusted: k.keys.length, pending: p.keys.length, key: fs.existsSync(key), installed: fs.existsSync(plistFile()),
+  const o = { enabled: r.enabled, login: r.login, trusted: k.keys.length, pending: p.keys.length, key: fs.existsSync(key), installed: fs.existsSync(plistFile()),
     running: alive, connected: alive && s.connected === true, connected_at: s.connected_at || null, last_push_at: s.last_push_at || null, last_error: s.last_error || null };
   const noServer = serverProblem(r);
   o.server = !noServer;
   const lines = [
     `Server: ${noServer ? `not set (run wk-bridge config --origin https://... --host ...)` : `${r.origin}, ssh ${r.user ? `${r.user}@` : ''}${r.host}${r.port === 22 ? '' : ` port ${r.port}`}`}.`,
-    `Phone control: ${o.enabled ? 'on' : 'off'}. Trusted phone keys: ${o.trusted}; waiting for Trust: ${o.pending}.`,
+    `Phone control: ${o.enabled ? 'on' : 'off'}. Login: ${o.login === 'panel' ? 'the panel\'s own sign-in (no Face ID)' : 'Face ID'}. Trusted phone keys: ${o.trusted}; waiting for Trust: ${o.pending}.`,
     `Key: ${o.key ? tilde(key) : 'none yet (run wk-bridge setup)'}. Service: ${o.installed ? 'installed' : 'not installed (run wk-bridge install)'}.`,
     `Link: ${o.connected ? `connected since ${when(o.connected_at)}` : o.running ? 'connecting' : 'not running'}${o.last_push_at ? `; last push ${when(o.last_push_at)}` : ''}${o.last_error && !o.connected ? `; last problem: ${o.last_error}` : ''}.`,
   ];
@@ -491,11 +492,20 @@ export async function main(argv, out = s => process.stdout.write(s + '\n')) {
       return 0;
     }
     case 'disable': done(); writeRemote({ enabled: false }); out('Phone control is off. The phone can look but not act.'); return 0;
+    case 'login': {
+      const w = rest.shift(); done();
+      if (w !== 'panel' && w !== 'passkey') bad('usage: wk-bridge login panel|passkey');
+      writeRemote({ login: w });
+      out(w === 'panel'
+        ? 'Login is the panel\'s own sign-in: commands from the signed-in panel run without Face ID. The Mac still applies the allowlist, the limits, the replay check, the stop switch and the permission checks of every job. Back to Face ID: wk-bridge login passkey.'
+        : 'Login is Face ID on every command again (decisions: one Face ID per 10 minutes).');
+      return 0;
+    }
     case 'status': { done(); const s = statusLines(); if (json) out(JSON.stringify(s.o)); else s.lines.forEach(l => out(l)); return 0; }
     case 'install': done(); return install(out);
     case 'uninstall': done(); return uninstall(out);
     case 'print-argv': { done(); const r = needServer(); out(JSON.stringify([process.env.WK_SSH_BIN || 'ssh', ...sshArgv(r, path.resolve(expand(r.key)))])); return 0; }
-    default: bad('usage: wk-bridge config|setup|run|trust|reject|keys|enable|disable|status|install|uninstall (see the top of bin/wk-bridge.mjs)');
+    default: bad('usage: wk-bridge config|setup|run|trust|reject|keys|enable|disable|login|status|install|uninstall (see the top of bin/wk-bridge.mjs)');
   }
 }
 

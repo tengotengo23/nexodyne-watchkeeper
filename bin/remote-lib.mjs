@@ -41,7 +41,8 @@ export const FILES = {
 };
 // No built-in server (P2-243): origin, rp_id, host, user and server_command stay empty until `wk-bridge config` sets them (panel/src/data.js has the same shape).
 // server_command: the program the server runs for this key (the forced command in its authorized_keys line).
-export const REMOTE_DEFAULTS = Object.freeze({ enabled: false, origin: '', rp_id: '',
+// login: 'passkey' (every command carries a Face ID signature the Mac checks) or 'panel' (the owner's choice of 19 Nov 2026: the panel's own sign-in is the only one; the Mac still applies the allowlist, limits, replay and stop checks). Only the Mac switches it: wk-bridge login.
+export const REMOTE_DEFAULTS = Object.freeze({ enabled: false, login: 'passkey', origin: '', rp_id: '',
   host: '', port: 22, user: '', server_command: '', key: '~/.ssh/wk_bridge_ed25519', max_jobs: 2, job_hours: 3, pace_stop_pct: 90 });
 const BRIDGE = 'node ' + path.join(path.dirname(new URL(import.meta.url).pathname), 'wk-bridge.mjs');
 export const SET_SERVER = `Phone control needs a companion server (not published yet). If you run one: ${BRIDGE} config --origin https://... --host ...`;
@@ -114,6 +115,7 @@ export function readRemote() {
   for (const k of Object.keys(REMOTE_DEFAULTS)) if (k in j && typeof j[k] === typeof REMOTE_DEFAULTS[k]) r[k] = j[k];
   for (const k of ['orchestration', 'task_repo']) if (typeof j[k] === 'string') r[k] = j[k];
   r.enabled = j.enabled === true;
+  if (r.login !== 'panel') r.login = 'passkey';
   return r;
 }
 export function writeRemote(patch) {
@@ -315,6 +317,11 @@ export function checkEnvelope(env, { remote, keys, seen, now = Date.now() }) {
     try { good = crypto.verify('sha256', Buffer.from(canonical(c), 'utf8'), { key: g.key, dsaEncoding: 'ieee-p1363' }, fromB64u(a.signature)); } catch { good = false; }
     if (!good) return { ok: false, verified: false, id, reason: 'The session signature is not valid.', bump };
     via = 'grant';
+  } else if (a.via === 'panel') {
+    // No signature: the panel's own sign-in stood in front of the command. Accepted only when the Mac was told so (login 'panel').
+    if (remote.login !== 'panel') return { ok: false, verified: false, id, reason: 'The Mac asks for Face ID on every command. Use the passkey, or run wk-bridge login panel on the Mac.' };
+    if (!onlyKeys(a, ['via'])) return { ok: false, verified: false, id, reason: 'The command is broken.' };
+    via = 'panel';
   } else return { ok: false, verified: false, id, reason: 'The command is not signed.' };
   // 4. the command
   const fail = reason => ({ ok: false, verified: true, id, hash, reason, bump });
@@ -325,7 +332,7 @@ export function checkEnvelope(env, { remote, keys, seen, now = Date.now() }) {
   const isPrompt = PROMPT_KINDS.includes(c.kind);
   if (!isPrompt && !DECIDE_KINDS.includes(c.kind)) return fail('Not something the phone can do.');
   if (now - c.issued_at > (isPrompt ? 2 * HOUR : DAY)) return fail(`The command is too old (over ${isPrompt ? '2 hours' : '24 hours'}).`);
-  if (isPrompt && via !== 'passkey') return fail('This needs a fresh Face ID on the phone.');
+  if (isPrompt && via !== 'passkey' && via !== 'panel') return fail('This needs a fresh Face ID on the phone.');
   if (!checkArgs(c.kind, c.args)) return fail('The command\'s details are not valid.');
   return { ok: true, verified: true, id, hash, command: c, via, bump };
 }

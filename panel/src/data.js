@@ -731,7 +731,7 @@ const MODE_WORDS = { auto: 'Edit and run commands (auto mode)', acceptEdits: 'Ed
 const JOB_STATES = ['queued', 'running', 'waiting', 'done', 'failed', 'stopped'];
 const MAX_PROMPT = 8000;
 // No built-in server (P2-243): the same shape and values as bin/remote-lib.mjs; `wk-bridge config` sets origin, rp_id, host and user.
-const REMOTE_DEFAULTS = { enabled: false, origin: '', rp_id: '', host: '', port: 22, user: '', server_command: '',
+const REMOTE_DEFAULTS = { enabled: false, login: 'passkey', origin: '', rp_id: '', host: '', port: 22, user: '', server_command: '',
   key: '~/.ssh/wk_bridge_ed25519', max_jobs: 2, job_hours: 3, pace_stop_pct: 90 };
 const fin = v => (typeof v === 'number' && Number.isFinite(v) ? v : null);
 
@@ -740,6 +740,7 @@ function readRemote(dataDir) {
   const r = { ...REMOTE_DEFAULTS };
   for (const k of Object.keys(REMOTE_DEFAULTS)) if (k in j && typeof j[k] === typeof REMOTE_DEFAULTS[k]) r[k] = j[k];
   r.enabled = j.enabled === true;
+  if (r.login !== 'panel') r.login = 'passkey';
   return r;
 }
 // The phone: trusted keys (only on the Mac's say), keys waiting for Trust, and whether phone control is on. No key material leaves here.

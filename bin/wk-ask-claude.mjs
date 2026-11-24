@@ -21,6 +21,7 @@ import { spawn, spawnSync } from 'node:child_process';
 import { root, gates, killOn, killFile } from './lib.mjs';
 import { pick, runPicked, config as modelConfig } from './model-pick.mjs';
 import { config as geminiConfig } from './gemini-lib.mjs';
+import { isClaudeLimitError } from './wk-carbon-fallback.mjs';
 
 const HOME = os.homedir();
 const tilde = p => (p.startsWith(HOME + path.sep) ? '~' + p.slice(HOME.length) : p);
@@ -243,19 +244,34 @@ async function ask(o) {
   const raw = j && typeof j.result === 'string' ? j.result.trim() : '';
   const at = raw.search(/^Answer:/m), answer = at > 0 ? raw.slice(at) : raw;
   const held = answer.length > 0 && looksSecret(answer, g.secretPatterns);
-  const ok = r.code === 0 && j && !j.is_error && answer.length > 0 && !held;
+  let ok = r.code === 0 && j && !j.is_error && answer.length > 0 && !held;
+  let finalAnswer = answer;
+  const hitLimit = !ok && (
+    isClaudeLimitError(r.err) ||
+    isClaudeLimitError(j) ||
+    isClaudeLimitError(r.out) ||
+    (r.code === -1 && /ENOENT/.test(String(r.err)))
+  );
+  // P2-272 Phase 4A fixes (A3): the asker waits on this answer, so its question is never queued for Antigravity (it would
+  // queue the asker's own question). At Claude's usage limit the question fails in plain words and the asker carries on.
+  // An overload is Claude being busy, not a usage limit: its own error text is kept (test/ask.test.mjs 'model overloaded').
+  const noOverload = v => String(v == null ? '' : (typeof v === 'string' ? v : JSON.stringify(v))).replace(/overloaded/gi, '');
+  const usageLimit = isClaudeLimitError(noOverload(r.err)) || isClaudeLimitError(noOverload(j)) || isClaudeLimitError(noOverload(r.out));
+  const limitNote = hitLimit && usageLimit && !(r.code === -1 && /ENOENT/.test(String(r.err))) ? 'Claude Code reached its usage limit; not answered' : '';
   Object.assign(meta, { status: ok ? 'answered' : 'failed', pid: null, finished_at: new Date().toISOString(), duration_ms: Date.now() - started,
-    cost_usd: j && typeof j.total_cost_usd === 'number' ? j.total_cost_usd : null, session_id: j && typeof j.session_id === 'string' ? j.session_id : null,
-    error: ok ? null : held ? 'answer held back: it looks like it holds a key or token' : (r.timedOut ? 'timed out' : (j && j.is_error ? String(j.result || j.subtype || 'error').slice(0, 200) : `exit ${r.code}${r.err ? ': ' + r.err.trim().split('\n').pop().slice(0, 300) : ''}`)) });
-  if (ok) writeFile(answerFile, answer + '\n');
+    cost_usd: (meta.provider === 'orchestrator-carbon-high' || meta.provider === 'antigravity-queue') ? 0 : (j && typeof j.total_cost_usd === 'number' ? j.total_cost_usd : null),
+    session_id: j && typeof j.session_id === 'string' ? j.session_id : null,
+    error: ok ? null : limitNote ? limitNote : meta.queued_note ? String(meta.queued_note).slice(0, 200) : held ? 'answer held back: it looks like it holds a key or token' : (r.timedOut ? 'timed out' : (j && j.is_error ? String(j.result || j.subtype || 'error').slice(0, 200) : `exit ${r.code}${r.err ? ': ' + r.err.trim().split('\n').pop().slice(0, 300) : ''}`)) });
+  if (ok) writeFile(answerFile, finalAnswer + '\n');
   writeFile(path.join(d, 'meta.json'), JSON.stringify(meta, null, 2));
   if (!ok && r.code === -1 && /ENOENT/.test(String(r.err))) {   // Gemini only: no Claude Code on this computer
     const lane = (geminiConfig().routes || {}).legal;
     console.log(`Claude Code is not on this computer, so Claude could not answer.${lane ? ` For legal wording, do the work as a task of kind "legal" (${lane.model}, or ${lane.fallback} if your plan lacks it), the strongest Gemini model,` : ' Choose what best fits the owner\'s rules'} and note it for the owner: legal wording waits for the owner's approval before use.`);
     return 1;
   }
+  if (!ok && meta.queued_note) { console.log(`Claude Code reached its usage limit. ${meta.queued_note} Carry on with the choice that best fits the owner's rules and note the question for the owner.${folderNote ? ' ' + folderNote : ''}`); return 1; }
   if (!ok) { console.log(`Claude could not answer (${meta.error}). Carry on with the choice that best fits the owner's rules and note the question for the owner.${folderNote ? ' ' + folderNote : ''}`); return 1; }
-  console.log('\n' + answer + `\n\n(Saved to ${tilde(answerFile)}${folderNote ? '. ' + folderNote : ''})`);
+  console.log('\n' + finalAnswer + `\n\n(Saved to ${tilde(answerFile)}${folderNote ? '. ' + folderNote : ''})`);
   return 0;
 }
 

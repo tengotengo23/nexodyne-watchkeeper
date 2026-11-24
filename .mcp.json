@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "re-prompt": {
+      "command": "python3",
+      "args": ["${CLAUDE_PLUGIN_ROOT}/reprompt/claude-code-plugin/bin/run-mcp.py"]
+    }
+  }
+}

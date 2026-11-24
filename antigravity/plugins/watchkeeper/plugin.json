@@ -1,7 +1,15 @@
 {
   "name": "watchkeeper",
   "displayName": "Watchkeeper",
-  "version": "0.6.3",
-  "description": "Gemini takes work from the Watchkeeper queue, works in its own git worktree, and Watchkeeper checks the result before the owner answers with one press. Also asks Claude for the owner's answer.",
+  "version": "3.2.1",
+  "description": "Unified full-IDE Watchkeeper control plane: fail-closed guards, kill switch, Graphify codebase graph, Re-Prompt studio (rp:* / raw:), daily trending GitHub Skills Library sync (+skill:/-skill:), and a task queue for Antigravity when Claude limits run out.",
+  "logo": "assets/logo.svg",
+  "homepage": "https://github.com/tengotengo23/nexodyne-watchkeeper",
+  "repository": "https://github.com/tengotengo23/nexodyne-watchkeeper",
+  "suggestedPrompts": [
+    "/wk-status Show unified Watchkeeper, Re-Prompt, Skills Library Sync, and Gemini queue status",
+    "/re-prompt Rewrite a rough prompt with Graphify context and progressive skill routing",
+    "/duo-orchestrator Route tasks between Claude and Gemini (queued work waits for /wk-take-task)"
+  ],
   "author": { "name": "Nexodyne" }
 }

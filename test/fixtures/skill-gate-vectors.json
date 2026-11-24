@@ -1,0 +1,398 @@
+{
+  "note": "P2-272 (B): is_approved (Python) and isApproved (JS) must agree on every case; skill_cases: an index entry is allowed by slug only (a repo name never stands in), the same in load_index and skillAllowed",
+  "cases": [
+    {
+      "entry": {
+        "approved": true,
+        "status": "approved"
+      },
+      "approved": true
+    },
+    {
+      "entry": {
+        "approved": true
+      },
+      "approved": true
+    },
+    {
+      "entry": {
+        "approved": false,
+        "status": "staged"
+      },
+      "approved": false
+    },
+    {
+      "entry": {
+        "approved": false,
+        "status": "rejected"
+      },
+      "approved": false
+    },
+    {
+      "entry": {
+        "status": "approved"
+      },
+      "approved": false
+    },
+    {
+      "entry": {
+        "approved": "true"
+      },
+      "approved": false
+    },
+    {
+      "entry": {
+        "approved": 1
+      },
+      "approved": false
+    },
+    {
+      "entry": {
+        "approved": null
+      },
+      "approved": false
+    },
+    {
+      "entry": {},
+      "approved": false
+    },
+    {
+      "entry": null,
+      "approved": false
+    },
+    {
+      "entry": [],
+      "approved": false
+    },
+    {
+      "entry": "approved",
+      "approved": false
+    },
+    {
+      "entry": {
+        "slug": "local-installed",
+        "approved": true,
+        "status": "approved"
+      },
+      "approved": false
+    },
+    {
+      "entry": {
+        "slug": " Local-Installed ",
+        "approved": true
+      },
+      "approved": false
+    },
+    {
+      "entry": {
+        "slug": "local-installed-2",
+        "approved": true
+      },
+      "approved": true
+    }
+  ],
+  "skill_cases": [
+    {
+      "skill": {
+        "slug": "good",
+        "repo": "o/good"
+      },
+      "approved": true
+    },
+    {
+      "skill": {
+        "slug": "staged",
+        "repo": "o/good"
+      },
+      "approved": false
+    },
+    {
+      "skill": {
+        "repo": "o/good"
+      },
+      "approved": false
+    },
+    {
+      "skill": {
+        "slug": "o/good"
+      },
+      "approved": false
+    },
+    {
+      "skill": {
+        "slug": "local-installed"
+      },
+      "approved": true
+    },
+    {
+      "skill": {
+        "slug": "nope"
+      },
+      "approved": false
+    },
+    {
+      "skill": null,
+      "approved": false
+    }
+  ],
+  "skill_sources": {
+    "version": 2,
+    "repos": [
+      {
+        "slug": "good",
+        "repo": "o/good",
+        "approved": true,
+        "status": "approved"
+      },
+      {
+        "slug": "staged",
+        "repo": "o/staged",
+        "approved": false,
+        "status": "staged"
+      },
+      {
+        "slug": "nope",
+        "repo": "o/nope",
+        "approved": false,
+        "status": "rejected"
+      }
+    ]
+  },
+  "cap_note": "P2-273: at most max skills, ranked own (0), approved source (1), synced from the Claude account (2), index order within a rank; JS capSkills and Python cap_skills must keep exactly `kept` and leave out exactly `over`.",
+  "cap_cases": [
+    {
+      "max": 20,
+      "skills": [
+        {
+          "id": "local-installed/s1",
+          "name": "s1",
+          "slug": "local-installed",
+          "path": "/h/.claude/skills/synced/u1/s1/SKILL.md"
+        },
+        {
+          "id": "local-installed/o1",
+          "name": "o1",
+          "slug": "local-installed",
+          "path": "/h/.claude/skills/o1/SKILL.md"
+        },
+        {
+          "id": "local-installed/s2",
+          "name": "s2",
+          "slug": "local-installed",
+          "path": "/h/.claude/skills/synced/u2/s2/SKILL.md"
+        },
+        {
+          "id": "good/g1",
+          "name": "g1",
+          "slug": "good",
+          "path": "/v/repos/good/skills/g1/SKILL.md"
+        },
+        {
+          "id": "local-installed/s3",
+          "name": "s3",
+          "slug": "local-installed",
+          "path": "/h/.claude/skills/synced/u3/s3/SKILL.md"
+        },
+        {
+          "id": "local-installed/o2",
+          "name": "o2",
+          "slug": "local-installed",
+          "path": "/h/.claude/skills/o2/SKILL.md"
+        },
+        {
+          "id": "local-installed/s4",
+          "name": "s4",
+          "slug": "local-installed",
+          "path": "/h/.claude/skills/synced/u4/s4/SKILL.md"
+        },
+        {
+          "id": "local-installed/s5",
+          "name": "s5",
+          "slug": "local-installed",
+          "path": "/h/.claude/skills/synced/u5/s5/SKILL.md"
+        },
+        {
+          "id": "local-installed/o3",
+          "name": "o3",
+          "slug": "local-installed",
+          "path": "/h/.claude/skills/o3/SKILL.md"
+        },
+        {
+          "id": "local-installed/s6",
+          "name": "s6",
+          "slug": "local-installed",
+          "path": "/h/.claude/skills/synced/u6/s6/SKILL.md"
+        },
+        {
+          "id": "local-installed/s7",
+          "name": "s7",
+          "slug": "local-installed",
+          "path": "/h/.claude/skills/synced/u7/s7/SKILL.md"
+        },
+        {
+          "id": "good/g2",
+          "name": "g2",
+          "slug": "good",
+          "path": "/v/repos/good/skills/g2/SKILL.md"
+        },
+        {
+          "id": "local-installed/s8",
+          "name": "s8",
+          "slug": "local-installed",
+          "path": "/h/.claude/skills/synced/u8/s8/SKILL.md"
+        },
+        {
+          "id": "local-installed/o4",
+          "name": "o4",
+          "slug": "local-installed",
+          "path": "/h/.claude/skills/o4/SKILL.md"
+        },
+        {
+          "id": "local-installed/s9",
+          "name": "s9",
+          "slug": "local-installed",
+          "path": "/h/.claude/skills/synced/u9/s9/SKILL.md"
+        },
+        {
+          "id": "local-installed/s10",
+          "name": "s10",
+          "slug": "local-installed",
+          "path": "/h/.claude/skills/synced/u10/s10/SKILL.md"
+        },
+        {
+          "id": "local-installed/o5",
+          "name": "o5",
+          "slug": "local-installed",
+          "path": "/h/.claude/skills/o5/SKILL.md"
+        },
+        {
+          "id": "local-installed/s11",
+          "name": "s11",
+          "slug": "local-installed",
+          "path": "/h/.claude/skills/synced/u11/s11/SKILL.md"
+        },
+        {
+          "id": "local-installed/s12",
+          "name": "s12",
+          "slug": "local-installed",
+          "path": "/h/.claude/skills/synced/u12/s12/SKILL.md"
+        },
+        {
+          "id": "local-installed/o6",
+          "name": "o6",
+          "slug": "local-installed",
+          "path": "/h/.claude/skills/o6/SKILL.md"
+        },
+        {
+          "id": "local-installed/s13",
+          "name": "s13",
+          "slug": "local-installed",
+          "path": "/h/.claude/skills/synced/u13/s13/SKILL.md"
+        },
+        {
+          "id": "local-installed/s14",
+          "name": "s14",
+          "slug": "local-installed",
+          "path": "/h/.claude/skills/synced/u14/s14/SKILL.md"
+        },
+        {
+          "id": "local-installed/s15",
+          "name": "s15",
+          "slug": "local-installed",
+          "path": "/h/.claude/skills/synced/u15/s15/SKILL.md"
+        },
+        {
+          "id": "local-installed/flagged",
+          "name": "flagged",
+          "slug": "local-installed",
+          "path": "/h/x/SKILL.md",
+          "synced": true
+        },
+        {
+          "id": "local-installed/win",
+          "name": "win",
+          "slug": "local-installed",
+          "path": "C:\\Users\\x\\.claude\\skills\\synced\\u\\win\\SKILL.md"
+        }
+      ],
+      "kept": [
+        "local-installed/o1",
+        "local-installed/o2",
+        "local-installed/o3",
+        "local-installed/o4",
+        "local-installed/o5",
+        "local-installed/o6",
+        "good/g1",
+        "good/g2",
+        "local-installed/s1",
+        "local-installed/s2",
+        "local-installed/s3",
+        "local-installed/s4",
+        "local-installed/s5",
+        "local-installed/s6",
+        "local-installed/s7",
+        "local-installed/s8",
+        "local-installed/s9",
+        "local-installed/s10",
+        "local-installed/s11",
+        "local-installed/s12"
+      ],
+      "over": [
+        "local-installed/s13",
+        "local-installed/s14",
+        "local-installed/s15",
+        "local-installed/flagged",
+        "local-installed/win"
+      ]
+    },
+    {
+      "max": 20,
+      "skills": [
+        {
+          "id": "local-installed/s1",
+          "name": "s1",
+          "slug": "local-installed",
+          "path": "/h/.claude/skills/synced/u1/s1/SKILL.md"
+        },
+        {
+          "id": "local-installed/o1",
+          "name": "o1",
+          "slug": "local-installed",
+          "path": "/h/.claude/skills/o1/SKILL.md"
+        },
+        {
+          "id": "local-installed/s2",
+          "name": "s2",
+          "slug": "local-installed",
+          "path": "/h/.claude/skills/synced/u2/s2/SKILL.md"
+        },
+        {
+          "id": "good/g1",
+          "name": "g1",
+          "slug": "good",
+          "path": "/v/repos/good/skills/g1/SKILL.md"
+        },
+        {
+          "id": "local-installed/s3",
+          "name": "s3",
+          "slug": "local-installed",
+          "path": "/h/.claude/skills/synced/u3/s3/SKILL.md"
+        }
+      ],
+      "kept": [
+        "local-installed/o1",
+        "good/g1",
+        "local-installed/s1",
+        "local-installed/s2",
+        "local-installed/s3"
+      ],
+      "over": []
+    },
+    {
+      "max": 20,
+      "skills": [],
+      "kept": [],
+      "over": []
+    }
+  ]
+}

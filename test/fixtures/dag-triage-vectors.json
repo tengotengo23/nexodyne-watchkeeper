@@ -1,0 +1,25 @@
+{
+  "about": "P2-272 Phase 4: shared vectors for the fast triage (core/dag_orchestrator.py triage and bin/dag-lib.mjs triage). route is 'single' (one route) or 'plan' (the task splitter makes a plan).",
+  "vectors": [
+    { "prompt": "", "route": "single", "reason": "empty" },
+    { "prompt": "What does bin/wk-task.mjs do?", "route": "single", "reason": "question" },
+    { "prompt": "Why is the panel test failing?", "route": "single", "reason": "question" },
+    { "prompt": "How do I add a new route to the server and then update the panel?", "route": "single", "reason": "question" },
+    { "prompt": "explain the watchdog", "route": "single", "reason": "question" },
+    { "prompt": "Fix the typo in README.md", "route": "single", "reason": "one file" },
+    { "prompt": "Rename the helper in core/graph_ego.py", "route": "single", "reason": "one file" },
+    { "prompt": "Make the button blue", "route": "single", "reason": "simple task" },
+    { "prompt": "Update core/wk_cli.py and bin/wk-task.mjs to use the new wording", "route": "plan", "reason": "several files" },
+    { "prompt": "Add a status endpoint to the server API and show it in the panel UI", "route": "plan", "reason": "several areas" },
+    { "prompt": "1. Add the schema migration\n2. Write the tests\n3. Update the docs", "route": "plan", "reason": "list of steps" },
+    { "prompt": "- build the parser\n- wire it into the CLI", "route": "plan", "reason": "list of steps" },
+    { "prompt": "Refactor the parser, then add tests for the new cases", "route": "plan", "reason": "several steps" },
+    { "prompt": "Implement the login flow end-to-end and deploy it", "route": "plan", "reason": "several steps" },
+    { "prompt": "Write a haiku about autumn", "route": "single", "reason": "simple task" },
+    { "prompt": "Add tests for core/dag_orchestrator.py", "route": "single", "reason": "one file" },
+    { "prompt": "Can you fix README.md and docs/setup.md?", "route": "single", "reason": "question" },
+    { "prompt": "Fix README.md and docs/setup.md", "route": "plan", "reason": "several files" },
+    { "prompt": "Move the database schema change into a migration and update the frontend form", "route": "plan", "reason": "several areas" },
+    { "prompt": "Please look at the logs", "route": "single", "reason": "simple task" }
+  ]
+}

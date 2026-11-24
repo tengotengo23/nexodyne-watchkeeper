@@ -8,8 +8,9 @@
 //   wk-task done <id> [--note "<t>"] [--model-used <m>]             -> diff, scope check, test, commit in the worktree, a suggestion
 //   wk-task merge <id>                                              -> merges a verified task into its repo (never pushes)
 //   wk-task discard <id>                                            -> removes the worktree, keeps change.diff
+//   wk-task sweep [--recover] [--json]                              -> scans or recovers hung tasks via watchdog
 //   wk-task list [--json] · wk-task show <id> [--json]
-// Exit: 0 done, 1 failed or refused, 2 bad input, 3 the kill switch is on, 4 today's cap is reached, 5 nothing is queued.
+// Exit: 0 done, 1 failed or refused, 2 bad input, 3 the Stop switch is on, 4 today's cap is reached, 5 nothing is queued.
 // Files: ~/.wk/tasks/<id>/ and ~/.wk/worktrees/<id>/ (or $WK_HOME); see docs/DATA-CONTRACT.md. Every git call uses execFile
 // with an argument array; nothing here pushes or uses the network.
 import fs from 'node:fs';
@@ -17,9 +18,10 @@ import os from 'node:os';
 import path from 'node:path';
 import crypto from 'node:crypto';
 import { spawnSync } from 'node:child_process';
-import { gates, killOn, killFile, glob2re } from './lib.mjs';
+import { gates, killOn, killFile, glob2re, globBody } from './lib.mjs';
 import { wkHome, tasksDir, worktreesDir, config, kinds, guessKind, oneLine, multiLine, stamp, slug, ensureDir, writeFile, readJSON,
   withLock, git, readTask, listTasks, addSuggestion, TASK_ID, FROM_TASK, MAX_TITLE, MAX_NOTE, MAX_TEXT } from './gemini-lib.mjs';
+import { runDetachedCommandSync, runWatchdogCli } from './wk-watchdog.mjs';
 
 const BIN = path.dirname(new URL(import.meta.url).pathname);
 class Stop extends Error { constructor(code, msg) { super(msg); this.code = code; } }
@@ -27,13 +29,15 @@ const bad = m => { throw new Stop(2, m); };
 const fail = m => { throw new Stop(1, m); };
 
 export function parseArgs(argv) {
-  const o = { cmd: argv[0] || '', id: null, allow: [], json: false };
-  const VAL = { '--repo': 'repo', '--title': 'title', '--kind': 'kind', '--model': 'model', '--test': 'test', '--from': 'from', '--text': 'text', '--id': 'id', '--model-used': 'modelUsed', '--note': 'note' };
+  if (argv.includes('--help') || argv.includes('-h')) return { cmd: 'help', id: null, allow: [], json: false, recover: false };
+  const o = { cmd: argv[0] || '', id: null, allow: [], json: false, recover: false };
+  const VAL = { '--repo': 'repo', '--title': 'title', '--kind': 'kind', '--model': 'model', '--test': 'test', '--from': 'from', '--text': 'text', '--id': 'id', '--model-used': 'modelUsed', '--note': 'note', '--base': 'base' };
   const a = argv.slice(1);
   while (a.length) {
     const x = a.shift();
     if (x === '--allow') { const v = a.shift(); if (v === undefined) bad('--allow needs a glob'); o.allow.push(v); }
     else if (x === '--json') o.json = true;
+    else if (x === '--recover') o.recover = true;
     else if (VAL[x]) { const v = a.shift(); if (v === undefined) bad(`${x} needs a value`); o[VAL[x]] = v; }
     else if (!x.startsWith('--') && !o.id) o.id = x;
     else bad(`unknown option ${x.slice(0, 40)}`);
@@ -50,8 +54,8 @@ function killed() {
   let g; try { g = gates({ allowMismatch: true }); } catch (e) { fail(`the policy does not load (${e.message.slice(0, 120)}); nothing runs until the owner fixes it`); }
   return killOn(g);
 }
-const KILL_MSG = () => 'The kill switch is on (~/.wk/KILL), so Watchkeeper does no work. The owner removes the file to resume. Stop here.';
-const allowRe = g => new RegExp('^' + g.replace(/[.+^${}()|[\]\\]/g, '\\$&').replace(/\*\*\//g, '(?:.*/)?').replace(/\*\*/g, '.*').replace(/\*/g, '[^/]*').replace(/\?/g, '[^/]') + '$');
+const KILL_MSG = () => 'The Stop switch is on (the kill switch, ~/.wk/KILL), so Watchkeeper does no work. The owner removes the file to resume. Stop here.';
+const allowRe = g => new RegExp('^' + globBody(g) + '$');
 const zsplit = s => String(s || '').split('\0').filter(Boolean);
 const literal = f => `:(literal)${f}`;
 // Every diff Watchkeeper reads or shows: no rename detection (a rename would hide the deletion of its old path), and no
@@ -69,6 +73,18 @@ const SHA = /^[0-9a-f]{40}([0-9a-f]{24})?$/;
 const HOOK_NAMES = ['applypatch-msg', 'pre-applypatch', 'post-applypatch', 'pre-commit', 'pre-merge-commit', 'prepare-commit-msg', 'commit-msg', 'post-commit',
   'pre-rebase', 'post-checkout', 'post-merge', 'pre-push', 'pre-receive', 'update', 'proc-receive', 'post-receive', 'post-update', 'reference-transaction',
   'push-to-checkout', 'pre-auto-gc', 'post-rewrite', 'sendemail-validate', 'fsmonitor-watchman', 'post-index-change'];
+// The real path of p, resolved through its nearest folder that exists: git prints /private/var where a config may say
+// /var (macOS), and a hooks folder named in the config often does not exist yet, so realpathSync on p alone would throw.
+function realPath(p) {
+  const rest = [];
+  for (let cur = path.resolve(p); ; ) {
+    try { return path.join(fs.realpathSync(cur), ...rest); } catch {}
+    const up = path.dirname(cur);
+    if (up === cur) return path.resolve(p);
+    rest.unshift(path.basename(cur));
+    cur = up;
+  }
+}
 export function hookDirs(...cwds) {
   const dirs = new Set(['.husky', '.githooks']);
   for (const cwd of cwds.filter(Boolean)) {
@@ -76,14 +92,13 @@ export function hookDirs(...cwds) {
     if (!hp) continue;
     const top = (git(cwd, ['rev-parse', '--show-toplevel'], { allowFail: true }) || cwd).trim();
     const abs = path.resolve(top, hp.replace(/^~(?=\/|$)/, os.homedir()));
-    let rel = path.relative(top, abs);
-    try { rel = path.relative(fs.realpathSync(top), fs.realpathSync(abs)); } catch {}
+    const rel = path.relative(realPath(top), realPath(abs));
     if (!rel.startsWith('..') && !path.isAbsolute(rel)) dirs.add(rel.split(path.sep).join('/'));   // '' is the top of the repository
   }
   return [...dirs];
 }
 export function outOfScope(files, allow, hooks = []) {
-  let deny = []; try { deny = gates({ allowMismatch: true }).denyPathGlobs.map(glob2re); } catch {}
+  let deny = []; try { deny = gates({ allowMismatch: true }).denyPathGlobs.map(g => new RegExp(glob2re(g).source, 'i')); } catch {} // N8: case-insensitive
   const globs = allow.map(g => [g, allowRe(g)]);
   return files.filter(f => {
     if (deny.some(r => r.test(f)) || !globs.some(([, r]) => r.test(f))) return true;
@@ -103,6 +118,13 @@ export function addTask(o, now = new Date()) {
   const top = git(o.repo, ['rev-parse', '--show-toplevel'], { allowFail: true });
   if (!top) bad(`${o.repo} is not a git repository`);
   if (!git(o.repo, ['rev-parse', '--verify', '-q', 'HEAD'], { allowFail: true })) bad(`${o.repo} has no commit yet`);
+  // P2-272 review S5: --base names the commit a dependent step starts from (the run's integration commit); take uses it instead of HEAD
+  let startBase = null;
+  if (o.base !== undefined) {
+    if (!/^[0-9a-f]{40}$/.test(String(o.base))) bad('--base must be a full 40-character commit id');
+    if (git(o.repo, ['cat-file', '-e', `${o.base}^{commit}`], { allowFail: true }) === null) bad(`--base ${o.base.slice(0, 12)} is not a commit in ${o.repo}`);
+    startBase = o.base;
+  }
   const title = oneLine(o.title);
   if (!title) bad('--title is needed');
   if (title.length > MAX_TITLE) bad(`the title is longer than ${MAX_TITLE} characters`);
@@ -130,7 +152,8 @@ export function addTask(o, now = new Date()) {
     catch (e) { if (e.code !== 'EEXIST' || i > 99) throw e; const s = slug(title).slice(0, 40 - String(i).length - 1).replace(/-+$/, ''); id = `${stamp(now)}-${s}-${i}`; }
   }
   const meta = { id, created_at: now.toISOString(), from, title, kind, model, fallback: route.fallback || null, repo: fs.realpathSync(top.trim()), allow, test,
-    status: 'queued', taken_at: null, model_used: null, worktree: null, base: null, commit: null, done_at: null, note: null };
+    status: 'queued', taken_at: null, model_used: null, worktree: null, base: null, commit: null, done_at: null, note: null,
+    ...(startBase ? { start_base: startBase } : {}) };
   writeFile(path.join(taskDir(id), 'task.md'), `# ${title}\n\n${text}\n`);
   saveMeta(meta);
   return meta;
@@ -154,15 +177,29 @@ export function takeTask(o, now = new Date()) {
     try { const fd = fs.openSync(claim, 'wx', 0o600); fs.writeSync(fd, `${process.pid} ${now.toISOString()}\n`); fs.closeSync(fd); }
     catch (e) { if (e.code === 'EEXIST') fail(`task ${m.id} was already taken`); throw e; }
     const wt = path.join(worktreesDir(), m.id);
+    let wtAdded = false;
     try {
       if (!fs.existsSync(m.repo)) fail(`the repository ${m.repo} is gone`);
-      const base = git(m.repo, ['rev-parse', '--verify', 'HEAD']).trim();
+      let base = git(m.repo, ['rev-parse', '--verify', 'HEAD']).trim();
+      if (m.start_base !== undefined && m.start_base !== null) {
+        // checked again from git: meta.json is a plain file
+        if (!/^[0-9a-f]{40}$/.test(String(m.start_base)) || git(m.repo, ['cat-file', '-e', `${m.start_base}^{commit}`], { allowFail: true }) === null) fail(`task ${m.id} names a start commit that is not in ${m.repo}`);
+        base = m.start_base;
+      }
       ensureDir(worktreesDir());
       git(m.repo, ['worktree', 'add', '--detach', wt, base]);
+      wtAdded = true;
       Object.assign(m, { status: 'taken', taken_at: now.toISOString(), worktree: wt, base, ...(o.modelUsed ? { model_used: oneLine(o.modelUsed).slice(0, 80) } : {}) });
       saveMeta(m);
       return m;
-    } catch (e) { fs.rmSync(claim, { force: true }); throw e; }
+    } catch (e) {
+      if (wtAdded) {
+        try { git(m.repo, ['worktree', 'remove', '--force', wt], { allowFail: true }); } catch {}
+        try { fs.rmSync(wt, { recursive: true, force: true }); } catch {}
+      }
+      fs.rmSync(claim, { force: true });
+      throw e;
+    }
   });
 }
 
@@ -249,10 +286,23 @@ export function doneTask(o, now = new Date()) {
     const refused = guardSays(m.test, wt);
     if (refused) verify.test = { cmd: m.test, code: null, tail: tail(refused, 40) };
     else {
-      const r = spawnSync('/bin/sh', ['-c', m.test], { cwd: wt, encoding: 'utf8', timeout: c.test_timeout_min * 60e3, maxBuffer: 64 * 1024 * 1024, killSignal: 'SIGKILL',
-        env: { ...process.env, WK_TASK_ID: m.id } });
-      const timedOut = r.error && r.error.code === 'ETIMEDOUT';
-      verify.test = { cmd: m.test, code: typeof r.status === 'number' ? r.status : null, tail: tail(`${r.stdout || ''}${r.stderr || ''}${timedOut ? `\n(stopped after ${c.test_timeout_min} minutes)` : r.error ? `\n(${r.error.message})` : ''}`, 40) };
+      const timeoutMs = c.test_timeout_min * 60e3;
+      const idleMs = Number(process.env.WK_TASK_TEST_IDLE_MS) || Math.min(timeoutMs, 5 * 60 * 1000);
+      const r = runDetachedCommandSync(m.test, {
+        cwd: wt,
+        env: { ...process.env, WK_TASK_ID: m.id },
+        timeoutMs,
+        idleMs,
+      });
+      const timedOut = Boolean(r.timedOut);
+      const stopNote = r.stalled
+        ? `\n(stopped: test stalled with no output after ${Math.round(idleMs / 1000)}s)`
+        : `\n(stopped after ${c.test_timeout_min} minutes)`;
+      verify.test = {
+        cmd: m.test,
+        code: typeof r.status === 'number' ? r.status : null,
+        tail: tail(`${r.stdout || ''}${r.stderr || ''}${timedOut ? stopNote : r.errorMessage ? `\n(${r.errorMessage})` : ''}`, 40),
+      };
     }
   }
   writeFile(path.join(taskDir(m.id), 'verify.json'), JSON.stringify(verify, null, 2) + '\n');
@@ -343,16 +393,18 @@ function show(o) {
 
 const isMain = process.argv[1] && fs.realpathSync(process.argv[1]) === fs.realpathSync(new URL(import.meta.url).pathname);
 if (isMain) {
-  const USAGE = 'usage: wk-task add|take|done|merge|discard|list|show (see the top of bin/wk-task.mjs)';
+  const USAGE = 'usage: wk-task add|take|done|merge|discard|sweep|list|show (see the top of bin/wk-task.mjs)';
   let code = 0;
   try {
     const o = parseArgs(process.argv.slice(2));
-    if (o.cmd === 'add') console.log(addTask(o).id);
+    if (o.cmd === 'help') console.log(USAGE);
+    else if (o.cmd === 'add') console.log(addTask(o).id);
     else if (o.cmd === 'take') { const m = takeTask(o); console.log(o.json ? JSON.stringify(m) : brief(m)); }
     else if (['done', 'merge', 'discard'].includes(o.cmd)) {
       const r = { done: doneTask, merge: mergeTask, discard: discardTask }[o.cmd](o);
       (r.code ? console.error : console.log)(r.msg); code = r.code;
     }
+    else if (o.cmd === 'sweep') code = runWatchdogCli([o.recover ? 'recover' : 'scan', ...(o.json ? ['--json'] : [])]);
     else if (o.cmd === 'list') list(o);
     else if (o.cmd === 'show') show(o);
     else throw new Stop(2, USAGE);

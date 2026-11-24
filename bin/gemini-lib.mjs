@@ -34,7 +34,7 @@ const DEFAULTS = {
   test_timeout_min: 10,
   later_hours: 24,
   sessions_keep: 500,
-  hook_pass_decision: 'allow',
+  hook_pass_decision: 'ask',
   routes: { code: { model: 'gemini-4-hydrogen-xhigh', fallback: 'gemini-4-hydrogen-high', for: 'everyday coding' } },
   keywords: {},
   automation_prompt: '',
@@ -48,7 +48,7 @@ export function config() {
   o.test_timeout_min = posInt(o.test_timeout_min, DEFAULTS.test_timeout_min, 240);
   o.later_hours = posInt(o.later_hours, DEFAULTS.later_hours, 24 * 30);
   o.sessions_keep = posInt(o.sessions_keep, DEFAULTS.sessions_keep, 100000);
-  if (!['allow', 'ask', 'force_ask'].includes(o.hook_pass_decision)) o.hook_pass_decision = 'allow';
+  if (!['allow', 'ask', 'force_ask'].includes(o.hook_pass_decision)) o.hook_pass_decision = 'ask';
   if (!o.routes || typeof o.routes !== 'object' || !o.routes[o.default_kind]) { o.routes = { ...DEFAULTS.routes, ...(o.routes || {}) }; if (!o.routes[o.default_kind]) o.default_kind = 'code'; }
   return o;
 }
@@ -98,9 +98,10 @@ export function readLines(p) {
 // A lock made with 'wx' (never follows or overwrites). A lock older than staleMs is taken over.
 export function withLock(file, fn, { waitMs = 15000, staleMs = 120000 } = {}) {
   ensureDir(path.dirname(file));
+  const token = `${process.pid} ${Date.now()} ${crypto.randomBytes(4).toString('hex')}`;
   const until = Date.now() + waitMs;
   for (;;) {
-    try { const fd = fs.openSync(file, 'wx', 0o600); fs.writeSync(fd, `${process.pid} ${Date.now()}\n`); fs.closeSync(fd); break; }
+    try { const fd = fs.openSync(file, 'wx', 0o600); fs.writeSync(fd, token + '\n'); fs.closeSync(fd); break; }
     catch (e) {
       if (e.code !== 'EEXIST') throw e;
       try { if (Date.now() - fs.statSync(file).mtimeMs > staleMs) { fs.rmSync(file, { force: true }); continue; } } catch { continue; }
@@ -108,7 +109,9 @@ export function withLock(file, fn, { waitMs = 15000, staleMs = 120000 } = {}) {
       Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 40);
     }
   }
-  try { return fn(); } finally { fs.rmSync(file, { force: true }); }
+  try { return fn(); } finally {
+    try { if (fs.readFileSync(file, 'utf8').trim() === token) fs.rmSync(file, { force: true }); } catch {}
+  }
 }
 
 // ---------------------------------------------------------------- git (execFile, argument arrays, never the network)

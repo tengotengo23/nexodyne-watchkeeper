@@ -11,6 +11,7 @@
     "meterMaxAgeH": 12, "meterFreshMin": 20, "ownerActiveMin": 10, "unknownMaxCallsPerDay": 2, "fiveHourHold": 0.9,
     "phase": "shadow", "ramp": { "shadow": 0.25, "half": 0.5, "full": 1 }
   },
+  "maintenance": { "_comment": "P2-273: Watchkeeper's own upkeep (steward visits to the projects listed here or inside the plugin folder, and the steward's meter probe) may use at most maxWeekShare of the week; over it the steward skips those projects. items are ledger item names or prefixes.", "maxWeekShare": 0.10, "projects": ["watchkeeper"], "items": ["steward:probe"] },
   "rotation": { "window": 42 },
   "inbox": { "perProject": 5, "total": 12, "autoMax": 40 },
   "dedupe": { "jaccard": 0.7 },

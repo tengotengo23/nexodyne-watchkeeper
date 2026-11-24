@@ -1,0 +1,747 @@
+{
+ "_comment": "P2-272 shared prompt-prefix vectors: reprompt/scripts/prompt_prefix.py classify() and panel/src/prompt-prefix.js classify() must both give exactly these. P2-273: word_cases give word_count/wordCount and wants_auto_rewrite/wantsAutoRewrite at auto_over_words. over_words_cases: autoRewriteOverWords values and what they mean; migrate_cases: the settings move to settingsVersion 2 (P2-273).",
+ "auto_floor_chars": 8,
+ "short_reply_chars": 40,
+ "cases": [
+  {
+   "input": "",
+   "kind": "empty",
+   "prefix": null,
+   "body": "",
+   "mode": null,
+   "task_id": null
+  },
+  {
+   "input": "   ",
+   "kind": "empty",
+   "prefix": null,
+   "body": "",
+   "mode": null,
+   "task_id": null
+  },
+  {
+   "input": "raw: run this exactly",
+   "kind": "raw",
+   "prefix": "raw",
+   "body": "run this exactly",
+   "mode": null,
+   "task_id": null
+  },
+  {
+   "input": "RAW:  keep it",
+   "kind": "raw",
+   "prefix": "raw",
+   "body": "keep it",
+   "mode": null,
+   "task_id": null
+  },
+  {
+   "input": "rp-raw: as is",
+   "kind": "raw",
+   "prefix": "rp-raw",
+   "body": "as is",
+   "mode": null,
+   "task_id": null
+  },
+  {
+   "input": "/wk raw: just do it",
+   "kind": "raw",
+   "prefix": "/wk raw",
+   "body": "just do it",
+   "mode": null,
+   "task_id": null
+  },
+  {
+   "input": "/WK  Raw: spaced",
+   "kind": "raw",
+   "prefix": "/wk raw",
+   "body": "spaced",
+   "mode": null,
+   "task_id": null
+  },
+  {
+   "input": ":raw leave this alone",
+   "kind": "raw",
+   "prefix": "raw",
+   "body": "leave this alone",
+   "mode": null,
+   "task_id": null
+  },
+  {
+   "input": ":raw",
+   "kind": "none",
+   "prefix": null,
+   "body": ":raw",
+   "mode": null,
+   "task_id": null
+  },
+  {
+   "input": ":rawx nope",
+   "kind": "none",
+   "prefix": null,
+   "body": ":rawx nope",
+   "mode": null,
+   "task_id": null
+  },
+  {
+   "input": "rp: fix the login page",
+   "kind": "rewrite",
+   "prefix": "rp",
+   "body": "fix the login page",
+   "mode": null,
+   "task_id": null
+  },
+  {
+   "input": "RP: Fix It",
+   "kind": "rewrite",
+   "prefix": "rp",
+   "body": "Fix It",
+   "mode": null,
+   "task_id": null
+  },
+  {
+   "input": "rp-spec: design the cache",
+   "kind": "rewrite",
+   "prefix": "rp-spec",
+   "body": "design the cache",
+   "mode": "deep_spec",
+   "task_id": null
+  },
+  {
+   "input": "rp-deep: plan it",
+   "kind": "rewrite",
+   "prefix": "rp-deep",
+   "body": "plan it",
+   "mode": "deep_spec",
+   "task_id": null
+  },
+  {
+   "input": "rp-bug: crash on save",
+   "kind": "rewrite",
+   "prefix": "rp-bug",
+   "body": "crash on save",
+   "mode": "bug_fix",
+   "task_id": null
+  },
+  {
+   "input": "rp-refactor: split the module",
+   "kind": "rewrite",
+   "prefix": "rp-refactor",
+   "body": "split the module",
+   "mode": "refactor",
+   "task_id": null
+  },
+  {
+   "input": "rp-concise: shorten this",
+   "kind": "rewrite",
+   "prefix": "rp-concise",
+   "body": "shorten this",
+   "mode": "concise",
+   "task_id": null
+  },
+  {
+   "input": "rp-short: shorter",
+   "kind": "rewrite",
+   "prefix": "rp-short",
+   "body": "shorter",
+   "mode": "concise",
+   "task_id": null
+  },
+  {
+   "input": "reprompt: tidy this",
+   "kind": "rewrite",
+   "prefix": "reprompt",
+   "body": "tidy this",
+   "mode": null,
+   "task_id": null
+  },
+  {
+   "input": "re-prompt: tidy that",
+   "kind": "rewrite",
+   "prefix": "re-prompt",
+   "body": "tidy that",
+   "mode": null,
+   "task_id": null
+  },
+  {
+   "input": "Re-Prompt : spaced colon",
+   "kind": "rewrite",
+   "prefix": "re-prompt",
+   "body": "spaced colon",
+   "mode": null,
+   "task_id": null
+  },
+  {
+   "input": ":rp fix the header",
+   "kind": "rewrite",
+   "prefix": "rp",
+   "body": "fix the header",
+   "mode": null,
+   "task_id": null
+  },
+  {
+   "input": ":re-prompt check the tests",
+   "kind": "rewrite",
+   "prefix": "re-prompt",
+   "body": "check the tests",
+   "mode": null,
+   "task_id": null
+  },
+  {
+   "input": ":reprompt add a test",
+   "kind": "rewrite",
+   "prefix": "reprompt",
+   "body": "add a test",
+   "mode": null,
+   "task_id": null
+  },
+  {
+   "input": ":RP upper",
+   "kind": "rewrite",
+   "prefix": "rp",
+   "body": "upper",
+   "mode": null,
+   "task_id": null
+  },
+  {
+   "input": ":rpx not a prefix",
+   "kind": "none",
+   "prefix": null,
+   "body": ":rpx not a prefix",
+   "mode": null,
+   "task_id": null
+  },
+  {
+   "input": ":rp",
+   "kind": "none",
+   "prefix": null,
+   "body": ":rp",
+   "mode": null,
+   "task_id": null
+  },
+  {
+   "input": "rp:",
+   "kind": "none",
+   "prefix": null,
+   "body": "rp:",
+   "mode": null,
+   "task_id": null
+  },
+  {
+   "input": "rp:   ",
+   "kind": "none",
+   "prefix": null,
+   "body": "rp:",
+   "mode": null,
+   "task_id": null
+  },
+  {
+   "input": "rpx: not a prefix",
+   "kind": "none",
+   "prefix": null,
+   "body": "rpx: not a prefix",
+   "mode": null,
+   "task_id": null
+  },
+  {
+   "input": "rp fix without colon",
+   "kind": "none",
+   "prefix": null,
+   "body": "rp fix without colon",
+   "mode": null,
+   "task_id": null
+  },
+  {
+   "input": "/wk-take-task",
+   "kind": "take_task",
+   "prefix": null,
+   "body": "/wk-take-task",
+   "mode": null,
+   "task_id": null
+  },
+  {
+   "input": "/wk take-task",
+   "kind": "take_task",
+   "prefix": null,
+   "body": "/wk take-task",
+   "mode": null,
+   "task_id": null
+  },
+  {
+   "input": "/wk-take-task abcd-1234",
+   "kind": "take_task",
+   "prefix": null,
+   "body": "/wk-take-task abcd-1234",
+   "mode": null,
+   "task_id": "abcd-1234"
+  },
+  {
+   "input": "/WK Take-Task task_99",
+   "kind": "take_task",
+   "prefix": null,
+   "body": "/WK Take-Task task_99",
+   "mode": null,
+   "task_id": "task_99"
+  },
+  {
+   "input": "/wk take-task ab",
+   "kind": "none",
+   "prefix": null,
+   "body": "/wk take-task ab",
+   "mode": null,
+   "task_id": null
+  },
+  {
+   "input": "/wk-take-taskx",
+   "kind": "none",
+   "prefix": null,
+   "body": "/wk-take-taskx",
+   "mode": null,
+   "task_id": null
+  },
+  {
+   "input": "<task-notification>done</task-notification>",
+   "kind": "machine",
+   "prefix": null,
+   "body": "<task-notification>done</task-notification>",
+   "mode": null,
+   "task_id": null
+  },
+  {
+   "input": "<agent-message from=\"x\">rp: hi</agent-message>",
+   "kind": "machine",
+   "prefix": null,
+   "body": "<agent-message from=\"x\">rp: hi</agent-message>",
+   "mode": null,
+   "task_id": null
+  },
+  {
+   "input": "<pasted_content>rp: owner paste</pasted_content>",
+   "kind": "none",
+   "prefix": null,
+   "body": "<pasted_content>rp: owner paste</pasted_content>",
+   "mode": null,
+   "task_id": null
+  },
+  {
+   "input": "<pasted_content> some text",
+   "kind": "none",
+   "prefix": null,
+   "body": "<pasted_content> some text",
+   "mode": null,
+   "task_id": null
+  },
+  {
+   "input": "[Re-Prompt · balanced] rp: again",
+   "kind": "loop",
+   "prefix": null,
+   "body": "[Re-Prompt · balanced] rp: again",
+   "mode": null,
+   "task_id": null
+  },
+  {
+   "input": "x [Re-Prompt Inline] y",
+   "kind": "loop",
+   "prefix": null,
+   "body": "x [Re-Prompt Inline] y",
+   "mode": null,
+   "task_id": null
+  },
+  {
+   "input": "[WK-SPEC-V2:abc] rp: z",
+   "kind": "loop",
+   "prefix": null,
+   "body": "[WK-SPEC-V2:abc] rp: z",
+   "mode": null,
+   "task_id": null
+  },
+  {
+   "input": "SYSTEM OVERRIDE: You are Re-Prompt. rp: x",
+   "kind": "loop",
+   "prefix": null,
+   "body": "SYSTEM OVERRIDE: You are Re-Prompt. rp: x",
+   "mode": null,
+   "task_id": null
+  },
+  {
+   "input": "## Goal\nrp: a\n## Verification\nb",
+   "kind": "loop",
+   "prefix": null,
+   "body": "## Goal\nrp: a\n## Verification\nb",
+   "mode": null,
+   "task_id": null
+  },
+  {
+   "input": "ok",
+   "kind": "none",
+   "prefix": null,
+   "body": "ok",
+   "mode": null,
+   "task_id": null
+  },
+  {
+   "input": "please fix the login page",
+   "kind": "none",
+   "prefix": null,
+   "body": "please fix the login page",
+   "mode": null,
+   "task_id": null
+  },
+  {
+   "input": "rp: line one\nline two",
+   "kind": "rewrite",
+   "prefix": "rp",
+   "body": "line one\nline two",
+   "mode": null,
+   "task_id": null
+  }
+ ],
+ "auto_over_words": 30,
+ "word_cases": [
+  {
+   "input": "",
+   "words": 0,
+   "auto": false,
+   "note": "empty"
+  },
+  {
+   "input": "please fix the login page so that it keeps the user signed in please fix the login page so that it keeps the user signed in please fix the login",
+   "words": 30,
+   "auto": false,
+   "note": "exactly 30 words stays as typed"
+  },
+  {
+   "input": "please fix the login page so that it keeps the user signed in please fix the login page so that it keeps the user signed in please fix the login page",
+   "words": 31,
+   "auto": true,
+   "note": "31 words is rewritten"
+  },
+  {
+   "input": "please\nfix\nthe\nlogin\npage\nso\nthat\nit\nkeeps\nthe\nuser\nsigned\nin\nplease\nfix\nthe\nlogin\npage\nso\nthat\nit\nkeeps\nthe\nuser\nsigned\nin\nplease\nfix\nthe\nlogin\npage",
+   "words": 31,
+   "auto": true,
+   "note": "new lines separate words too"
+  },
+  {
+   "input": "  please fix the login page so that it keeps the user signed in please fix the login page so that it keeps the user signed in please fix the login page so that it keeps the user signed in please fix the login page so  ",
+   "words": 45,
+   "auto": true,
+   "note": "outer spaces do not count"
+  },
+  {
+   "input": "please fix the login page so that it keeps the user signed in please fix the login page so that it keeps the user signed in please fix the — ... !!",
+   "words": 29,
+   "auto": false,
+   "note": "punctuation-only tokens are not words"
+  },
+  {
+   "input": "please fix the login page so that it keeps the user signed in please fix the login page so that it keeps the user signed in please fix the login 2026",
+   "words": 31,
+   "auto": true,
+   "note": "a number is a word"
+  },
+  {
+   "input": "raw: please fix the login page so that it keeps the user signed in please fix the login page so that it keeps the user signed in please fix the login page so that it keeps the user signed in please fix the login page so that it keeps the user signed in please fix the login page so that it",
+   "words": 61,
+   "auto": false,
+   "note": "raw: passes untouched at any length"
+  },
+  {
+   "input": "please fix the login page so that it keeps the user signed in please fix the login page so that it keeps the user signed in please fix the login page so that it keeps the user signed in please fix the login page so that it keeps the user signed in please fix the login page so that it :raw",
+   "words": 61,
+   "auto": true,
+   "note": "raw only counts as a prefix at the start"
+  },
+  {
+   "input": ":raw please fix the login page so that it keeps the user signed in please fix the login page so that it keeps the user signed in please fix the login page so that it keeps the user signed in please fix the login page so that it keeps the user signed in please fix the login page so that it",
+   "words": 61,
+   "auto": false,
+   "note": ":raw passes untouched at any length"
+  },
+  {
+   "input": "rp: please fix the login page so that it keeps the user signed in please fix the login page so that it keeps the user signed in please fix the login page so that it keeps the user signed in please",
+   "words": 41,
+   "auto": false,
+   "note": "an explicit prefix is a request, not the length rule"
+  },
+  {
+   "input": "/loop 5m please fix the login page so that it keeps the user signed in please fix the login page so that it keeps the user signed in please fix the login page so that it keeps the user signed in please",
+   "words": 42,
+   "auto": false,
+   "note": "slash commands are never rewritten"
+  },
+  {
+   "input": "<task-notification> please fix the login page so that it keeps the user signed in please fix the login page so that it keeps the user signed in please fix the login page so that it keeps the user signed in please",
+   "words": 41,
+   "auto": false,
+   "note": "machine turns are never rewritten"
+  },
+  {
+   "input": "[Re-Prompt · brief] please fix the login page so that it keeps the user signed in please fix the login page so that it keeps the user signed in please fix the login page so that it keeps the user signed in please",
+   "words": 42,
+   "auto": false,
+   "note": "loop text is never rewritten"
+  },
+  {
+   "input": "<pasted_content>please fix the login page so that it keeps the user signed in please fix the login page so that it keeps the user signed in please fix the login page so that it keeps the user signed in please</pasted_content>",
+   "words": 40,
+   "auto": true,
+   "note": "pasted text is the owner's own message"
+  },
+  {
+   "input": "请请请请请请请请请请请请请请请请请请请请请请请请请请请请请请",
+   "words": 30,
+   "auto": false,
+   "note": "30 Chinese characters stay as typed"
+  },
+  {
+   "input": "请请请请请请请请请请请请请请请请请请请请请请请请请请请请请请请",
+   "words": 31,
+   "auto": true,
+   "note": "31 Chinese characters are rewritten"
+  },
+  {
+   "input": "fix 登录页面 bug",
+   "words": 6,
+   "auto": false,
+   "note": "mixed Latin and Chinese"
+  },
+  {
+   "input": "これはテストです",
+   "words": 8,
+   "auto": false,
+   "note": "Japanese kana count one each"
+  },
+  {
+   "input": "안녕하세요 세계",
+   "words": 2,
+   "auto": false,
+   "note": "Korean is written with spaces"
+  },
+  {
+   "input": "გთხოვ გთხოვ გთხოვ გთხოვ გთხოვ გთხოვ გთხოვ გთხოვ გთხოვ გთხოვ გთხოვ გთხოვ გთხოვ გთხოვ გთხოვ გთხოვ გთხოვ გთხოვ გთხოვ გთხოვ გთხოვ გთხოვ გთხოვ გთხოვ გთხოვ გთხოვ გთხოვ გთხოვ გთხოვ გთხოვ გთხოვ",
+   "words": 31,
+   "auto": true,
+   "note": "31 Georgian words are rewritten"
+  },
+  {
+   "input": "snake_case ___ 🙂 🙂",
+   "words": 1,
+   "auto": false,
+   "note": "underscores and emoji alone are not words"
+  },
+  {
+   "input": "\ufeffhello\ufeffworld",
+   "words": 2,
+   "auto": false,
+   "note": "a byte-order mark separates words"
+  },
+  {
+   "input": "one\u0085two",
+   "words": 2,
+   "auto": false,
+   "note": "next line (U+0085) separates words"
+  },
+  {
+   "input": "one\u001ctwo",
+   "words": 2,
+   "auto": false,
+   "note": "file separator (U+001C) separates words, as in Python str.split"
+  },
+  {
+   "input": "one\u200btwo",
+   "words": 1,
+   "auto": false,
+   "note": "a zero-width space does not separate words"
+  },
+  {
+   "input": "日本語です",
+   "words": 5,
+   "auto": false,
+   "note": "Japanese: each character counts"
+  },
+  {
+   "input": "fix\u3000it\u00a0now",
+   "words": 3,
+   "auto": false,
+   "note": "ideographic and no-break spaces separate words"
+  },
+  {
+   "input": "v2.1 ok",
+   "words": 2,
+   "auto": false,
+   "note": "a version number is one word"
+  }
+ ],
+ "over_words_cases": [
+  {
+   "value": null,
+   "want": 30,
+   "note": "missing: the default"
+  },
+  {
+   "value": true,
+   "want": 30,
+   "note": "a boolean is not a number"
+  },
+  {
+   "value": "",
+   "want": 30,
+   "note": "empty"
+  },
+  {
+   "value": "x",
+   "want": 30,
+   "note": "not a number"
+  },
+  {
+   "value": -1,
+   "want": 30,
+   "note": "negative"
+  },
+  {
+   "value": 0,
+   "want": 0,
+   "note": "0 turns the word rule off"
+  },
+  {
+   "value": "12.7",
+   "want": 12,
+   "note": "decimals are dropped"
+  },
+  {
+   "value": 12.0,
+   "want": 12,
+   "note": "a whole float"
+  },
+  {
+   "value": 12.5,
+   "want": 12,
+   "note": "a float"
+  },
+  {
+   "value": " 7 ",
+   "want": 7,
+   "note": "spaces around"
+  },
+  {
+   "value": "\u00a030\u00a0",
+   "want": 30,
+   "note": "no-break spaces around"
+  },
+  {
+   "value": "007",
+   "want": 7,
+   "note": "leading zeros"
+  },
+  {
+   "value": "0x10",
+   "want": 30,
+   "note": "hex is refused"
+  },
+  {
+   "value": "1_000",
+   "want": 30,
+   "note": "underscores are refused"
+  },
+  {
+   "value": "٣",
+   "want": 30,
+   "note": "only ASCII digits"
+  },
+  {
+   "value": "1e3",
+   "want": 30,
+   "note": "exponent form is refused"
+  },
+  {
+   "value": "+5",
+   "want": 30,
+   "note": "a sign is refused"
+  },
+  {
+   "value": 1e+21,
+   "want": 30,
+   "note": "too long"
+  },
+  {
+   "value": "1234567890",
+   "want": 30,
+   "note": "ten digits are refused"
+  },
+  {
+   "value": 999999999,
+   "want": 999999999,
+   "note": "nine digits are read"
+  }
+ ],
+ "migrate_cases": [
+  {
+   "in": {},
+   "out": {
+    "settingsVersion": 2
+   },
+   "note": "a new file only gets the version"
+  },
+  {
+   "in": {
+    "claudeCodeRewrite": "prefix",
+    "hookAutoAll": true
+   },
+   "out": {
+    "claudeCodeRewrite": "words",
+    "hookAutoAll": false,
+    "settingsVersion": 2
+   },
+   "note": "old defaults move to the P2-273 defaults once"
+  },
+  {
+   "in": {
+    "claudeCodeRewrite": "prefix",
+    "hookAutoAll": true,
+    "settingsVersion": 2
+   },
+   "out": {
+    "claudeCodeRewrite": "prefix",
+    "hookAutoAll": true,
+    "settingsVersion": 2
+   },
+   "note": "a choice made after the move stays"
+  },
+  {
+   "in": {
+    "claudeCodeRewrite": "always",
+    "hookAutoAll": false,
+    "settingsVersion": 1
+   },
+   "out": {
+    "claudeCodeRewrite": "always",
+    "hookAutoAll": false,
+    "settingsVersion": 2
+   },
+   "note": "other values stay"
+  },
+  {
+   "in": {
+    "settingsVersion": "2",
+    "hookAutoAll": true
+   },
+   "out": {
+    "settingsVersion": 2,
+    "hookAutoAll": false
+   },
+   "note": "a version in quotes is not a version"
+  },
+  {
+   "in": {
+    "settingsVersion": 3,
+    "claudeCodeRewrite": "prefix"
+   },
+   "out": {
+    "settingsVersion": 3,
+    "claudeCodeRewrite": "prefix"
+   },
+   "note": "a newer file is left alone"
+  }
+ ]
+}

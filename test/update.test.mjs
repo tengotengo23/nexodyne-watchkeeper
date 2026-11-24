@@ -8,25 +8,32 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
+import { generateKeyPairSync, sign as edSign } from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 import { parseVersion, cmpVersion, newestTag, plist, fetchProblem } from '../bin/wk-update.mjs';
+import { manifestBytes, gitChannelFile, cacheWrite, cacheRead, parseUpdate, pinnedKey, fingerprint } from '../bin/channel-lib.mjs';
 
 const here = path.dirname(fileURLToPath(import.meta.url)), root = path.join(here, '..');
 const UPDATE = path.join(root, 'bin', 'wk-update.mjs'), RELEASE = path.join(root, 'bin', 'wk-release.mjs');
 const CUR = JSON.parse(fs.readFileSync(path.join(root, '.claude-plugin', 'plugin.json'), 'utf8')).version;
 const NEXT = (([a, b]) => `${a}.${b + 1}.0`)(parseVersion(CUR));
 const PANEL = 'nexodyne.watchkeeper-panel';
+// P2-272: a follower moves only to a release the developer signed. The tests sign with their own key, pinned in WK_HOME.
+const TESTKEY = generateKeyPairSync('ed25519'), OTHERKEY = generateKeyPairSync('ed25519');
+const pubPem = k => k.publicKey.export({ type: 'spki', format: 'pem' });
 // the files wk-release bumps: public/README.md and the kit's INSTALL.html only where they exist (this repository has both, the public copy neither)
-const ALWAYS = ['.claude-plugin/plugin.json', '.claude-plugin/marketplace.json', 'panel/package.json', 'antigravity/plugins/watchkeeper/plugin.json', 'README.md'];
+const ALWAYS = ['.claude-plugin/plugin.json', '.claude-plugin/marketplace.json', 'panel/package.json', 'antigravity/plugins/watchkeeper/plugin.json', 'server.json', 'README.md'];
 const SOMETIMES = ['public/README.md', 'panel/install/INSTALL.html'];
 const RELEASE_FILES = [...ALWAYS, ...SOMETIMES.filter(f => fs.existsSync(path.join(root, f)))];
 const FILES = spawnSync('git', ['-C', root, 'ls-files', '-z', '--cached', '--others', '--exclude-standard'], { encoding: 'utf8' }).stdout.split('\0').filter(f => f && fs.existsSync(path.join(root, f)));
 
-function world() {
+function world({ pin = true } = {}) {
   const base = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'wk-upd-')));
   const home = path.join(base, 'home'), bare = path.join(base, 'origin.git'), dev = path.join(base, 'dev'), user = path.join(base, 'user');
   fs.mkdirSync(home);
   const env = { ...process.env, HOME: home, WK_HOME: path.join(home, '.wk'), WK_UPDATE_REPO: user, WK_IDE_CLIS: '',
+    // S7: without update.json in git a follower reads the https channel; here a closed local port, so the tests never use the network
+    WK_CHANNEL_URL: 'https://127.0.0.1:9/watchkeeper/channel/',
     WK_GEMINI_PLUGINS: path.join(home, '.gemini', 'config', 'plugins'), WK_SECRET_SCAN: '', GIT_CONFIG_NOSYSTEM: '1',
     GIT_AUTHOR_NAME: 'Test', GIT_AUTHOR_EMAIL: 'test@example.invalid', GIT_COMMITTER_NAME: 'Test', GIT_COMMITTER_EMAIL: 'test@example.invalid' };
   delete env.CLAUDE_PLUGIN_ROOT;
@@ -36,6 +43,7 @@ function world() {
   g(dev, 'init', '-q', '-b', 'main'); g(dev, 'add', '-A'); g(dev, 'commit', '-q', '-m', 'start'); g(dev, 'tag', '-a', `v${CUR}`, '-m', 'start');
   g(dev, 'remote', 'add', 'origin', bare); g(dev, 'push', '-q', 'origin', 'main', '--tags');
   g(base, 'clone', '-q', bare, user);
+  fs.mkdirSync(env.WK_HOME, { recursive: true }); if (pin) fs.writeFileSync(path.join(env.WK_HOME, 'release-key.pub.pem'), pubPem(TESTKEY));
   const w = { base, home, bare, dev, user, env, g,
     head: (d = user) => g(d, 'rev-parse', 'HEAD'),
     run: (args, extra = {}, bin = UPDATE) => spawnSync(process.execPath, [bin, ...args], { env: { ...env, ...extra }, encoding: 'utf8', timeout: 180000 }),
@@ -43,7 +51,7 @@ function world() {
     // the developer releases: the four version places, optional file edits, a commit, an annotated tag, a push
     release(v, edits = {}, { tag = `v${v}`, bump = true } = {}) {
       if (bump) {
-        for (const f of ['.claude-plugin/plugin.json', '.claude-plugin/marketplace.json', 'panel/package.json']) {
+        for (const f of ['.claude-plugin/plugin.json', '.claude-plugin/marketplace.json', 'panel/package.json', 'server.json']) {
           const p = path.join(dev, f); fs.writeFileSync(p, fs.readFileSync(p, 'utf8').replace(/("version"\s*:\s*")\d+\.\d+\.\d+/, `$1${v}`));
         }
         const r = path.join(dev, 'README.md'); fs.writeFileSync(r, fs.readFileSync(r, 'utf8').replace(/^(# .*· v)\d+\.\d+\.\d+/, `$1${v}`));
@@ -53,6 +61,14 @@ function world() {
       if (tag) g(dev, 'tag', '-a', tag, '-m', tag);
       g(dev, 'push', '-q', 'origin', 'main', '--tags');
       return g(dev, 'rev-parse', 'HEAD');
+    },
+    // the developer signs a release: release/channel/update.json + .sig on main (over = fields to change, bytes = tamper)
+    sign(v, commit, over = {}, key = TESTKEY, tamper = null) {
+      const d = path.join(dev, 'release', 'channel'); fs.mkdirSync(d, { recursive: true });
+      const bytes = manifestBytes({ schema: 1, type: 'update', product: 'watchkeeper', version: v, tag: `v${v}`, commit, released_at: new Date().toISOString(), notes: '', ...over });
+      fs.writeFileSync(path.join(d, 'update.json.sig'), edSign(null, bytes, key.privateKey).toString('base64') + '\n');
+      fs.writeFileSync(path.join(d, 'update.json'), tamper ? tamper(bytes) : bytes);
+      g(dev, 'add', '-A'); g(dev, 'commit', '-q', '-m', `sign ${v}`); g(dev, 'push', '-q', 'origin', 'main');
     },
     // an editor's command line: lists and installs extensions in its own state file, and logs every call
     ide(name, installed) {
@@ -74,7 +90,8 @@ console.error('bad call'); process.exit(2);
   };
   return w;
 }
-const done = w => fs.rmSync(w.base, { recursive: true, force: true });
+// maxRetries: a child process can still be closing files in the test's own temp folder (ENOTEMPTY once, 24 Nov 00:04).
+const done = w => fs.rmSync(w.base, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 });
 
 test('versions compare as numbers and the newest release tag wins', () => {
   assert.equal(cmpVersion('0.10.0', '0.9.9'), 1);
@@ -107,7 +124,7 @@ test('a new release: fast-forward, Gemini skill re-rendered, the panel reinstall
     assert.equal(inst.status, 0, inst.stderr);
     const a = w.ide('editor-a', { [PANEL]: CUR, 'other.ext': '1.0.0' }), b = w.ide('editor-b', { 'other.ext': '2.0.0' });
     const skill = 'antigravity/plugins/watchkeeper/skills/ask-claude/SKILL.md';
-    const tagged = w.release(NEXT, { [skill]: '\nRelease test line.\n' });
+    const tagged = w.release(NEXT, { [skill]: '\nRelease test line.\n' }); w.sign(NEXT, tagged);
     const r = w.run(['check'], { WK_IDE_CLIS: `${a.cli}:${b.cli}` });
     assert.equal(r.status, 0, r.stdout + r.stderr);
     assert.equal(w.head(), tagged, 'moved to the release');
@@ -142,7 +159,7 @@ test('plain commits on main do not move this computer', () => {
 test('uncommitted changes stop the move and stay as they are', () => {
   const w = world();
   try {
-    const before = w.head(); w.release(NEXT);
+    const before = w.head(); w.sign(NEXT, w.release(NEXT));
     fs.appendFileSync(path.join(w.user, 'README.md'), '\nmy note\n');
     const r = w.run(['check']);
     assert.equal(r.status, 1);
@@ -159,7 +176,7 @@ test('own commits: no fast-forward, the folder needs a hand', () => {
   try {
     fs.appendFileSync(path.join(w.user, 'README.md'), '\nlocal\n');
     w.g(w.user, 'commit', '-q', '-am', 'local'); const mine = w.head();
-    w.release(NEXT);
+    w.sign(NEXT, w.release(NEXT));
     const r = w.run(['check']);
     assert.equal(r.status, 1); assert.equal(w.head(), mine); assert.match(w.rec().problem, /own commits/);
   } finally { done(w); }
@@ -168,7 +185,7 @@ test('own commits: no fast-forward, the folder needs a hand', () => {
 test('a broken release is not installed', () => {
   const w = world();
   try {
-    const before = w.head(); w.release(NEXT, { 'bin/wk-ledger.mjs': '\nthis is not ( javascript\n' });
+    const before = w.head(); w.sign(NEXT, w.release(NEXT, { 'bin/wk-ledger.mjs': '\nthis is not ( javascript\n' }));
     const r = w.run(['check']);
     assert.equal(r.status, 1); assert.equal(w.head(), before);
     assert.match(w.rec().problem, /broken file \(bin\/wk-ledger\.mjs\)/);
@@ -178,7 +195,7 @@ test('a broken release is not installed', () => {
 test('a tag whose files carry another version is refused', () => {
   const w = world();
   try {
-    const before = w.head(); w.release('9.9.9', { 'README.md': '\nx\n' }, { bump: false });
+    const before = w.head(); w.sign('9.9.9', w.release('9.9.9', { 'README.md': '\nx\n' }, { bump: false }));
     const r = w.run(['check']);
     assert.equal(r.status, 1); assert.equal(w.head(), before);
     assert.match(w.rec().problem, new RegExp(`v9\\.9\\.9 says version ${CUR.replace(/\./g, '\\.')} inside`));
@@ -208,7 +225,7 @@ test('the kill switch pauses the check', () => {
 test('dry run: says what it would do and changes nothing', () => {
   const w = world();
   try {
-    const before = w.head(), a = w.ide('editor-a', { [PANEL]: CUR }); w.release(NEXT);
+    const before = w.head(), a = w.ide('editor-a', { [PANEL]: CUR }); w.sign(NEXT, w.release(NEXT));
     const r = w.run(['check', '--dry-run'], { WK_IDE_CLIS: a.cli });
     assert.equal(r.status, 0, r.stderr);
     assert.match(r.stdout, new RegExp(`Would update to ${NEXT.replace(/\./g, '\\.')}`));
@@ -352,6 +369,7 @@ test('install: a follower goes on the newest release on its own branch; --maker 
   const w = world();
   try {
     const tag = w.head(); w.release(NEXT, { 'README.md': '\nafter the release\n' }, { tag: null, bump: false });
+    w.sign(CUR, tag);   // P2-272: the release must be signed off by the developer (the unsigned case: the next test)
     w.g(w.user, 'pull', '-q', '--ff-only'); const main = w.head();
     assert.notEqual(main, tag, 'this copy came from main, ahead of the release');
     const l = fakeLaunchctl(w);
@@ -372,6 +390,36 @@ test('install: a follower goes on the newest release on its own branch; --maker 
     fs.appendFileSync(path.join(other, 'README.md'), '\nmine\n'); w.g(other, 'commit', '-q', '-am', 'mine'); const mine = w.head(other);
     r = w.run(['install'], { ...l.env, WK_UPDATE_REPO: other });
     assert.match(r.stdout, /own commits/); assert.equal(w.g(other, 'symbolic-ref', '--short', 'HEAD'), 'main'); assert.equal(w.head(other), mine);
+  } finally { done(w); }
+});
+
+test('install (P2-272): a follower is put only on a release the developer signed, never on a bare tag', () => {
+  const w = world();
+  try {
+    const tag = w.head(); w.release(NEXT, { 'README.md': '\nafter the release\n' }, { tag: null, bump: false });
+    w.g(w.user, 'pull', '-q', '--ff-only'); let main = w.head();
+    const l = fakeLaunchctl(w);
+    const noBranch = () => spawnSync('git', ['-C', w.user, 'rev-parse', '-q', '--verify', 'refs/heads/release']).status !== 0;
+    // tag v{CUR} exists but nothing is signed: the folder stays on main, no release branch
+    let r = w.run(['install'], l.env);
+    assert.equal(r.status, 0, r.stdout + r.stderr);
+    assert.match(r.stdout, /waiting for an update signed by the developer/); assert.match(r.stdout, /stays where it is/);
+    assert.equal(w.g(w.user, 'symbolic-ref', '--short', 'HEAD'), 'main'); assert.equal(w.head(), main); assert.ok(noBranch(), 'no release branch on a bare tag');
+    // signed with a key that is not the developer's: still nothing moves
+    w.sign(CUR, tag, {}, OTHERKEY); w.g(w.user, 'pull', '-q', '--ff-only'); main = w.head();
+    r = w.run(['install'], l.env);
+    assert.equal(r.status, 0, r.stdout + r.stderr); assert.match(r.stdout, /not signed by the developer's key/);
+    assert.equal(w.g(w.user, 'symbolic-ref', '--short', 'HEAD'), 'main'); assert.equal(w.head(), main); assert.ok(noBranch());
+    // signed for a commit the tag does not point at: still nothing moves
+    w.sign(CUR, 'a'.repeat(40)); w.g(w.user, 'pull', '-q', '--ff-only'); main = w.head();
+    r = w.run(['install'], l.env);
+    assert.match(r.stdout, /does not point at the commit the developer signed/); assert.equal(w.head(), main); assert.ok(noBranch());
+    // signed off by the developer: now the follower goes on the release, and main is kept
+    w.sign(CUR, tag); w.g(w.user, 'pull', '-q', '--ff-only'); main = w.head();
+    r = w.run(['install'], l.env);
+    assert.match(r.stdout, new RegExp(`branch "release" at v${CUR.replace(/\./g, '\\.')}`));
+    assert.equal(w.g(w.user, 'symbolic-ref', '--short', 'HEAD'), 'release'); assert.equal(w.head(), tag);
+    assert.equal(w.g(w.user, 'rev-parse', 'main'), main, 'main is kept as it was');
   } finally { done(w); }
 });
 
@@ -417,7 +465,7 @@ test('a release tag changed on GitHub is named as such, not as "offline"', () =>
 test('an index.lock older than an hour is named, with what to do', () => {
   const w = world();
   try {
-    w.release(NEXT); const il = path.join(w.user, '.git', 'index.lock'); fs.writeFileSync(il, '');
+    w.sign(NEXT, w.release(NEXT)); const il = path.join(w.user, '.git', 'index.lock'); fs.writeFileSync(il, '');
     let r = w.run(['check']); assert.equal(w.rec().result, 'skipped', 'a fresh lock: next check retries');
     const old = new Date(Date.now() - 2 * 3600e3); fs.utimesSync(il, old, old);
     r = w.run(['check']);
@@ -448,5 +496,159 @@ test('wk-release: a failing test puts the version files back; a running check ho
     assert.notEqual(spawnSync('git', ['-C', w.dev, 'rev-parse', '-q', '--verify', `refs/tags/v${NEXT}`]).status, 0, 'no tag');
     assert.ok(!fs.existsSync(path.join(w.dev, '.git', 'syncprojects.hold')), 'the sync hold is gone');
     assert.ok(!fs.existsSync(lock), 'the update lock is gone');
+  } finally { done(w); }
+});
+
+// P2-272: the signed channel. A follower waits for the developer's signature and refuses anything else.
+const esc = s => s.replace(/\./g, '\\.');
+test('signed updates: an unsigned release waits and nothing moves', () => {
+  const w = world();
+  try {
+    const before = w.head(); w.release(NEXT);
+    const r = w.run(['check']);
+    assert.equal(r.status, 0, r.stdout + r.stderr); assert.equal(w.head(), before);
+    const rec = w.rec(); assert.equal(rec.result, 'up to date'); assert.equal(rec.newest, `v${NEXT}`);
+    assert.match(rec.waiting, new RegExp(`waiting for an update signed by the developer \\(tag v${esc(NEXT)} is newer but not signed off by the developer\\)`));
+  } finally { done(w); }
+});
+
+test('signed updates: a changed byte, a wrong key or another commit is refused and nothing moves', () => {
+  for (const [name, signIt, why] of [
+    ['tampered', (w, c) => w.sign(NEXT, c, {}, TESTKEY, b => Buffer.from(b.toString('utf8').replace('"notes": ""', '"notes": "x"'))), /not signed by the developer's key, so nothing moved/],
+    ['wrong key', (w, c) => w.sign(NEXT, c, {}, OTHERKEY), /not signed by the developer's key, so nothing moved/],
+    ['other commit', (w) => w.sign(NEXT, 'a'.repeat(40)), new RegExp(`tag v${esc(NEXT)} does not point at the commit the developer signed`)],
+    ['no tag', (w, c) => w.sign('9.8.7', c), /signed release v9\.8\.7 has no tag here/],
+  ]) {
+    const w = world();
+    try {
+      const before = w.head(); signIt(w, w.release(NEXT));
+      const r = w.run(['check']);
+      assert.equal(w.head(), before, `${name}: nothing moved`);
+      const rec = w.rec(); assert.equal(rec.result, 'problem', `${name}: ${r.stdout}${r.stderr}`); assert.match(rec.problem, why, name);
+    } finally { done(w); }
+  }
+});
+
+test('signed updates: a missing .sig waits; a valid manifest moves and records the key', () => {
+  const w = world();
+  try {
+    const before = w.head(), c = w.release(NEXT); w.sign(NEXT, c);
+    fs.rmSync(path.join(w.dev, 'release', 'channel', 'update.json.sig'));
+    w.g(w.dev, 'commit', '-q', '-am', 'drop sig'); w.g(w.dev, 'push', '-q', 'origin', 'main');
+    let r = w.run(['check']);
+    assert.equal(r.status, 0, r.stdout + r.stderr); assert.equal(w.head(), before); assert.match(w.rec().waiting, /waiting for an update signed by the developer/);
+    w.sign(NEXT, c);
+    r = w.run(['check']);
+    assert.equal(r.status, 0, r.stdout + r.stderr); assert.equal(w.head(), c);
+    const rec = w.rec(); assert.equal(rec.result, 'updated'); assert.deepEqual(rec.signed && rec.signed.commit, c); assert.equal(rec.signed.local, c, 'a private clone checks the signed commit itself (N2)'); assert.match(rec.key, /^[0-9a-f]{4}( [0-9a-f]{4})+$|^[0-9a-f:]+$/);
+  } finally { done(w); }
+});
+
+test('signed updates: the maker never moves by itself, even with a signed release', () => {
+  const w = world();
+  try {
+    w.g(w.user, 'config', 'wk.role', 'maker');
+    const before = w.head(); w.sign(NEXT, w.release(NEXT));
+    const r = w.run(['check']);
+    assert.equal(r.status, 0, r.stdout + r.stderr); assert.equal(w.head(), before);
+    assert.match(w.rec().waiting, /this computer makes releases; it does not move by itself/);
+  } finally { done(w); }
+});
+
+// ---------------------------------------------------------------- P2-272 part C: the security review's fixes
+const KEYFILE = ['release', 'release-key.pub'];
+const pinAt = w => path.join(w.env.WK_HOME, 'release-key.pub.pem');
+// the developer commits the release key into the repository and pushes it
+const commitKey = (w, key = TESTKEY) => { fs.mkdirSync(path.join(w.dev, 'release'), { recursive: true }); fs.writeFileSync(path.join(w.dev, ...KEYFILE), pubPem(key)); w.g(w.dev, 'add', '-A'); w.g(w.dev, 'commit', '-q', '-m', 'key'); w.g(w.dev, 'push', '-q', 'origin', 'main'); };
+
+test('M1: a tag named origin/main does not shadow the branch the signed channel is read from', () => {
+  const w = world();
+  try {
+    const c = w.release(NEXT); w.sign(NEXT, c);
+    const real = fs.readFileSync(path.join(w.dev, 'release', 'channel', 'update.json'));
+    // a commit off main with a different update.json, tagged literally "origin/main"
+    w.g(w.dev, 'switch', '-q', '-c', 'evil');
+    fs.writeFileSync(path.join(w.dev, 'release', 'channel', 'update.json'), manifestBytes({ schema: 1, type: 'update', product: 'watchkeeper', version: '9.9.9', tag: 'v9.9.9', commit: 'b'.repeat(40), released_at: '', notes: 'planted' }));
+    w.g(w.dev, 'commit', '-q', '-am', 'planted'); w.g(w.dev, 'tag', 'origin/main'); w.g(w.dev, 'push', '-q', 'origin', 'refs/tags/origin/main');
+    w.g(w.dev, 'switch', '-q', 'main');
+    w.g(w.user, 'fetch', '-q', '--tags', 'origin');
+    assert.ok(w.g(w.user, 'tag', '-l', 'origin/main'), 'the planted tag is in the follower clone');
+    const got = gitChannelFile(w.user, 'update.json');
+    assert.ok(got, 'the channel file is read'); assert.equal(got.bytes.toString('utf8'), real.toString('utf8'), 'the real branch is read, not the tag');
+    const r = w.run(['check']);
+    assert.equal(r.status, 0, r.stdout + r.stderr); assert.equal(w.rec().result, 'updated', r.stdout); assert.equal(w.head(), c);
+  } finally { done(w); }
+});
+
+test('M2: on first use the key is pinned from the working tree only, then a changed working-tree key is ignored', () => {
+  const w = world({ pin: false });
+  try {
+    commitKey(w); w.g(w.user, 'pull', '-q', '--ff-only');
+    const c = w.release(NEXT); w.sign(NEXT, c);
+    assert.ok(!fs.existsSync(pinAt(w)), 'nothing pinned yet');
+    const r = w.run(['check']);
+    assert.equal(r.status, 0, r.stdout + r.stderr);
+    assert.equal(fs.readFileSync(pinAt(w), 'utf8'), pubPem(TESTKEY), 'the working-tree key is pinned');
+    assert.equal(fs.statSync(pinAt(w)).mode & 0o777, 0o644);
+    const rec = w.rec(); assert.equal(rec.result, 'updated', r.stdout); assert.equal(rec.key, fingerprint(pubPem(TESTKEY))); assert.equal(w.head(), c);
+    // someone swaps the key in the folder: the pin stays
+    fs.writeFileSync(path.join(w.user, ...KEYFILE), pubPem(OTHERKEY));
+    const k = pinnedKey({ home: w.env.WK_HOME, repo: w.user, log: () => {} });
+    assert.equal(k.pem, pubPem(TESTKEY)); assert.equal(k.pinnedNow, false);
+  } finally { done(w); }
+});
+
+test('M2: a key that is only on origin/main (not in the working tree) is not pinned; the check waits', () => {
+  const w = world({ pin: false });
+  try {
+    commitKey(w); const before = w.head();
+    const c = w.release(NEXT); w.sign(NEXT, c);
+    const r = w.run(['check']);
+    assert.equal(r.status, 0, r.stdout + r.stderr);
+    assert.ok(!fs.existsSync(pinAt(w)), 'no key pinned from git');
+    assert.equal(w.head(), before); assert.match(w.rec().waiting, /waiting for an update signed by the developer/);
+  } finally { done(w); }
+});
+
+test('M2: a pin other users can change, or a symbolic link, is refused with a problem and nothing moves', () => {
+  for (const [name, spoil, why] of [
+    ['group-writable', w => fs.chmodSync(pinAt(w), 0o666), /can be changed by other users \(mode 666\)/],
+    ['symbolic link', w => { const real = path.join(w.base, 'elsewhere.pem'); fs.renameSync(pinAt(w), real); fs.symlinkSync(real, pinAt(w)); }, /is a symbolic link/],
+  ]) {
+    const w = world();
+    try {
+      const before = w.head(); w.sign(NEXT, w.release(NEXT)); spoil(w);
+      const r = w.run(['check']);
+      assert.equal(w.head(), before, `${name}: nothing moved`);
+      const rec = w.rec(); assert.equal(rec.result, 'problem', `${name}: ${r.stdout}${r.stderr}`); assert.match(rec.problem, why, name); assert.match(rec.problem, /so nothing moved/);
+    } finally { done(w); }
+  }
+});
+
+test('S5: install from main will not go back below a signed release this computer has already seen', () => {
+  const w = world();
+  try {
+    const tag = w.head(); w.release(NEXT, { 'README.md': '\nafter the release\n' }, { tag: null, bump: false });
+    w.sign(CUR, tag); w.g(w.user, 'pull', '-q', '--ff-only'); const main = w.head();
+    // this computer has already verified a signed v{NEXT}
+    const seen = manifestBytes({ schema: 1, type: 'update', product: 'watchkeeper', version: NEXT, tag: `v${NEXT}`, commit: 'c'.repeat(40), released_at: '2026-11-23T12:00:00Z', notes: '' });
+    assert.ok(cacheWrite(w.env.WK_HOME, 'update.json', seen, edSign(null, seen, TESTKEY.privateKey).toString('base64'), pubPem(TESTKEY)));
+    const l = fakeLaunchctl(w);
+    const r = w.run(['install'], l.env);
+    assert.equal(r.status, 0, r.stdout + r.stderr);
+    assert.match(r.stdout, new RegExp(`already seen signed release v${esc(NEXT)}; it will not go back to v${esc(CUR)}`));
+    assert.equal(w.g(w.user, 'symbolic-ref', '--short', 'HEAD'), 'main'); assert.equal(w.head(), main);
+    assert.equal(cacheRead(w.env.WK_HOME, 'update.json', pubPem(TESTKEY)).version, NEXT, 'the newer cached release is kept');
+  } finally { done(w); }
+});
+
+test('S6: an update lands exactly on the signed commit, not on whatever main or the tag name says later', () => {
+  const w = world();
+  try {
+    const c = w.release(NEXT); w.sign(NEXT, c);
+    const r = w.run(['check']);
+    assert.equal(r.status, 0, r.stdout + r.stderr); assert.equal(w.rec().result, 'updated');
+    assert.equal(w.head(), c); assert.notEqual(w.head(), w.g(w.user, 'rev-parse', 'refs/remotes/origin/main'), 'main moved on (the signing commit); the folder did not');
+    assert.equal(w.rec().signed.commit, c); assert.equal(w.rec().signed.local, c);
   } finally { done(w); }
 });

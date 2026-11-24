@@ -2,19 +2,19 @@
   "name": "nexodyne",
   "owner": { "name": "Nexodyne" },
   "metadata": {
-    "description": "Watchkeeper for Claude Code: tool guards, a spend ledger for the headless runs it starts, an evidence gate on 'done', a kill switch and a steward you can schedule, with a panel for Antigravity and editors built on VS Code. Keeps its data in local files; sends nothing to Nexodyne; no telemetry."
+    "description": "Watchkeeper unified control plane for Claude Code & Antigravity: fail-closed tool guards, evidence gate on 'done', kill switch, Re-Prompt studio, daily trending GitHub Skills Library sync, Graphify knowledge graphs, and a task queue for Antigravity when Claude limits run out. Local-only; zero telemetry."
   },
   "plugins": [
     {
       "name": "watchkeeper",
       "source": "./",
-      "description": "Guards, a spend ledger and an evidence gate for Claude Code: a lean start-up, path and secret guards, gated mail, publishing, money and purchases, a nudge back on a 'done' with no test behind it, a kill switch, a ledger of the headless runs it starts, and a steward you can schedule that paces itself on your plan's weekly limit. Optional task queue for Gemini in Antigravity. Keeps its data in local files; sends nothing to Nexodyne; no telemetry.",
-      "version": "0.6.3",
+      "description": "Unified full-IDE Watchkeeper control plane for Claude Code and Antigravity: fail-closed path & secret guards, evidence gate, kill switch, integrated Re-Prompt studio (rp:* / raw:), Running Tasks cockpit, daily trending GitHub Skills Library sync, Graphify knowledge graphs, and a task queue for Antigravity when Claude limits run out. Local-only; zero telemetry.",
+      "version": "3.2.1",
       "author": { "name": "Nexodyne" },
       "homepage": "https://github.com/tengotengo23/nexodyne-watchkeeper",
       "repository": "https://github.com/tengotengo23/nexodyne-watchkeeper",
       "license": "MIT",
-      "keywords": ["claude-code", "hooks", "guard", "tokens", "cost", "ledger", "evidence", "subagents", "antigravity", "gemini"],
+      "keywords": ["claude-code", "hooks", "guard", "tokens", "cost", "ledger", "evidence", "subagents", "antigravity", "gemini", "graphify", "re-prompt", "skill-vault", "orchestrator"],
       "category": "productivity"
     }
   ]

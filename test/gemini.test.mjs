@@ -116,7 +116,7 @@ test('the kill switch stops take, done and merge', () => {
   const w = world();
   const id = w.add('Something to do');
   fs.mkdirSync(w.wk, { recursive: true }); fs.writeFileSync(path.join(w.wk, 'KILL'), '');
-  const t = w.task(['take']); assert.equal(t.status, 3); assert.match(t.stdout, /kill switch is on/); assert.equal(w.meta(id).status, 'queued');
+  const t = w.task(['take']); assert.equal(t.status, 3); assert.match(t.stdout, /Stop switch is on/); assert.equal(w.meta(id).status, 'queued');
   fs.rmSync(path.join(w.wk, 'KILL'));
   assert.equal(w.task(['take']).status, 0);
   fs.writeFileSync(path.join(w.wt(id), 'a.txt'), 'changed\n');
@@ -147,6 +147,17 @@ test('two sessions never take the same task', async () => {
   assert.ok(rs.filter(r => r.code !== 0).every(r => r.code === 5 || /already taken/.test(r.out)), JSON.stringify(rs));
   assert.equal(w.meta(id).status, 'taken');
   assert.equal(w.task(['take', '--id', id]).status, 1, 'taking it by id again is refused');
+});
+
+test('scope globs: "**" covers nested folders, "*" stays inside one folder name, "?" is one character', () => {
+  const w = world();
+  const id = w.add('Nested change', ['--allow', 'src/**', '--allow', 'docs/*.md', '--allow', 'v?.txt']);
+  w.task(['take']);
+  const put = (rel) => { fs.mkdirSync(path.dirname(path.join(w.wt(id), rel)), { recursive: true }); fs.writeFileSync(path.join(w.wt(id), rel), 'x\n'); };
+  ['src/a/b/deep.js', 'docs/ok.md', 'docs/sub/no.md', 'v1.txt', 'v10.txt'].forEach(put);
+  const d = w.task(['done', id]); assert.equal(d.status, 1);
+  const v = JSON.parse(fs.readFileSync(path.join(w.wk, 'tasks', id, 'verify.json'), 'utf8'));
+  assert.deepEqual(v.out_of_scope.sort(), ['docs/sub/no.md', 'v10.txt']);
 });
 
 test('out of scope: a file outside the allowed globs, or one gates.json excludes, is not merged', () => {
@@ -367,7 +378,7 @@ test('the guard adapter denies a force push and cat .env, passes npm test, and a
 
 test('the Stop logger appends one line, keeps the last 500 and lets Gemini stop', () => {
   const w = world();
-  const stop = input => { const r = w.run('wk-gemini-log.mjs', [], { input }); assert.equal(r.status, 0); assert.deepEqual(JSON.parse(r.stdout), { decision: 'stop' }); };
+  const stop = input => { const r = w.run('wk-gemini-log.mjs', [], { input }); assert.equal(r.status, 0); assert.deepEqual(JSON.parse(r.stdout), {}); };
   stop(JSON.stringify({ conversationId: 'conv-9', workspacePaths: ['/Users/x/Projects/app'], modelName: 'gemini-4-carbon-high', hookEventName: 'Stop', executionNum: 1, terminationReason: 'NO_TOOL_CALL', fullyIdle: true }));
   const f = path.join(w.wk, 'gemini', 'sessions.jsonl');
   const rows = w.lines(f); assert.equal(rows.length, 1);

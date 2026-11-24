@@ -1,6 +1,8 @@
 # Phone control (not usable yet)
 
-Phone control needs a companion server that is not published yet. These notes describe the Mac side, which is off by default.
+Phone control needs a companion server that is not published yet. These notes describe the Mac side, which is off by default. README.md (Phone control) says the same in short.
+
+The phone page shows the same status line as the panel (`statusLine`, `statusState` in the pushed state; they survive the bridge's size cut).
 
 With such a server, you can see the Watchkeeper panel on your phone (a page the server serves) and act on it: answer questions, decide suggestions, send notes, start and stop Claude jobs. The Mac is the judge. The server only stores and forwards; it never holds a phone key's trust and never runs anything.
 

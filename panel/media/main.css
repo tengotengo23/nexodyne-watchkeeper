@@ -1,13 +1,13 @@
-/* The W panel (P2-205). Theme colours come from the IDE; one accent (gold) for the W and the pace bar. */
-:root { --wk-accent: #ccaa3d; --wk-accent-soft: rgba(204, 170, 61, 0.22); }
-body.vscode-light { --wk-accent: #8b6e00; --wk-accent-soft: rgba(139, 110, 0, 0.18); }
+/* The W panel (P2-205; P2-272 phase 3). Every colour comes from the IDE theme (VS Code CSS variables only).
+   Sizes in rem (1px borders excepted), so the owner's larger fonts and zoom scale everything. */
+:root { --wk-accent: var(--vscode-focusBorder); --wk-accent-soft: var(--vscode-list-inactiveSelectionBackground, transparent); }
 body.vscode-high-contrast, body.vscode-high-contrast-light { --wk-accent: var(--vscode-contrastActiveBorder, var(--vscode-focusBorder)); --wk-accent-soft: transparent; }
 
 *, *::before, *::after { box-sizing: border-box; }
 html, body { margin: 0; padding: 0; }
 body {
   font-family: var(--vscode-font-family, system-ui, sans-serif);
-  font-size: var(--vscode-font-size, 13px);
+  font-size: var(--vscode-font-size, 0.8125rem);
   color: var(--vscode-foreground);
   background: var(--vscode-sideBar-background, transparent);
   line-height: 1.45;
@@ -20,7 +20,7 @@ code { font-family: var(--vscode-editor-font-family, monospace); font-size: 0.92
 h2 {
   font-size: 0.82em; font-weight: 600; letter-spacing: 0.05em; text-transform: uppercase;
   margin: 1.6em 0 0.6em; padding-top: 0.9em;
-  border-top: 1px solid var(--vscode-sideBarSectionHeader-border, var(--vscode-widget-border, rgba(128, 128, 128, 0.25)));
+  border-top: 1px solid var(--vscode-sideBarSectionHeader-border, var(--vscode-widget-border, transparent));
   color: var(--vscode-sideBarTitle-foreground, var(--vscode-foreground));
 }
 h3 { font-size: 0.92em; font-weight: 600; margin: 1.1em 0 0.4em; }
@@ -47,7 +47,7 @@ p { margin: 0.35em 0; }
 .big-num { font-size: 2.1em; font-weight: 600; line-height: 1.1; }
 .big-label { color: var(--vscode-descriptionForeground); }
 .bar { display: block; width: 100%; height: 1.15em; overflow: visible; }
-.bar-track { fill: var(--vscode-input-background, rgba(128, 128, 128, 0.18)); stroke: var(--vscode-widget-border, rgba(128, 128, 128, 0.4)); stroke-width: 1; vector-effect: non-scaling-stroke; }
+.bar-track { fill: var(--vscode-input-background, transparent); stroke: var(--vscode-widget-border, transparent); stroke-width: 1; vector-effect: non-scaling-stroke; }
 .bar-fill { fill: var(--wk-accent); }
 .mark { stroke: var(--vscode-foreground); vector-effect: non-scaling-stroke; }
 .mark-line { stroke-width: 2; stroke-dasharray: 3 2; }
@@ -66,7 +66,7 @@ dd { margin: 0; font-weight: 600; }
 
 /* Rows, sessions, members */
 .rows, .sessions, .members { list-style: none; margin: 0; padding: 0; }
-.rows > li { display: flex; flex-direction: column; padding: 0.35em 0; border-bottom: 1px solid var(--vscode-widget-border, rgba(128, 128, 128, 0.18)); min-width: 0; }
+.rows > li { display: flex; flex-direction: column; padding: 0.35em 0; border-bottom: 1px solid var(--vscode-widget-border, transparent); min-width: 0; }
 .rows > li:last-child { border-bottom: 0; }
 ol.rows { counter-reset: none; }
 .row-main { min-width: 0; }
@@ -74,17 +74,17 @@ ol.rows { counter-reset: none; }
 .row-action { display: block; margin-top: 0.3em; }
 .area { font-weight: 600; }
 .item-id { font-variant-numeric: tabular-nums; margin-left: 0.3em; }
-.session { border: 1px solid var(--vscode-widget-border, rgba(128, 128, 128, 0.25)); border-radius: 4px; margin: 0.45em 0; min-width: 0; }
+.session { border: 1px solid var(--vscode-widget-border, transparent); border-radius: 0.25rem; margin: 0.45em 0; min-width: 0; }
 .session summary { cursor: pointer; padding: 0.45em 0.6em; list-style-position: outside; margin-left: 1em; }
 .session summary::marker { color: var(--vscode-descriptionForeground); }
 .s-title { display: block; font-weight: 600; }
 .members { padding: 0 0.6em 0.5em 1.6em; }
-.member { display: flex; flex-direction: column; padding: 0.35em 0 0.35em 0.6em; border-left: 2px solid var(--vscode-widget-border, rgba(128, 128, 128, 0.35)); margin: 0.25em 0; min-width: 0; }
+.member { display: flex; flex-direction: column; padding: 0.35em 0 0.35em 0.6em; border-left: 0.125rem solid var(--vscode-widget-border, transparent); margin: 0.25em 0; min-width: 0; }
 .member-running { border-left-color: var(--wk-accent); }
 .member.more { color: var(--vscode-descriptionForeground); font-size: 0.9em; }
 .role { font-size: 0.78em; font-weight: 700; letter-spacing: 0.04em; text-transform: uppercase; color: var(--vscode-descriptionForeground); }
 .role-main { color: var(--vscode-foreground); }
-.badge { display: inline-block; font-size: 0.85em; font-weight: 600; padding: 0 0.4em; border: 1px solid var(--vscode-widget-border, rgba(128, 128, 128, 0.45)); border-radius: 3px; color: var(--vscode-foreground); }
+.badge { display: inline-block; font-size: 0.85em; font-weight: 600; padding: 0 0.4em; border: 1px solid var(--vscode-widget-border, transparent); border-radius: 0.1875rem; color: var(--vscode-foreground); }
 .clamp { display: -webkit-box; -webkit-line-clamp: 4; -webkit-box-orient: vertical; overflow: hidden; }
 
 /* Waiting for you (P2-223): one calm list; every note sits under the buttons it belongs to */
@@ -92,9 +92,12 @@ ol.rows { counter-reset: none; }
 .wait-title { font-weight: 600; margin: 0.1em 0; }
 .wait-text { margin: 0.1em 0; }
 .wait-detail { white-space: pre-line; }
-.wait-rec { margin: 0.15em 0; padding-left: 0.6em; border-left: 2px solid var(--wk-accent); }
+.wait-rec { margin: 0.15em 0; padding-left: 0.6em; border-left: 0.125rem solid var(--wk-accent); }
 .rec-label { font-weight: 600; }
 .wait .actions { margin: 0.35em 0 0.1em; }
+.wait-msg { margin: 0.3em 0 0; font-size: 0.92rem; }
+.wait-msg:empty { display: none; }
+.wait-msg-error { color: var(--vscode-editorWarning-foreground, var(--vscode-foreground)); font-weight: 600; }
 .confirm-note { margin: 0.2em 0 0; font-size: 0.92em; font-weight: 600; color: var(--vscode-editorWarning-foreground, var(--vscode-foreground)); }
 .answer-box { margin: 0.35em 0 0.1em; }
 .answer-box textarea { min-height: 4.2em; }
@@ -113,17 +116,17 @@ ol.rows { counter-reset: none; }
 
 /* Input */
 .label { display: block; font-weight: 600; margin-bottom: 0.3em; }
-input[type="text"], input[type="number"], select {
+input[type="text"], input[type="number"], input[type="search"], select {
   display: block; width: 100%; max-width: 100%; margin-bottom: 0.6em;
   font: inherit; color: var(--vscode-input-foreground); background: var(--vscode-input-background);
-  border: 1px solid var(--vscode-input-border, var(--vscode-widget-border, rgba(128, 128, 128, 0.45))); border-radius: 2px; padding: 0.3em 0.5em;
+  border: 1px solid var(--vscode-input-border, var(--vscode-widget-border, transparent)); border-radius: 0.125rem; padding: 0.3em 0.5em;
 }
-select { color: var(--vscode-dropdown-foreground, var(--vscode-input-foreground)); background: var(--vscode-dropdown-background, var(--vscode-input-background)); border-color: var(--vscode-dropdown-border, var(--vscode-input-border, var(--vscode-widget-border, rgba(128, 128, 128, 0.45)))); text-overflow: ellipsis; }
+select { color: var(--vscode-dropdown-foreground, var(--vscode-input-foreground)); background: var(--vscode-dropdown-background, var(--vscode-input-background)); border-color: var(--vscode-dropdown-border, var(--vscode-input-border, var(--vscode-widget-border, transparent))); text-overflow: ellipsis; }
 #task-text { margin-bottom: 0.6em; }
 textarea {
   display: block; width: 100%; max-width: 100%; min-height: 5.5em; resize: vertical;
   font: inherit; color: var(--vscode-input-foreground); background: var(--vscode-input-background);
-  border: 1px solid var(--vscode-input-border, var(--vscode-widget-border, rgba(128, 128, 128, 0.45))); border-radius: 2px; padding: 0.4em 0.5em;
+  border: 1px solid var(--vscode-input-border, var(--vscode-widget-border, transparent)); border-radius: 0.125rem; padding: 0.4em 0.5em;
 }
 .count { font-size: 0.85em; min-height: 1.2em; margin: 0.15em 0; }
 .actions { display: flex; flex-wrap: wrap; gap: 0.5em; margin: 0.4em 0; }
@@ -147,17 +150,17 @@ textarea {
 
 /* Buttons */
 .btn {
-  font: inherit; cursor: pointer; border-radius: 2px; padding: 0.3em 0.8em; max-width: 100%; text-align: center;
+  font: inherit; cursor: pointer; border-radius: 0.125rem; padding: 0.3em 0.8em; max-width: 100%; text-align: center;
   color: var(--vscode-button-foreground); background: var(--vscode-button-background);
   border: 1px solid var(--vscode-button-border, transparent);
 }
 .btn:hover { background: var(--vscode-button-hoverBackground, var(--vscode-button-background)); }
-.btn-secondary { color: var(--vscode-button-secondaryForeground, var(--vscode-foreground)); background: var(--vscode-button-secondaryBackground, transparent); border-color: var(--vscode-button-border, var(--vscode-widget-border, rgba(128, 128, 128, 0.45))); }
+.btn-secondary { color: var(--vscode-button-secondaryForeground, var(--vscode-foreground)); background: var(--vscode-button-secondaryBackground, transparent); border-color: var(--vscode-button-border, var(--vscode-widget-border, transparent)); }
 .btn-secondary:hover { background: var(--vscode-button-secondaryHoverBackground, var(--vscode-toolbar-hoverBackground, transparent)); }
 .btn-small { font-size: 0.9em; padding: 0.15em 0.6em; }
 .btn:disabled { opacity: 0.65; cursor: default; }
 :focus { outline: none; }
-:focus-visible, summary:focus-visible, textarea:focus, input:focus, select:focus { outline: 1px solid var(--vscode-focusBorder); outline-offset: 2px; }
+:focus-visible, summary:focus-visible, textarea:focus, input:focus, select:focus { outline: 1px solid var(--vscode-focusBorder); outline-offset: 0.125rem; }
 
 /* Movement: a short fade, the same in both motion modes (the owner uses Reduce Motion; fades, never off). */
 .fade { animation: wk-fade 240ms ease-out; }
@@ -168,3 +171,295 @@ textarea {
 }
 
 [hidden] { display: none !important; }
+.tab-off { display: none !important; }
+
+/* v0.8.0: Full-IDE Workspace, 4 Tabs, Re-Prompt Split, Skills Library Cards & Carbon High Badges */
+.wk-only-full { display: none; }
+body.wk-full-ide .wk-only-full { display: inline-block; }
+body.wk-full-ide .wk-only-sidebar { display: none; }
+body.wk-full-ide { background: var(--vscode-editor-background, var(--vscode-sideBar-background, transparent)); }
+body.wk-full-ide main { padding: 1em 1.6em 3em; }
+
+.wk-shell { display: block; min-width: 0; }
+.wk-rail { display: block; min-width: 0; margin: 0.6rem 0 0.9rem; }
+.wk-canvas { min-width: 0; }
+
+.rp-split { display: flex; flex-direction: column; gap: 0.75em; min-width: 0; }
+.rp-col { min-width: 0; }
+.rp-row { display: grid; grid-template-columns: repeat(auto-fit, minmax(7.5em, 1fr)); gap: 0.5em; }
+.rp-row > div { min-width: 0; }
+.skills-bar { display: flex; flex-direction: column; gap: 0.35em; margin-bottom: 0.5em; }
+.skills-grid { list-style: none; padding: 0; margin: 0.5em 0; display: flex; flex-direction: column; gap: 0.5em; }
+.skill-card {
+  border: 1px solid var(--vscode-widget-border, transparent);
+  border-radius: 0.25rem; padding: 0.55em 0.7em; min-width: 0;
+  background: var(--vscode-editorWidget-background, transparent);
+}
+.skill-top { display: flex; flex-wrap: wrap; align-items: center; gap: 0.3em; margin-bottom: 0.2em; }
+.skill-name { font-weight: 600; overflow-wrap: anywhere; }
+.badge-accent { border-color: var(--wk-accent); color: var(--wk-accent); }
+.orch-headline { font-weight: 600; }
+.orch-out {
+  margin: 0.6em 0; padding: 0.65em 0.8em; max-height: 24em; overflow: auto;
+  border: 1px solid var(--vscode-widget-border, transparent);
+  border-radius: 0.25rem; font-family: var(--vscode-editor-font-family, monospace);
+  font-size: 0.9em; white-space: pre-wrap; overflow-wrap: anywhere; max-width: 100%;
+  background: var(--vscode-textCodeBlock-background, transparent);
+}
+.btn { white-space: normal; overflow-wrap: anywhere; }
+
+@media (min-width: 50rem) {
+  .wk-shell {
+    display: grid; grid-template-columns: 16rem minmax(0, 1fr); gap: 1.4em; align-items: start;
+  }
+  .wk-shell.rail-closed { grid-template-columns: auto minmax(0, 1fr); }
+  .wk-rail {
+    margin: 0; position: sticky; top: 0.8em;
+    max-height: calc(100vh - 3em); overflow-y: auto; padding-right: 0.9em;
+    border-right: 1px solid var(--vscode-widget-border, transparent);
+  }
+  body.wk-full-ide .rp-split { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 1.2em; }
+  body.wk-full-ide .skills-bar { display: grid; grid-template-columns: minmax(0, 1fr) 14em auto; gap: 0.6em; align-items: start; }
+  body.wk-full-ide .skills-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(15rem, 1fr)); gap: 0.7em; }
+  body.wk-full-ide .confirm-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 0.6em; }
+}
+
+/* v2.1.0 Conversational Sessions Sidebar, Confirmation Card, Mixed-Model Thinking & Badges */
+.rail-head { display: flex; align-items: center; justify-content: space-between; gap: 0.5em; margin-bottom: 0.45em; }
+.rail-head h3 { margin: 0; }
+.rail-group { margin: 0.6em 0; }
+.rail-group h4 { margin: 0.45em 0 0.25em; font-size: 0.78em; text-transform: uppercase; letter-spacing: 0.05em; color: var(--vscode-descriptionForeground); }
+.rail-list { list-style: none; padding: 0; margin: 0; display: flex; flex-direction: column; gap: 0.25em; }
+/* P3 S2: the title gets the full width (two lines at most); badge, meta and the action sit on the line below. */
+.rail-item { display: flex; flex-direction: column; align-items: stretch; gap: 0.1em; border-radius: 0.25rem; border: 1px solid transparent; min-width: 0; padding-bottom: 0.2em; }
+.rail-item-active { border-color: var(--wk-accent); background: var(--wk-accent-soft); }
+.rail-btn {
+  flex: 1 1 auto; min-width: 0; text-align: left; font: inherit; cursor: pointer; background: transparent;
+  border: 0; padding: 0.35em 0.45em; color: var(--vscode-foreground); border-radius: 0.25rem;
+}
+.rail-btn:hover { background: var(--vscode-list-hoverBackground, transparent); }
+.row-title { display: flex; align-items: flex-start; gap: 0.3em; min-width: 0; }
+.row-title-text {
+  min-width: 0; overflow: hidden; overflow-wrap: anywhere;
+  display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; line-clamp: 2;
+}
+.row-sub { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 0.2em 0.5em; padding: 0 0.45em; min-width: 0; }
+.row-sub .row-meta { display: inline; min-width: 0; overflow-wrap: anywhere; }
+.row-actions { display: inline-flex; flex-wrap: wrap; gap: 0.3em; align-items: center; }
+.rail-confirm { margin: 0.3em 0.45em 0.2em; padding: 0.4em 0.55em; border-left: 0.1875rem solid var(--vscode-errorForeground, var(--wk-accent)); background: var(--vscode-editorWidget-background, transparent); border-radius: 0.1875rem; }
+.rail-confirm-q { margin: 0 0 0.35em; overflow-wrap: anywhere; }
+.rail-note { margin: 0.25em 0.45em 0; font-size: 0.9em; color: var(--vscode-editorWarning-foreground, var(--vscode-foreground)); overflow-wrap: anywhere; }
+.composer-note { margin: 0.35em 0 0; }
+.btn-danger { color: var(--vscode-button-foreground); background: var(--vscode-errorForeground, var(--vscode-button-background)); border-color: transparent; }
+.btn-danger:hover { filter: brightness(1.08); }
+.rail-del {
+  flex: none; font: inherit; cursor: pointer; background: transparent; border: 0; color: var(--vscode-descriptionForeground);
+  padding: 0 0.4em; border-radius: 0.1875rem; opacity: 0.7;
+}
+.rail-del:hover { opacity: 1; color: var(--vscode-errorForeground); }
+.rail-foot { margin-top: 0.75em; padding-top: 0.55em; border-top: 1px solid var(--vscode-widget-border, transparent); }
+
+.chat-thread { display: flex; flex-direction: column; gap: 0.65em; min-width: 0; }
+.chat-welcome {
+  border: 1px dashed var(--vscode-widget-border, transparent); border-radius: 0.375rem; padding: 0.9em 1em;
+  background: var(--vscode-editorWidget-background, transparent);
+}
+.chat-welcome h3 { margin-top: 0; }
+.chat-bar {
+  display: flex; flex-wrap: wrap; align-items: flex-start; justify-content: space-between; gap: 0.5em;
+  padding-bottom: 0.5em; border-bottom: 1px solid var(--vscode-widget-border, transparent);
+}
+.chat-pill-row, .tool-chips, .skill-chips-row { display: flex; flex-wrap: wrap; gap: 0.3em; margin: 0.3em 0; align-items: center; }
+.chat-msgs { display: flex; flex-direction: column; gap: 0.8em; min-width: 0; }
+.chat-turn { display: flex; flex-direction: column; gap: 0.45em; min-width: 0; }
+.chat-bubble {
+  border: 1px solid var(--vscode-widget-border, transparent); border-radius: 0.375rem; padding: 0.55em 0.75em; min-width: 0;
+  background: var(--vscode-editorWidget-background, transparent);
+}
+.chat-user { border-left: 0.1875rem solid var(--wk-accent); background: var(--wk-accent-soft); }
+.chat-error { border-left: 0.1875rem solid var(--vscode-errorForeground, var(--vscode-editorError-foreground)); }
+.chat-meta { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: 0.4em; font-size: 0.85em; margin-bottom: 0.25em; color: var(--vscode-descriptionForeground); }
+.chat-pre { margin: 0; font: inherit; white-space: pre-wrap; overflow-wrap: anywhere; max-width: 100%; }
+
+.chat-confirm-card {
+  border: 1px solid var(--wk-accent); border-radius: 0.375rem; padding: 0.75em 0.85em; min-width: 0;
+  background: var(--vscode-editorWidget-background, transparent);
+}
+.confirm-head { display: flex; flex-wrap: wrap; align-items: center; gap: 0.4em; margin-bottom: 0.55em; }
+.confirm-title { font-weight: 700; display: inline-flex; align-items: center; }
+.confirm-spec { font-family: var(--vscode-editor-font-family, monospace); font-size: 0.9em; margin-bottom: 0.5em; }
+.confirm-grid { display: flex; flex-direction: column; gap: 0.4em; margin-bottom: 0.45em; }
+.confirm-grid > div { min-width: 0; }
+.confirm-skills { margin-bottom: 0.45em; }
+.confirm-skills-edit { margin-top: 0.25em; font-size: 0.9em; }
+.confirm-summary, .gf-details { margin: 0.25em 0; font-size: 0.9em; }
+.confirm-summary summary, .gf-details summary, .think-box summary, .composer-opts summary { cursor: pointer; font-weight: 600; color: var(--vscode-descriptionForeground); }
+
+.skill-chip, .tool-chip, .model-badge {
+  display: inline-flex; align-items: center; gap: 0.25em; font-size: 0.8em; font-weight: 600;
+  padding: 0.1em 0.45em; border-radius: 0.1875rem; max-width: 100%; overflow-wrap: anywhere; white-space: normal;
+  border: 1px solid var(--vscode-widget-border, transparent);
+}
+.skill-chip { background: var(--wk-accent-soft); border-color: var(--wk-accent); }
+.chip-x { font: inherit; border: 0; background: transparent; color: inherit; cursor: pointer; padding: 0 0.15em; font-weight: 700; }
+.model-badge-graphify { border-color: var(--vscode-charts-green); color: var(--vscode-charts-green); }
+.model-badge-gemini { border-color: var(--vscode-charts-blue); color: var(--vscode-charts-blue); }
+.model-badge-claude { border-color: var(--vscode-charts-purple); color: var(--vscode-charts-purple); }
+.model-badge-carbon { border-color: var(--wk-accent); color: var(--wk-accent); }
+
+.think-timeline {
+  display: flex; flex-direction: column; gap: 0.35em; padding-left: 0.65em;
+  border-left: 0.125rem solid var(--vscode-widget-border, transparent); min-width: 0;
+}
+.think-step { min-width: 0; }
+.think-head { display: flex; flex-wrap: wrap; align-items: center; gap: 0.35em; }
+.think-label { font-weight: 600; font-size: 0.92em; }
+.think-detail { margin: 0.1em 0; }
+.think-box { margin: 0.15em 0 0.25em; }
+.think-pre {
+  margin: 0.25em 0; padding: 0.45em 0.6em; max-height: 15em; overflow: auto;
+  border-radius: 0.25rem; border: 1px solid var(--vscode-widget-border, transparent);
+  font-family: var(--vscode-editor-font-family, monospace); font-size: 0.85em;
+  white-space: pre-wrap; overflow-wrap: anywhere; max-width: 100%;
+  background: var(--vscode-textCodeBlock-background, transparent);
+}
+
+/* P3 S1: the composer stays in reach at the bottom of the canvas */
+.chat-composer {
+  position: sticky; bottom: 0; z-index: 2; background: var(--vscode-editor-background, var(--vscode-sideBar-background, Canvas));
+  margin-top: 0.8em; padding: 0.6em 0 0.5em;
+  border-top: 1px solid var(--vscode-widget-border, transparent);
+  min-width: 0;
+}
+.composer-bar { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 0.4em 0.8em; margin-top: 0.35em; }
+.chk { display: inline-flex; align-items: center; gap: 0.3em; font-size: 0.9em; cursor: pointer; }
+.composer-opts { margin-top: 0.4em; }
+
+/* P2-272 (B): skill sources waiting for the owner's OK. Small and still; Phase 3 restyles it. */
+.skill-review-box { margin: 0.5rem 0; }
+.skill-review { list-style: none; padding: 0; margin: 0.25rem 0; display: flex; flex-direction: column; gap: 0.4rem; }
+.skill-review-item { display: flex; flex-wrap: wrap; align-items: baseline; gap: 0.4rem; }
+.skill-review-item .actions { display: inline-flex; gap: 0.3rem; }
+
+/* P2-272 phase 3: the frame. Status bar, inline panels and the Ops drawer sit in the flow and push
+   content down: no backdrop, nothing covers text. */
+.wk-statusbar {
+  display: flex; flex-wrap: wrap; align-items: center; gap: 0.4em 0.8em; margin: 0.5em 0 0.4em;
+  padding: 0.35em 0.6em; border: 1px solid var(--vscode-widget-border, transparent); border-radius: 0.25rem;
+  background: var(--vscode-editorWidget-background, transparent); min-width: 0;
+}
+.wk-statusbar:empty { display: none; }
+.wk-status-line { margin: 0; flex: 1 1 12em; min-width: 0; overflow-wrap: anywhere; }
+/* P3-C: the graph once in the bar; the developer's messages keep their line breaks (plain text, escaped) */
+.wk-status-graph { max-width: 100%; white-space: normal; overflow-wrap: anywhere; }
+.channel-body { margin: 0.2em 0 0; white-space: pre-wrap; overflow-wrap: anywhere; }
+.channel-items .channel-item { flex-wrap: wrap; }
+.wk-pill {
+  font: inherit; font-size: 0.9em; cursor: pointer; padding: 0.15em 0.7em; border-radius: 1rem; max-width: 100%;
+  color: var(--vscode-badge-foreground, var(--vscode-foreground)); background: var(--vscode-badge-background, transparent);
+  border: 1px solid var(--vscode-contrastBorder, var(--vscode-focusBorder)); white-space: normal; overflow-wrap: anywhere;
+}
+.wk-pill[aria-expanded="true"], .wk-mode-pill[aria-pressed="false"] {
+  color: var(--vscode-foreground); background: transparent; border-color: var(--vscode-focusBorder);
+}
+.wk-inline-panel, .wk-drawer {
+  margin: 0.5em 0 0.9em; padding: 0.2em 0.9em 0.6em; min-width: 0;
+  border: 1px solid var(--vscode-widget-border, transparent); border-left: 0.1875rem solid var(--wk-accent); border-radius: 0.25rem;
+  background: var(--vscode-editorWidget-background, transparent);
+}
+.wk-drawer-head { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 0.4em; margin-top: 0.5em; }
+.wk-drawer-title { margin: 0; font-weight: 600; }
+.rail-top { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 0.4em; margin-bottom: 0.5em; }
+.rail-h { margin: 0.6em 0 0.25em; font-size: 0.85em; color: var(--vscode-descriptionForeground); }
+.rail-archived, .rail-limits { margin: 0.6em 0 0; }
+.rail-archived > summary, .rail-limits > summary { cursor: pointer; padding: 0.25em 0; }
+.rail-limits { padding-top: 0.5em; border-top: 1px solid var(--vscode-widget-border, transparent); }
+.rail-limits > section { border-top: 0; padding-top: 0.2em; margin-top: 0.3em; }
+.rail-limits h2 { font-size: 1em; }
+.route-pick { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 0.3em; max-width: 100%; }
+.route-pick select { max-width: 100%; width: auto; }
+.label-inline { color: var(--vscode-descriptionForeground); }
+.rp-chips { display: inline-flex; flex-wrap: wrap; gap: 0.25em; min-width: 0; }
+.rp-chips:empty { display: none; }
+.rp-chip {
+  display: inline-flex; align-items: center; gap: 0.2em; padding: 0 0.1em 0 0.45em; border-radius: 0.2rem; max-width: 100%;
+  border: 1px solid var(--wk-accent); background: var(--wk-accent-soft); overflow-wrap: anywhere; font-size: 0.9em;
+}
+.rp-chip-x { font: inherit; cursor: pointer; background: transparent; border: 0; color: var(--vscode-foreground); padding: 0 0.3em; }
+
+/* P2-272 (P3-B): the usage card, prompt badges, Done / Reopen, the re-prompted pill and its read-only drawer. Sizes in rem/em, theme colours. */
+.usage-card { display: flex; flex-direction: column; gap: 0.7em; min-width: 0; }
+.usage-block { min-width: 0; }
+.usage-h { margin: 0 0 0.3em; font-size: 0.9em; }
+.usage-acc { margin: 0 0 0.35em; overflow-wrap: anywhere; }
+.usage-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 0.35em; }
+/* the label keeps whole words (break-word, not anywhere, so its min-content is a word, never one letter); a long value wraps instead */
+.usage-row { display: grid; grid-template-columns: minmax(min-content, max-content) minmax(0, 1fr); column-gap: 0.5em; align-items: baseline; min-width: 0; }
+.usage-k { color: var(--vscode-descriptionForeground); overflow-wrap: break-word; }
+.usage-v { text-align: right; overflow-wrap: anywhere; }
+.usage-missing .usage-v, .usage-v.usage-missing { color: var(--vscode-descriptionForeground); font-style: italic; }
+.usage-meter { grid-column: 1 / -1; width: 100%; height: 0.45rem; }
+.usage-reset, .usage-five { grid-column: 1 / -1; font-size: 0.85em; color: var(--vscode-descriptionForeground); margin: 0; }
+.usage-five { margin-top: 0.4em; }
+.prompt-badge {
+  display: inline-flex; align-items: center; gap: 0.2em; padding: 0 0.35em; border-radius: 0.2rem; font-size: 0.85em; white-space: nowrap;
+  border: 1px solid var(--vscode-widget-border, var(--vscode-descriptionForeground)); color: var(--vscode-foreground);
+}
+.prompt-badge .shape { width: 0.8rem; height: 0.8rem; fill: currentColor; stroke: none; margin: 0; }
+.prompt-badge-reprompt { border-color: var(--wk-accent); background: var(--wk-accent-soft); }
+.rail-done {
+  flex: none; font: inherit; font-size: 0.85em; cursor: pointer; background: transparent; border: 0; color: var(--vscode-descriptionForeground);
+  padding: 0 0.35em; border-radius: 0.1875rem; white-space: nowrap;
+}
+.rail-done:hover, .rail-done:focus-visible { color: var(--vscode-foreground); background: var(--vscode-list-hoverBackground, transparent); }
+.rail-static { cursor: default; }
+.rail-static:hover { background: transparent; }
+.rp-drawer { margin-top: 0.3em; }
+.rp-pill {
+  display: inline-flex; align-items: center; gap: 0.25em; cursor: pointer; font-size: 0.85em; padding: 0 0.45em; border-radius: 0.6rem;
+  border: 1px solid var(--wk-accent); background: var(--wk-accent-soft); list-style: none;
+}
+.rp-pill::-webkit-details-marker { display: none; }
+.rp-pill .shape { width: 0.8rem; height: 0.8rem; fill: currentColor; stroke: none; margin: 0; }
+.rp-drawer[open] > .rp-body { animation: wk-fade 160ms ease-out; }
+.rp-body { margin-top: 0.4em; padding: 0.5em 0.6em; border-left: 0.125rem solid var(--wk-accent); background: var(--vscode-editorWidget-background, transparent); min-width: 0; }
+.rp-compiled { max-height: 16rem; overflow: auto; }
+.rp-facts { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 0.2em 0.6em; margin: 0.4em 0 0; font-size: 0.9em; }
+.rp-facts dt { color: var(--vscode-descriptionForeground); }
+.rp-facts dd { margin: 0; overflow-wrap: anywhere; }
+.rp-files { margin: 0; padding-left: 1em; }
+
+/* P3 S1: the drawer's closed groups; the usage summary in the status bar */
+.ops-group { margin: 0.5em 0 0; border-top: 1px solid var(--vscode-widget-border, transparent); padding-top: 0.35em; min-width: 0; }
+.ops-group > summary { cursor: pointer; padding: 0.25em 0; font-weight: 600; }
+.ops-group > section { border-top: 0; margin-top: 0.3em; }
+.wk-usage-pill { background: transparent; color: var(--vscode-foreground); border-color: var(--vscode-widget-border, var(--vscode-focusBorder)); }
+.usage-over .usage-v { color: var(--vscode-errorForeground, var(--vscode-foreground)); font-weight: 600; }
+/* P3 S10 and N1: label and value stack in a narrow pane */
+@media (max-width: 28rem) {
+  .usage-row { grid-template-columns: minmax(0, 1fr); }
+  .usage-v { text-align: left; }
+  .rp-facts { grid-template-columns: minmax(0, 1fr); }
+  .rp-facts dd { margin-bottom: 0.3em; }
+}
+
+/* P2-272 4B: the task splitter's plan card. rem units, no animation; state is a shape plus a word, never colour alone. */
+.dag-card .dag-wave { margin-top: 0.6rem; }
+.dag-card .dag-wave > .label { margin: 0 0 0.25rem; }
+.dag-steps { list-style: none; margin: 0; padding: 0; display: grid; gap: 0.4rem; }
+.dag-step { border: 1px solid var(--vscode-panel-border, rgba(128,128,128,.35)); border-radius: 0.4rem; padding: 0.45rem 0.6rem; min-width: 0; }
+.dag-step-head { display: flex; align-items: flex-start; gap: 0.4rem; flex-wrap: wrap; }
+.dag-step-title { flex: 1 1 10rem; min-width: 0; font-weight: 600; overflow-wrap: anywhere; }
+.dag-state { font-size: 0.85em; opacity: 0.85; }
+.dag-step-failed { border-color: var(--vscode-errorForeground); }
+.dag-step-passed { border-style: solid; }
+.dag-step-queued, .dag-step-pending, .dag-step-skipped { border-style: dashed; }
+.dag-meta { margin: 0.2rem 0 0; overflow-wrap: anywhere; }
+.dag-meta .label { display: inline; margin-right: 0.3rem; }
+.dag-card code { overflow-wrap: anywhere; white-space: pre-wrap; }
+.dag-message { margin-top: 0.6rem; }
+
+/* P2-272 S13: after a plan-card click, focus moves to the next control or the result line; it stays visible,
+   also after a mouse click (the focus was moved by the panel, so the owner must see where it went). */
+.dag-card button:focus, .dag-card .dag-message:focus { outline: 0.125rem solid var(--vscode-focusBorder); outline-offset: 0.125rem; }
+.dag-card .dag-next { font-weight: 600; }

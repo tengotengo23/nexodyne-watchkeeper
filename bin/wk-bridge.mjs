@@ -72,7 +72,7 @@ const SHRINK = [
   ['inbox and advice', m => { m.inbox = []; if (m.advice) m.advice.items = []; }],
   ['Gemini and tasks', m => { if (m.gemini) m.gemini.items = []; if (m.tasks) m.tasks.items = []; }],
   ['questions and suggestions', m => { if (m.questions) m.questions.items = (m.questions.items || []).slice(0, 10); if (m.suggestions) m.suggestions.items = (m.suggestions.items || []).slice(0, 10); }],
-  ['everything but jobs and the phone', m => { for (const k of Object.keys(m)) if (!['now', 'mac', 'jobs', 'phone', 'bridge', 'pluginOk', 'remote'].includes(k)) delete m[k]; m.cut = true; }],
+  ['everything but jobs and the phone', m => { for (const k of Object.keys(m)) if (!['now', 'mac', 'jobs', 'phone', 'bridge', 'pluginOk', 'remote', 'statusLine', 'statusState'].includes(k)) delete m[k]; m.cut = true; }],
 ];
 export function fitModel(model, max = MAX_MODEL, log = () => {}) {
   let s = JSON.stringify(model);
@@ -153,6 +153,13 @@ export function reject(id) {
 }
 
 // ---------------------------------------------------------------- the protocol
+// P2-272: ~/.wk/KILL (or $WK_HOME/KILL, or the file gates.json names) halts every remote action except these
+export const STOP_SWITCH_ON = 'Stop switch is on; the Mac did nothing. Turn it off on the Mac or from the phone first.';
+const KILL_ALLOWED = new Set(['ping', 'stop-on', 'stop-off', 'job-stop']);
+export const stopSwitchOn = p => {
+  try { if (fs.existsSync(path.join(wkHome(), 'KILL'))) return true; } catch { return true; }
+  try { return fs.existsSync(D.killFilePath(p.pluginPath, p.home)); } catch { return false; }
+};
 export class Bridge {
   constructor({ send, now = () => Date.now(), freeMbFn = freeMb } = {}) {
     this.send = send; this.now = now; this.freeMbFn = freeMbFn;
@@ -224,6 +231,8 @@ export class Bridge {
   // The allowlist, acted on: the same code the Antigravity panel runs.
   async act(c, remote) {
     const a = c.args, p = panelPaths(remote);
+    // P2-272: while the Stop switch is on, the phone may only read (ping), turn it on or off, or stop a running job; nothing else runs
+    if (stopSwitchOn(p) && !KILL_ALLOWED.has(c.kind)) { logLine({ ev: 'refused', kind: c.kind, reason: 'stop-switch' }); return { ok: false, text: STOP_SWITCH_ON }; }
     switch (c.kind) {
       case 'ping': return { ok: true, text: `pong ${MAC_LABEL} ${hhmm(new Date(this.now()))}` };
       case 'answer': {

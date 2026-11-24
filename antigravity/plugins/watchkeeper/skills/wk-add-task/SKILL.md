@@ -6,6 +6,9 @@ description: >-
   owner asks you to queue something for later.
 ---
 
+Part of the /wk family (`/wk`, `/wk status`, `/wk graph`, `/wk sync`, `/wk stop`, `/wk go`, `/wk task`, `/wk take-task`). This is an alias.
+
+
 # Hand a task to the queue
 
 Use this for a separate piece of work you should not do now: something outside your current task, or a job the owner wants done later. The task waits in the queue until a Gemini session takes it with `/wk-take-task`.

@@ -11,6 +11,11 @@
 //   wk-update uninstall            stops the agent; its plist moves to ~/.wk/backups/
 //   wk-update status               the last check in words
 // A release is a tag: plain commits on main never move another computer (bin/wk-release.mjs makes releases).
+// P2-272: a tag alone moves nothing either. A follower moves only to the release the developer signed off
+// (node bin/wk-sign.mjs release vX.Y.Z writes release/channel/update.json + .sig): the signature must verify with the
+// pinned key (~/.wk/release-key.pub.pem, pinned on first use) and the tag must point at the signed commit. Otherwise
+// the folder stays as it is and the record's `waiting` says "waiting for an update signed by the developer" (result
+// stays 'up to date'); a bad signature or a mismatched tag is a problem. The maker never moves by itself.
 // The installed copies (Gemini's skill, the W panel) are made only from a folder that sits exactly on the newest release
 // with nothing changed; otherwise the record says why they were left as they are.
 // Never resets, stashes or cleans: with local changes, a merge in progress or its own commits, the folder stays as it is
@@ -24,6 +29,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
+import { pinnedKey, pinProblem, pinnedKeyPath, gitChannelFile, httpsChannelFile, DEFAULT_URL, checkFile, cacheWrite, cacheRead } from './channel-lib.mjs';
 
 const HOME = os.homedir();
 const HERE = path.dirname(fileURLToPath(import.meta.url));
@@ -102,10 +108,11 @@ export function blocker(repo) {
 
 // Unpack the release into a temp folder and check it before anything moves: its version matches the tag, and every
 // script parses.
-export function verifyRelease(repo, tag, node = process.execPath) {
+// ref: what to unpack (the signed commit id when there is one); the version inside is compared with the tag name.
+export function verifyRelease(repo, tag, node = process.execPath, ref = tag) {
   const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'wk-release-'));
   try {
-    const arc = spawnSync('git', ['-C', repo, 'archive', '--format=tar', tag], { env: GIT_ENV, maxBuffer: 200 * 1024 * 1024 });
+    const arc = spawnSync('git', ['-C', repo, 'archive', '--format=tar', ref], { env: GIT_ENV, maxBuffer: 200 * 1024 * 1024 });
     if (arc.status !== 0) return `could not read release ${tag}`;
     const x = spawnSync('tar', ['-x', '-C', tmp], { input: arc.stdout });
     if (x.status !== 0) return `could not unpack release ${tag}`;
@@ -184,7 +191,10 @@ export function takeLock(file = lockFile(), staleMs = 2 * 60 * 60 * 1000) {
     catch (e) {
       if (e.code !== 'EEXIST') throw e;
       const [pid, t] = String(fs.readFileSync(file, 'utf8')).split(/\s+/).map(Number);
-      let alive = false; try { process.kill(pid, 0); alive = true; } catch (er) { alive = er.code === 'EPERM'; }
+      let alive = false;
+      if (Number.isInteger(pid) && pid > 0) {
+        try { process.kill(pid, 0); alive = true; } catch (er) { alive = er.code === 'EPERM'; }
+      }
       if (alive && Date.now() - t < staleMs) return false;
       fs.rmSync(file, { force: true });
     }
@@ -203,20 +213,70 @@ function killIsOn(repo) {
 // The installed copies are made only from a folder that sits exactly on the newest release with nothing changed.
 // Returns why they are left as they are, or null when they may follow the folder.
 function holdCopies(repo, rec) {
-  if (rec.result === 'would update') return `they follow once the folder is at ${rec.newest}`;
-  if (!rec.newest) return 'there is no release yet';
-  const head = git(repo, ['rev-parse', 'HEAD']).out, at = git(repo, ['rev-parse', `${rec.newest}^{commit}`]).out;
+  const rel = rec.release || rec.newest;   // P2-272: on a follower, the release the developer signed off
+  if (rec.result === 'would update') return `they follow once the folder is at ${rel}`;
+  if (!rel) return 'there is no release yet';
+  const head = git(repo, ['rev-parse', 'HEAD']).out, at = git(repo, ['rev-parse', `${rel}^{commit}`]).out;
   if (!head || head !== at) {
-    if (head && git(repo, ['merge-base', '--is-ancestor', rec.newest, 'HEAD']).ok)
+    if (head && git(repo, ['merge-base', '--is-ancestor', rel, 'HEAD']).ok)
       return rec.role === 'follower'
-        ? `this copy is ahead of release ${rec.newest} (it came from main); run \`node bin/wk-update.mjs install\` once to put it on the release`
-        : `this is a developer's copy, ahead of release ${rec.newest}`;
-    return `the folder is not at release ${rec.newest}`;
+        ? `this copy is ahead of release ${rel} (it came from main); run \`node bin/wk-update.mjs install\` once to put it on the release`
+        : `this is a developer's copy, ahead of release ${rel}`;
+    return `the folder is not at release ${rel}`;
   }
   return blocker(repo);
 }
 
-export function check({ dryRun = false, now = new Date(), node = process.execPath } = {}) {
+// P2-272: the tag this computer may move to, or null (then rec.waiting or rec.problem says why nothing moved).
+// Only a release named in a manifest signed by the developer's pinned key, whose tag points at the signed commit.
+// S7: the manifest comes from git (origin/main's release/channel/) and, when it is not there (a copy cloned from the
+// public mirror), from the https channel (WK_CHANNEL_URL or DEFAULT_URL), verified with the same pinned key. The tag
+// must match what was signed: its commit equals `commit` (a private clone), or its tree equals `public_tree` (a public
+// clone, whose tags point at other commits holding the published tree). rec.signed.commit stays the commit the developer signed; rec.signed.local is the local commit checked.
+export async function signedTarget(repo, rec, home = wkHome(), { fetchImpl, url = process.env.WK_CHANNEL_URL || DEFAULT_URL } = {}) {
+  const exists = t => git(repo, ['rev-parse', '-q', '--verify', `refs/tags/${t}`]).ok;
+  const unsigned = rec.newest && cmpVersion(rec.newest, rec.version) > 0 ? ` (tag ${rec.newest} is newer but not signed off by the developer)` : '';
+  if (rec.role === 'maker') {
+    if (unsigned) rec.waiting = `this computer makes releases; it does not move by itself${unsigned}`;
+    return null;
+  }
+  const keep = () => { if (!rec.release && exists(`v${rec.version}`)) rec.release = `v${rec.version}`; };
+  const key = pinnedKey({ home, repo, log: s => { rec.keyNote = s; } });
+  let got = key && gitChannelFile(repo, 'update.json');
+  if (key && !got) {
+    const h = await httpsChannelFile(url, 'update.json', fetchImpl ? { fetchImpl } : {});
+    if (h.bytes) got = h; else if (h.error) rec.channelNote = `the update channel could not be read (${h.error})`;
+  }
+  if (!key) {
+    const bad = pinProblem(home);
+    if (bad) { rec.result = 'problem'; rec.problem = `${bad}, so nothing moved`; keep(); return null; }
+  }
+  if (!key || !got) { rec.waiting = `waiting for an update signed by the developer${unsigned}`; keep(); return null; }
+  rec.key = key.fingerprint;
+  const r = checkFile('update.json', got, key.pem);
+  if (r.problem) { rec.result = 'problem'; rec.problem = `${r.problem}, so nothing moved`; keep(); return null; }
+  const m = r.value;
+  rec.signed = { version: m.version, tag: m.tag, commit: m.commit, ...(m.public_tree ? { public_tree: m.public_tree } : {}), released_at: m.released_at };
+  const at = git(repo, ['rev-parse', '-q', '--verify', `refs/tags/${m.tag}^{commit}`]).out;
+  if (!at) { rec.result = 'problem'; rec.problem = `the signed release ${m.tag} has no tag here, so nothing moved`; keep(); return null; }
+  let binding = null;
+  if (at === m.commit) binding = 'commit';
+  else if (m.public_tree && git(repo, ['rev-parse', '-q', '--verify', `${at}^{tree}`]).out === m.public_tree) binding = 'tree';   // the tree of the commit just resolved, never the tag looked up again
+  if (!binding) {
+    rec.result = 'problem';
+    rec.problem = m.public_tree ? `tag ${m.tag} does not hold the release the developer signed (neither its commit nor its files match), so nothing moved`
+      : `tag ${m.tag} does not point at the commit the developer signed, so nothing moved`;
+    keep(); return null;
+  }
+  rec.signed.local = at; rec.signed.binding = binding;   // the local commit just checked: the one verified and merged (commit stays the one signed)
+  try { cacheWrite(home, 'update.json', got.bytes, got.sig, key.pem); } catch { /* the cache is a convenience */ }
+  if (cmpVersion(m.tag, rec.version) > 0) return m.tag;
+  rec.release = m.tag === `v${rec.version}` || !exists(`v${rec.version}`) ? m.tag : `v${rec.version}`;
+  if (rec.newest && cmpVersion(rec.newest, m.tag) > 0) rec.waiting = `waiting for an update signed by the developer (tag ${rec.newest} is newer but not signed off by the developer)`;
+  return null;
+}
+
+export async function check({ dryRun = false, now = new Date(), node = process.execPath, fetchImpl } = {}) {
   const repo = repoDir(), dir = wkHome();
   const rec = { at: now.toISOString(), repo: tilde(repo), role: role(repo), version: localVersion(repo), newest: null, result: 'up to date', problem: null, held: null, moved: null, steps: [], dryRun };
   const lock = lockFile();
@@ -231,16 +291,22 @@ export function check({ dryRun = false, now = new Date(), node = process.execPat
     const f = git(repo, ['fetch', '--tags', 'origin'], 90000);   // not --quiet: on a refusal git names the tag only without it
     if (!f.ok) { rec.result = 'problem'; rec.problem = fetchProblem(f.err); }
     rec.newest = newestTag(git(repo, ['tag', '-l', 'v*']).out.split('\n').filter(Boolean));   // after a failed fetch: the tags it has
-    if (f.ok && rec.newest && cmpVersion(rec.newest, rec.version) > 0) {
+    // P2-272: a follower moves only to the release the developer signed off (release/channel/update.json + .sig on
+    // refs/remotes/origin/main, verified with the pinned key, its tag's commit equal to the one signed). The maker never moves by itself.
+    const target = f.ok ? await signedTarget(repo, rec, undefined, { fetchImpl }) : null;
+    if (target) {
+      rec.release = target;
       const why = blocker(repo)
-        || (git(repo, ['merge-base', '--is-ancestor', 'HEAD', rec.newest]).ok ? null
-          : `this computer has its own commits, so it cannot simply move to ${rec.newest}; it needs a hand`)
-        || verifyRelease(repo, rec.newest, node);
+        || (git(repo, ['merge-base', '--is-ancestor', 'HEAD', rec.signed.local]).ok ? null
+          : `this computer has its own commits, so it cannot simply move to ${target}; it needs a hand`)
+        || verifyRelease(repo, target, node, rec.signed.local);
       if (why) { rec.result = why.startsWith('busy') ? 'skipped' : 'problem'; rec.problem = why; }
-      else if (dryRun) { rec.result = 'would update'; rec.moved = { from: rec.version, to: rec.newest.slice(1) }; }
+      else if (dryRun) { rec.result = 'would update'; rec.moved = { from: rec.version, to: target.slice(1) }; }
       else {
-        const m = git(repo, ['merge', '--ff-only', '--quiet', rec.newest]);
-        if (!m.ok) { rec.result = 'problem'; rec.problem = `the move to ${rec.newest} failed (${firstLine(m.err)}); the folder is as it was`; }
+        // S6: merge the commit the developer signed (verified above), not the tag name, which could move meanwhile.
+        const c = rec.signed.local;
+        const m = git(repo, ['merge', '--ff-only', '--quiet', c], 15 * 60 * 1000);
+        if (!m.ok) { rec.result = 'problem'; rec.problem = `the move to ${target} failed (${firstLine(m.err)}); if git status shows changes, finish it by hand: git merge --ff-only ${c}`; }
         else { rec.moved = { from: rec.version, to: localVersion(repo) }; rec.version = rec.moved.to; rec.result = 'updated'; }
       }
     }
@@ -275,7 +341,8 @@ export function words(rec) {
     'would update': `Would update to ${rec.moved ? rec.moved.to : rec.newest}`, skipped: `Check skipped`, paused: 'Update checks are paused', problem: `Watchkeeper ${rec.version} was not updated` }[rec.result] || rec.result;
   const steps = (rec.steps || []).filter(s => s.state !== 'not installed').map(s => (s.what === 'panel' ? `W panel in ${s.ide}: ${s.state}` : `Gemini's skill: ${s.state}`));
   const held = rec.held && rec.result !== 'paused' ? ` The W panel and Gemini's skill were left as they are: ${rec.held}.` : '';
-  return `${head} (checked ${when}).${rec.problem ? ` ${rec.problem[0].toUpperCase()}${rec.problem.slice(1)}.` : ''}${held}${steps.length ? ` ${steps.join('; ')}.` : ''}`;
+  const waiting = rec.waiting && rec.result !== 'paused' ? ` ${rec.waiting[0].toUpperCase()}${rec.waiting.slice(1)}.` : '';
+  return `${head} (checked ${when}).${rec.problem ? ` ${rec.problem[0].toUpperCase()}${rec.problem.slice(1)}.` : ''}${waiting}${held}${steps.length ? ` ${steps.join('; ')}.` : ''}`;
 }
 
 // ---------------------------------------------------------------- launchd
@@ -307,7 +374,7 @@ const pause = ms => Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0,
 
 // The clone's role. A follower sits on its own branch `release` (main is kept as it was), so a copy taken from main is
 // put on the newest release without moving anything back; claude-notes' sync leaves it alone. The maker stays on main.
-export function setRole(repo, want) {
+export async function setRole(repo, want) {
   if (!git(repo, ['rev-parse', '--git-dir']).ok) return 'This folder is not a git clone, so it cannot update itself. Clone it from GitHub, or install it through Claude Code; see the README, "Install".';
   git(repo, ['config', 'wk.role', want]);
   if (want === 'maker') {
@@ -327,10 +394,25 @@ export function setRole(repo, want) {
   const known = behind || (ahead && git(repo, ['branch', '-r', '--contains', 'HEAD']).out !== '');
   if (!known) return `This folder has its own commits, so it was left on its branch. If this is the computer that makes releases, run "node bin/wk-update.mjs install --maker" instead.`;
   const exists = git(repo, ['rev-parse', '-q', '--verify', 'refs/heads/release']).ok;
-  if (!exists && ahead) { const bad = verifyRelease(repo, newest); if (bad) return `This computer follows releases, but ${bad}.`; }
-  const s = exists ? git(repo, ['switch', '-q', 'release']) : git(repo, ['switch', '-q', '-c', 'release', ...(ahead ? [newest] : [])]);
+  // P2-272: a copy that came from main goes back only to the release the developer signed off (the same check that
+  // moves a follower later), never to a bare tag. Without a signed release the folder stays where it is.
+  let at = null, commit = null;
+  if (!exists && ahead) {
+    // S5: the floor is the newest signed release this computer has already verified (its cache), never a bare tag.
+    const home = wkHome(), k = pinnedKey({ home, repo, log: () => {} });
+    const seen = k ? cacheRead(home, 'update.json', k.pem) : null;
+    const rec = { role: 'follower', version: '0.0.0', newest };   // version 0.0.0: any signed release counts here, down to the floor
+    at = await signedTarget(repo, rec, home);
+    if (at && seen && cmpVersion(at, seen.version) < 0) return `This computer follows releases, but this computer has already seen signed release v${seen.version}; it will not go back to ${at}. The folder stays where it is.`;
+    if (!at && rec.problem) return `This computer follows releases, but ${rec.problem}. ${left[0].toUpperCase()}${left.slice(1)}.`;
+    if (!at) return `This computer follows releases; it is ${rec.waiting || 'waiting for an update signed by the developer'}, so the folder stays where it is. ${left[0].toUpperCase()}${left.slice(1)}.`;
+    if (!git(repo, ['merge-base', '--is-ancestor', rec.signed.local, 'HEAD']).ok) return `This computer follows releases, but the signed release ${at} is not in this folder's history, so the folder stays where it is.`;
+    commit = at && rec.signed.local;
+    const bad = verifyRelease(repo, at, process.execPath, commit); if (bad) return `This computer follows releases, but ${bad}.`;
+  }
+  const s = exists ? git(repo, ['switch', '-q', 'release']) : git(repo, ['switch', '-q', '-c', 'release', ...(commit ? [commit] : [])]);
   if (!s.ok) return `This computer follows releases, but git could not switch to the branch release (${firstLine(s.err)}).`;
-  return `This computer follows releases: the folder is on its own branch "release"${ahead ? ` at ${newest}` : ''} (main is kept as it was), and ${left}.`;
+  return `This computer follows releases: the folder is on its own branch "release"${at ? ` at ${at}` : ''} (main is kept as it was), and ${left}.`;
 }
 
 async function install(args = [], now = new Date()) {
@@ -339,7 +421,9 @@ async function install(args = [], now = new Date()) {
     return 2;
   }
   const want = args.includes('--maker') ? 'maker' : args.includes('--follower') ? 'follower' : role(repoDir()) || 'follower';
-  console.log(setRole(repoDir(), want));
+  console.log(await setRole(repoDir(), want));
+  const key = pinnedKey({ home: wkHome(), repo: repoDir(), log: () => {} });
+  console.log(key ? `Release key: ${key.fingerprint} (pinned in ${tilde(pinnedKeyPath(wkHome()))})` : 'No release key in this folder yet; updates wait until a release carries one.');
   const { findNode } = await import('./wk-ask-claude.mjs');
   const node = findNode();
   const file = path.join(agentsDir(), `${LABEL}.plist`);
@@ -366,6 +450,11 @@ async function install(args = [], now = new Date()) {
   if (b.status !== 0) { console.error(`wk-update: launchd refused the agent five times (${firstLine(b.stderr)}). The file is ${tilde(file)}; log out and in, or run this again.`); return 1; }
   console.log(`Update checks on: every ${Math.round((Number(process.env.WK_UPDATE_EVERY_S) || 10800) / 3600)} hours and at login (launchd ${LABEL}, ${tilde(file)})${backup ? `; the old file is in ${tilde(backup)}` : ''}.`);
   console.log('The first check runs now; see it with: node ' + tilde(path.join(repoDir(), 'bin', 'wk-update.mjs')) + ' status');
+  if (!args.includes('--no-graphify') && (!process.env.WK_LAUNCHCTL || process.env.WK_GRAPHIFY_ON_INSTALL === '1')) {
+    const { installGraphify, graphifyWords } = await import('./wk-graphify.mjs');
+    const gr = installGraphify({ now, skipCli: args.includes('--skip-graphify-cli') });
+    console.log(graphifyWords(gr));
+  }
   return 0;
 }
 
@@ -385,11 +474,15 @@ function uninstall(now = new Date()) {
 const isMain = process.argv[1] && fs.realpathSync(process.argv[1]) === fs.realpathSync(fileURLToPath(import.meta.url));
 if (isMain) {
   const args = process.argv.slice(2);
+  if (args.includes('--help') || args.includes('-h')) {
+    console.log('usage: wk-update [check [--dry-run] | install [--maker] | uninstall | status]');
+    process.exit(0);
+  }
   const cmd = args.find(a => !a.startsWith('--')) || 'check';
   const dryRun = args.includes('--dry-run');
   let code = 2;
   if (cmd === 'check') {
-    const r = check({ dryRun });
+    const r = await check({ dryRun });
     console.log(words(r.rec));
     code = r.code;
   } else if (cmd === 'status') { console.log(words(readJson(path.join(wkHome(), 'update.json')))); code = 0; }

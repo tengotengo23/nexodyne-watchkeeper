@@ -8,7 +8,96 @@
       }
     ],
     "Stop": [
-      { "type": "command", "command": "\"{{NODE}}\" \"{{WK_BIN_DIR}}/wk-gemini-log.mjs\"", "timeout": 10 }
+      {
+        "command": "\"{{NODE}}\" \"{{WK_BIN_DIR}}/wk-gemini-log.mjs\"",
+        "type": "command",
+        "timeout": 10
+      }
+    ]
+  },
+  "reprompt-inline-prefix": {
+    "enabled": true,
+    "PreInvocation": [
+      {
+        "type": "command",
+        "command": "\"{{PYTHON}}\" \"{{WK_REPROMPT_DIR}}/scripts/reprompt_inline_hook.py\"",
+        "timeout": 45
+      }
+    ]
+  },
+  "reprompt-skill-router": {
+    "enabled": true,
+    "PreInvocation": [
+      {
+        "type": "command",
+        "command": "\"{{PYTHON}}\" \"{{WK_REPROMPT_DIR}}/scripts/reprompt_skill_hook.py\"",
+        "timeout": 5
+      }
+    ]
+  },
+  "watchkeeper-graph": {
+    "enabled": true,
+    "SessionStart": [
+      {
+        "type": "command",
+        "command": "\"{{PYTHON}}\" \"{{WK_BIN_DIR}}/wk-graph-hook.py\" SessionStart",
+        "timeout": 5
+      }
+    ],
+    "PreInvocation": [
+      {
+        "type": "command",
+        "command": "\"{{PYTHON}}\" \"{{WK_BIN_DIR}}/wk-graph-hook.py\" PreInvocation",
+        "timeout": 5
+      }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "write_to_file|replace_file_content|multi_replace_file_content|write_file|edit_file",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "\"{{PYTHON}}\" \"{{WK_BIN_DIR}}/wk-graph-hook.py\" PostToolUse",
+            "timeout": 5
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "type": "command",
+        "command": "\"{{PYTHON}}\" \"{{WK_BIN_DIR}}/wk-graph-hook.py\" Stop",
+        "timeout": 5
+      }
+    ]
+  },
+  "watchkeeper-learning": {
+    "enabled": true,
+    "PostToolUse": [
+      {
+        "matcher": "write_to_file|replace_file_content|multi_replace_file_content|write_file|edit_file|run_command",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "\"{{PYTHON}}\" \"{{WK_BIN_DIR}}/wk-learning-hook.py\" PostToolUse",
+            "timeout": 10
+          }
+        ]
+      }
+    ],
+    "PreInvocation": [
+      {
+        "type": "command",
+        "command": "\"{{PYTHON}}\" \"{{WK_BIN_DIR}}/wk-learning-hook.py\" PreInvocation",
+        "timeout": 8
+      }
+    ],
+    "Stop": [
+      {
+        "type": "command",
+        "command": "\"{{PYTHON}}\" \"{{WK_BIN_DIR}}/wk-learning-hook.py\" Stop",
+        "timeout": 8
+      }
     ]
   }
 }

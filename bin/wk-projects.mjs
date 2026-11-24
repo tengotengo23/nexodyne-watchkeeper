@@ -55,18 +55,23 @@ export function scan(roots = [path.join(os.homedir(), 'Projects'), path.join(os.
   return projects;
 }
 
-// The file as jobs read it: absolute paths, valid keys only
+// The file as jobs read it: absolute paths, valid keys only (accepts either `key` or `id`)
 export function readProjects() {
   const j = readJsonFile(projectsFile(), null);
   if (!j || !Array.isArray(j.projects)) return { found: false, projects: [] };
-  const projects = j.projects.filter(p => p && typeof p.key === 'string' && PROJECT_KEY.test(p.key) && typeof p.path === 'string')
-    .map(p => ({ key: p.key, name: String(p.name || p.key).slice(0, 80), path: path.resolve(expand(p.path)), kind: p.kind === 'folder' ? 'folder' : 'repo',
-      ...(p.kind === 'folder' && typeof p.repo === 'string' ? { repo: path.resolve(expand(p.repo)) } : {}) }));
+  const keyOfEntry = p => (p && typeof p.key === 'string' && p.key) || (p && typeof p.id === 'string' && p.id) || '';
+  const projects = j.projects.filter(p => p && PROJECT_KEY.test(keyOfEntry(p)) && typeof p.path === 'string')
+    .map(p => {
+      const key = keyOfEntry(p);
+      return { key, name: String(p.name || key).slice(0, 80), path: path.resolve(expand(p.path)), kind: p.kind === 'folder' ? 'folder' : 'repo',
+        ...(p.kind === 'folder' && typeof p.repo === 'string' ? { repo: path.resolve(expand(p.repo)) } : {}) };
+    });
   return { found: true, projects };
 }
 export const findProject = key => readProjects().projects.find(p => p.key === key) || null;
 
 function parse(argv) {
+  if (argv.includes('--help') || argv.includes('-h')) return { cmd: 'help', write: false, json: false, roots: [] };
   const o = { cmd: argv[0] || '', write: false, json: false, roots: [] };
   for (let i = 1; i < argv.length; i++) {
     const x = argv[i];
@@ -80,6 +85,10 @@ function parse(argv) {
 
 export function main(argv, out = s => process.stdout.write(s + '\n')) {
   const o = parse(argv);
+  if (o.cmd === 'help') {
+    out('usage: wk-projects scan [--write] [--json] [--root <dir>]... | list [--json]');
+    return 0;
+  }
   if (o.cmd === 'scan') {
     const found = scan(o.roots.length ? o.roots : undefined), had = exists(projectsFile());
     const wrote = !had || o.write;

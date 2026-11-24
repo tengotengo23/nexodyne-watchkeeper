@@ -3,6 +3,8 @@
 // content, then gated classes that only a standing approval opens. All rules come from config/gates.json. Exit 2 blocks and tells the model why.
 import fs from 'node:fs';
 import path from 'node:path';
+import os from 'node:os';
+import { createRequire } from 'node:module';
 import { gates, stdin, glob2re, logBlock, laneOn, laneRoots, scanPII, inLaneRoots, policyFile, realPath, killOn, killFile, quarantineEnv, quarantineAgent, gatedCheck,
   policyPin, pinFile, READ_ONLY, PIN_MSG, LANE_PIN_MSG, policyShellCheck, proj } from './lib.mjs';
 process.on('uncaughtException', e => { logBlock('policy', 'guard error: ' + e.message); console.error('watchkeeper guard error, failing closed: ' + e.message); process.exit(2); });
@@ -36,6 +38,38 @@ if (ev.tool_name === 'Bash' && ti.command) {
   // reading an excluded file through the shell
   for (const r of res) { for (const tok of c.split(/\s+/)) if (tok.includes('/') || tok.startsWith('.')) if (r.test(tok.replace(/^['"]|['"]$/g, '')) && /\b(cat|less|head|tail|cp|scp|curl|base64|grep|sed|awk|source|\.)\b/.test(c)) block('path', `shell read of excluded path ${tok}`); }
 }
+// P2-272 (B): skills are readable in the lane only where the owner approved them: repos/<slug> of approved sources (the gate in
+// panel/src/skill-gate.js), the owner's own skill folders, ~/.wk/skills-exposed and the real folder behind each link in it.
+// Staged and rejected repos stay closed. Writes stay refused in the whole vault and every skill folder.
+// Both sides are resolved through links first, so a link that points elsewhere counts as elsewhere.
+const skillGate = createRequire(import.meta.url)('../panel/src/skill-gate.js');
+const SAFE_SLUG = /^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/;
+const skillPaths = () => {
+  const home = process.env.HOME || os.homedir();
+  const wk = process.env.WK_HOME || path.join(home, '.wk');
+  return { home, exposed: path.join(wk, 'skills-exposed'), vault: process.env.REPROMPT_SKILL_VAULT_DIR || path.join(home, '.gemini', 'skill-vault') };
+};
+// The real folder behind a link counts only for the owner's own skill folders (a local skill may be a link to the
+// owner's checkout). A link in ~/.wk/skills-exposed adds no root of its own: it is readable only when its target already
+// lies in an approved repo or an owner's skill folder, so a stale link to a rejected or staged repo stays closed.
+const linkTargets = dir => {
+  let kids = []; try { kids = fs.readdirSync(dir); } catch {}
+  const out = [];
+  for (const k of kids.slice(0, 500)) { const at = path.join(dir, k); try { if (fs.lstatSync(at).isSymbolicLink()) out.push(fs.realpathSync(at)); } catch {} }
+  return out;
+};
+const readSkillRoots = () => {
+  const P = skillPaths(), own = [path.join(P.home, '.claude', 'skills'), path.join(P.home, '.gemini', 'config', 'skills')];
+  const out = [P.exposed, ...own];
+  let src = null; try { src = JSON.parse(fs.readFileSync(path.join(P.vault, 'sources.json'), 'utf8')); } catch {}
+  for (const r of skillGate.approvedSources(src)) if (typeof r.slug === 'string' && SAFE_SLUG.test(r.slug) && !/^\.+$/.test(r.slug)) out.push(path.join(P.vault, 'repos', r.slug));
+  for (const d of own) out.push(...linkTargets(d));
+  return out.map(realPath);
+};
+const writeBlockRoots = () => { const P = skillPaths(); return [...readSkillRoots(), ...linkTargets(P.exposed), P.vault].map(realPath); };
+const under = (p, roots) => { if (typeof p !== 'string' || !p) return false; const a = realPath(p); return roots.some(r => a === r || a.startsWith(r + path.sep)); };
+const inSkillRoots = p => under(p, readSkillRoots());
+const inSkillWriteRoots = p => under(p, writeBlockRoots());
 if (laneOn()) {
   // lane: reads only inside the snapshot roots, and what is read or sent is scanned for private rows
   if (!laneRoots().length) block('lane', 'WK_LANE_ROOTS is empty; the lane has nothing it may read.');
@@ -44,7 +78,8 @@ if (laneOn()) {
     const target = ti.file_path || ti.notebook_path || ti.path;
     if (!target) block('lane', `${ev.tool_name} without an explicit path is refused in the lane.`);
     if (/[*?]/.test(target) || (ti.pattern && ev.tool_name === 'Glob' && /(^|\/)\.\.(\/|$)/.test(ti.pattern))) block('lane', 'wildcards in the path and ".." in patterns are refused in the lane.');
-    if (!inLaneRoots(target)) block('lane', `${target} is outside the lane's snapshot folders.`);
+    if (['Edit', 'Write', 'MultiEdit', 'NotebookEdit'].includes(ev.tool_name) && inSkillWriteRoots(target)) block('lane', `${target} is in a skill folder; skill folders are read-only.`);
+    if (!inLaneRoots(target) && !(['Read', 'Grep', 'Glob'].includes(ev.tool_name) && inSkillRoots(target))) block('lane', `${target} is outside the lane's snapshot folders.`);
     if (ev.tool_name === 'Read') { let t = ''; try { t = fs.readFileSync(target, 'utf8'); } catch {} const h = scanPII(t); if (h.length) block('lane', `${target} holds private rows (${h.join(', ')}); only aggregated snapshots may be read.`); }
   }
   if (ev.tool_name === 'Bash') {
@@ -66,7 +101,7 @@ if (laneOn()) {
         }
         if (first && (toks[0] === 'jq' || toks[0] === 'grep')) { first = false; if (/[\n]/.test(tok)) block('lane', 'multi-line filter refused.'); continue; }
         first = false; inPath++;
-        if (!path.isAbsolute(tok) || /[*?]/.test(tok) || !inLaneRoots(tok)) block('lane', `argument ${tok.slice(0, 80)} must be an absolute path inside the lane's snapshot folders.`);
+        if (!path.isAbsolute(tok) || /[*?]/.test(tok) || !(inLaneRoots(tok) || inSkillRoots(tok))) block('lane', `argument ${tok.slice(0, 80)} must be an absolute path inside the lane's snapshot folders.`);
       }
       if (numNext) block('lane', 'option is missing its number.');
       if (!inPath) block('lane', 'name an absolute path inside the snapshot folders; the working folder is closed.');

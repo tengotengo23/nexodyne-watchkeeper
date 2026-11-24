@@ -1,0 +1,147 @@
+{
+  "name": "re-prompt",
+  "displayName": "Re-Prompt",
+  "description": "Overlay prompt composer and AI prompt-rewriter for Antigravity Chat and Claude Code. Turns rough prompts into structured, AI-friendly and human-readable instructions.",
+  "version": "1.3.0",
+  "publisher": "re-prompt",
+  "license": "MIT",
+  "icon": "media/icon.png",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/tengo/re-prompt"
+  },
+  "engines": {
+    "vscode": "^1.85.0"
+  },
+  "categories": [
+    "AI",
+    "Other",
+    "Programming Languages"
+  ],
+  "keywords": [
+    "re-prompt",
+    "prompt",
+    "prompt-engineering",
+    "antigravity",
+    "claude-code",
+    "ai"
+  ],
+  "activationEvents": [
+    "onStartupFinished"
+  ],
+  "main": "./extension.js",
+  "contributes": {
+    "viewsContainers": {
+      "activitybar": [
+        {
+          "id": "reprompt-sidebar",
+          "title": "Re-Prompt",
+          "icon": "media/icon.svg"
+        }
+      ],
+      "panel": [
+        {
+          "id": "reprompt-panel",
+          "title": "Re-Prompt"
+        }
+      ]
+    },
+    "views": {
+      "reprompt-sidebar": [
+        {
+          "type": "webview",
+          "id": "reprompt.sidebarView",
+          "name": "Re-Prompt Overlay"
+        }
+      ],
+      "reprompt-panel": [
+        {
+          "type": "webview",
+          "id": "reprompt.composerView",
+          "name": "Re-Prompt Composer"
+        }
+      ]
+    },
+    "commands": [
+      {
+        "command": "reprompt.openOverlay",
+        "title": "Open Overlay Composer",
+        "category": "Re-Prompt",
+        "icon": "$(sparkle)"
+      },
+      {
+        "command": "reprompt.quickOverlay",
+        "title": "Quick Floating Rewrite Overlay",
+        "category": "Re-Prompt",
+        "icon": "$(zap)"
+      },
+      {
+        "command": "reprompt.rewriteSelection",
+        "title": "Rewrite Selected Text as Prompt",
+        "category": "Re-Prompt"
+      },
+      {
+        "command": "reprompt.focusView",
+        "title": "Focus Docked Composer",
+        "category": "Re-Prompt"
+      },
+      {
+        "command": "reprompt.openWindow",
+        "title": "Open in Separate Floating Window",
+        "category": "Re-Prompt",
+        "icon": "$(empty-window)"
+      },
+      {
+        "command": "reprompt.popOutWindow",
+        "title": "Pop Out to Separate Floating Window",
+        "category": "Re-Prompt",
+        "icon": "$(link-external)"
+      },
+      {
+        "command": "reprompt.orchestrateTask",
+        "title": "Orchestrate Task (Gemini + Claude)",
+        "category": "Re-Prompt",
+        "icon": "$(rocket)"
+      },
+      {
+        "command": "reprompt.orchestratorStatus",
+        "title": "Gemini + Claude Orchestrator Status",
+        "category": "Re-Prompt",
+        "icon": "$(pulse)"
+      }
+    ],
+    "keybindings": [
+      {
+        "command": "reprompt.openOverlay",
+        "key": "ctrl+alt+r",
+        "mac": "cmd+alt+r"
+      },
+      {
+        "command": "reprompt.quickOverlay",
+        "key": "ctrl+alt+shift+r",
+        "mac": "cmd+alt+shift+r"
+      }
+    ],
+    "menus": {
+      "editor/context": [
+        {
+          "command": "reprompt.rewriteSelection",
+          "when": "editorHasSelection",
+          "group": "1_modification@100"
+        }
+      ],
+      "view/title": [
+        {
+          "command": "reprompt.openOverlay",
+          "when": "view == reprompt.sidebarView || view == reprompt.composerView",
+          "group": "navigation"
+        },
+        {
+          "command": "reprompt.openWindow",
+          "when": "view == reprompt.sidebarView || view == reprompt.composerView",
+          "group": "navigation@2"
+        }
+      ]
+    }
+  }
+}

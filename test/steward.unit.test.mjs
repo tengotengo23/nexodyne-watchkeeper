@@ -126,7 +126,8 @@ test('weekWindow: a meter reset time wins over the anchor, but only when it is p
 
 // ---------------------------------------------------------------- the meter
 test('meterFromEvents: the real event', () => {
-  assert.deepEqual(S.meterFromEvents([REAL_EVENT], NOW0, 'call'), { fetchedAt: iso(NOW0), utilization: 0.79, resetsAt: 1794189600, status: 'allowed_warning', fiveHour: null, source: 'call' });
+  { const { windows, ...rest } = S.meterFromEvents([REAL_EVENT], NOW0, 'call');   // P2-272: the meter also carries every window; the old fields are unchanged
+    assert.deepEqual(rest, { fetchedAt: iso(NOW0), utilization: 0.79, resetsAt: 1794189600, status: 'allowed_warning', fiveHour: null, source: 'call' }); assert.equal(windows.seven_day.utilization, 0.79); }
 });
 
 test('meterFromEvents: percent form, five-hour only, nothing, merging', () => {
@@ -525,7 +526,8 @@ test('ledger: a call stopped before its result is a row with the cost unknown; l
 
 test('meter: the real event below 75% (10 Nov 2026) has the weekly value only inside unifiedWindows; non-numbers are no reading', () => {
   const low = { type: 'rate_limit_event', rate_limit_info: { status: 'allowed', resetsAt: 1794794400, rateLimitType: 'seven_day', unifiedWindows: { seven_day: { utilization: 0.05, resetsAt: 1794794400, status: 'allowed' } } } };
-  assert.deepEqual(S.meterFromEvents([low], NOW0, 'probe'), { fetchedAt: iso(NOW0), utilization: 0.05, resetsAt: 1794794400, status: 'allowed', fiveHour: null, source: 'probe' });
+  { const { windows, ...rest } = S.meterFromEvents([low], NOW0, 'probe');   // P2-272: windows added, old fields unchanged
+    assert.deepEqual(rest, { fetchedAt: iso(NOW0), utilization: 0.05, resetsAt: 1794794400, status: 'allowed', fiveHour: null, source: 'probe' }); assert.equal(windows.seven_day.utilization, 0.05); }
   for (const bad of [null, '', '  ', true, false, [], {}]) {
     const ev = { type: 'rate_limit_event', rate_limit_info: { status: 'allowed', resetsAt: 1794794400, rateLimitType: 'seven_day', utilization: bad, unifiedWindows: { seven_day: { utilization: bad } } } };
     assert.equal(S.meterFromEvents([ev], NOW0, 'probe'), null, 'a weekly value of ' + JSON.stringify(bad) + ' must not count as a reading');

@@ -25,7 +25,12 @@ if (mode === 'gate') {
   const cap = g ? g.evidence.maxBlocks : 1;
   let last = ''; try {
     const lines = fs.readFileSync(ev.transcript_path, 'utf8').trim().split('\n');
-    for (let i = lines.length - 1; i >= 0 && !last; i--) { const o = JSON.parse(lines[i]); if (o.type === 'assistant' || o.message?.role === 'assistant') last = [].concat(o.message?.content || []).map(c => c.text || '').join(' '); }
+    for (let i = lines.length - 1; i >= 0 && !last; i--) {
+      try {
+        const o = JSON.parse(lines[i]);
+        if (o && (o.type === 'assistant' || o.message?.role === 'assistant')) last = [].concat(o.message?.content || []).map(c => c.text || '').join(' ');
+      } catch { /* skip corrupt transcript line */ }
+    }
   } catch {}
   let why = null;
   if (!g) why = `the policy cannot be read (${polErr}), so no claim can be checked`;
@@ -40,7 +45,13 @@ if (mode === 'gate') {
       : !fresh.length ? 'the last test run is older than the limit'
       : bad.length ? `a test run failed (${bad.map(e => e.command).join('; ').slice(0, 160)}) and has not passed since` : null;
   }
-  const save = () => { try { fs.writeFileSync(stateFile(), JSON.stringify(st)); } catch {} };
+  const save = () => {
+    try {
+      const f = stateFile(), tmp = `${f}.${process.pid}.tmp`;
+      fs.writeFileSync(tmp, JSON.stringify(st), { mode: 0o600 });
+      fs.renameSync(tmp, f);
+    } catch {}
+  };
   if (!why) { st.blocks = 0; save(); process.exit(0); }
   if (st.blocks >= cap) {                                         // retry cap reached: let the stop through, count the defect
     try { fs.appendFileSync(path.join(wkDir(), 'defects.log'), `${new Date().toISOString()} ${sid} unverified-done: ${why}\n`); } catch {}

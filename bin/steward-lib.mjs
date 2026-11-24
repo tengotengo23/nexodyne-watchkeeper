@@ -6,6 +6,7 @@
 import fs from 'node:fs'; import path from 'node:path'; import os from 'node:os'; import { spawn, spawnSync } from 'node:child_process';
 import { scanPII, gates, killOn, killFile, homeWk, readJSON, root } from './lib.mjs';
 import { isLegal } from './model-pick.mjs';
+import { canCarbonFallback, runCarbonHigh } from './wk-carbon-fallback.mjs';
 
 export const HOUR = 36e5, DAY = 864e5, WEEK = 7 * DAY;
 export const KINDS = ['code', 'design', 'content', 'research', 'admin', 'outreach', 'money'];
@@ -75,6 +76,7 @@ export function validateConfig(c) {
   chk(int(k.timeoutMs, 200, 1800000), 'call.timeoutMs'); chk(int(k.maxPerDay, 1, 48), 'call.maxPerDay'); chk(int(k.minGapMin, 0, 1440), 'call.minGapMin'); chk(int(k.lockMaxMin, 1, 720), 'call.lockMaxMin');
   // a visit lasts at most the call, the meter check (120 s) and a minute for git and the rest: the lock must outlive it
   if (int(k.lockMaxMin, 1, 720) && int(k.timeoutMs, 200, 1800000)) chk(k.lockMaxMin * 60000 > k.timeoutMs + 120000 + 60000, 'call.lockMaxMin (must be longer than call.timeoutMs plus 3 min)');
+  const mt = c.maintenance; chk(isObj(mt) && num(mt.maxWeekShare, 0, 0.5), 'maintenance.maxWeekShare'); chk(isObj(mt) && strs(mt.projects), 'maintenance.projects'); chk(isObj(mt) && strs(mt.items), 'maintenance.items');
   const p = c.pace;
   chk(num(p.ceiling, 0.1, 1), 'pace.ceiling'); chk(num(p.landTo, 0.1, 1), 'pace.landTo'); chk(num(p.lastHours, 0, 48), 'pace.lastHours'); chk(num(p.aheadSlack, 0, 0.5), 'pace.aheadSlack');
   chk(num(p.meterMaxAgeH, 0.1, 168), 'pace.meterMaxAgeH'); chk(num(p.meterFreshMin, 0, 1440), 'pace.meterFreshMin'); chk(num(p.ownerActiveMin, 0, 1440), 'pace.ownerActiveMin');
@@ -117,10 +119,11 @@ export function loadProjects() {
   if (!list) return { projects: [], problems: ['the projects file has no "projects" list'], missing: true };
   const seen = new Set(), projects = [];
   for (const p of list) {
-    if (!isObj(p) || typeof p.id !== 'string' || !/^[a-z0-9][a-z0-9-]{0,30}$/.test(p.id)) { problems.push('a project has a missing or bad id (use a-z, 0-9 and -)'); continue; }
-    if (seen.has(p.id)) { problems.push(`${p.id}: duplicate id`); continue; } seen.add(p.id);
-    if (typeof p.path !== 'string' || !p.path.trim()) { problems.push(`${p.id}: no path`); continue; }
-    projects.push({ id: p.id, name: tidy(p.name, 60) || p.id, kind: tidy(p.kind, 20) || 'project', path: path.resolve(expandHome(p.path.trim())), weight: clampInt(p.weight, 1, 10, 1),
+    const rawId = isObj(p) ? (typeof p.id === 'string' && p.id ? p.id : typeof p.key === 'string' ? p.key : '') : '';
+    if (!rawId || !/^[a-z0-9][a-z0-9-]{0,30}$/.test(rawId)) { problems.push('a project has a missing or bad id (use a-z, 0-9 and -)'); continue; }
+    if (seen.has(rawId)) { problems.push(`${rawId}: duplicate id`); continue; } seen.add(rawId);
+    if (typeof p.path !== 'string' || !p.path.trim()) { problems.push(`${rawId}: no path`); continue; }
+    projects.push({ id: rawId, name: tidy(p.name, 60) || rawId, kind: tidy(p.kind, 20) || 'project', path: path.resolve(expandHome(p.path.trim())), weight: clampInt(p.weight, 1, 10, 1),
       goal: tidy(p.goal, 300), audience: tidy(p.audience, 200), number: tidy(p.number, 200), notes: tidy(p.notes, 400), paused: p.paused === true });
   }
   projects.sort((a, b) => a.id < b.id ? -1 : 1);
@@ -149,7 +152,7 @@ export const ledgerSpend = (from, to) => ledgerRows().reduce((s, r) => { const t
 // ---------------------------------------------------------------- the weekly meter (read from the rate_limit_event of any headless call)
 export const meterFile = () => sp('meter.json');
 const norm = u => (u > 1.5 ? u / 100 : u);
-function windowsOf(ev) {
+function windowsOf(ev, all = false) {
   const i = ev?.rate_limit_info, out = {}; if (!isObj(i)) return out;
   // only a number or a numeric string is a reading: Number(null), Number(''), Number([]) and Number(false) are 0, which would read as "nothing used"
   const num = v => typeof v === 'number' ? v : typeof v === 'string' && v.trim() ? Number(v) : NaN;
@@ -157,16 +160,16 @@ function windowsOf(ev) {
   // S5 (P2-187 review): every seven_day* window (seven_day, seven_day_sonnet, seven_day_opus ...) is a weekly reading
   const weekly = k => typeof k === 'string' && /^seven_day(_[a-z0-9_]+)?$/.test(k);
   if (weekly(i.rateLimitType) || i.rateLimitType === 'five_hour') put(i.rateLimitType, i);
-  if (isObj(i.unifiedWindows)) for (const k of Object.keys(i.unifiedWindows)) if (weekly(k) || k === 'five_hour') put(k, i.unifiedWindows[k]);
+  if (isObj(i.unifiedWindows)) for (const k of Object.keys(i.unifiedWindows)) if (all || weekly(k) || k === 'five_hour') put(k, i.unifiedWindows[k]);   // all: P2-272 keeps every window for the status line
   return out;
 }
 export function meterFromEvents(events, now, source) {
-  const w = {}; for (const e of events) Object.assign(w, windowsOf(e));
+  const w = {}, every = {}; for (const e of events) { Object.assign(w, windowsOf(e)); Object.assign(every, windowsOf(e, true)); }
   // pace on the highest weekly window; on a tie the plain seven_day wins
   let top = null; for (const [k, v] of Object.entries(w)) if (k.startsWith('seven_day') && (!top || v.utilization > w[top].utilization || (v.utilization === w[top].utilization && k === 'seven_day'))) top = k;
   if (!top && !w.five_hour) return null;
   const t = top ? w[top] : null;
-  return { fetchedAt: iso(now), utilization: t ? t.utilization : null, resetsAt: t ? t.resetsAt : null, status: t ? t.status : null, fiveHour: w.five_hour || null, source };
+  return { fetchedAt: iso(now), utilization: t ? t.utilization : null, resetsAt: t ? t.resetsAt : null, status: t ? t.status : null, fiveHour: w.five_hour || null, windows: every, source };
 }
 // the five-hour reading stands on its own: it counts while its own window has not ended and the reading is not older than maxAgeMs
 export function fiveHourOf(m, now, maxAgeMs) {
@@ -194,6 +197,21 @@ export function usageFrom(cfg, now, meter) {
   const five = cfg.mode === 'login' ? fiveHourOf(meter, now, cfg.pace.meterMaxAgeH * HOUR) : null;   // S5: the five-hour reading counts even when the weekly value is missing
   if (cfg.mode === 'login' && meterOk(meter, now, cfg.pace.meterMaxAgeH * HOUR)) return { source: 'meter', used: meter.utilization, fiveHour: five, win, meterAgeMin: (now - Date.parse(meter.fetchedAt)) / 60000 };
   return { source: 'ledger', used: ledgerSpend(win.start, win.end) / cfg.week.weeklyUsd, fiveHour: five, win, meterAgeMin: null };
+}
+// Upkeep cap (P2-273): Watchkeeper's own upkeep (visits to its own project, the meter probe) may use at most maintenance.maxWeekShare of the week.
+export const isUpkeepProject = (cfg, p) => { const pl = path.resolve(root()) + path.sep, pp = p.path ? path.resolve(p.path) + path.sep : ''; return cfg.maintenance.projects.includes(p.id) || (pp !== '' && pp.startsWith(pl)); };
+export function upkeepReading(cfg, now, meter, projects = []) {
+  const win = weekWindow(cfg, now, meter), mt = cfg.maintenance, ids = new Set(mt.projects); for (const p of projects) if (isUpkeepProject(cfg, p)) ids.add(p.id);
+  const mine = it => typeof it === 'string' && (mt.items.some(x => it === x || it.startsWith(x)) || [...ids].some(id => it === 'steward:' + id));
+  const spentUsd = ledgerRows().reduce((s, r) => { const t = Date.parse(r.at); return t >= win.start && t < win.end && mine(r.item) ? s + rowSpend(r) : s; }, 0), capUsd = mt.maxWeekShare * cfg.week.weeklyUsd, share = spentUsd / cfg.week.weeklyUsd;
+  return { spentUsd, capUsd, share, maxShare: mt.maxWeekShare, over: spentUsd >= capUsd - 1e-9, from: iso(win.start), to: iso(win.end) };
+}
+export const upkeepWhy = u => `upkeep cap: ${Math.round(u.share * 100)}% of the week used (max ${Math.round(u.maxShare * 100)}%)`;
+// moves upkeep projects from the eligible list to skipped when the cap is reached
+export function applyUpkeepCap(el, cfg, now, meter, projects) {
+  const u = upkeepReading(cfg, now, meter, projects); if (!u.over) return { el, upkeep: u };
+  const list = [], skipped = [...el.skipped]; for (const p of el.list) (isUpkeepProject(cfg, p) ? skipped.push({ id: p.id, why: upkeepWhy(u) }) : list.push(p));
+  return { el: { list, skipped }, upkeep: u };
 }
 // The one pace reading of the company (P2-178): what `wk-ledger pace` and the weekly report print. It reuses the functions above, with no arithmetic of its own.
 // Only a usable weekly meter paces; anything else is a hold that says "re-probe". It never falls back to the dollar budget.
@@ -625,7 +643,12 @@ async function visit(cfg, g, now, opts, early) {
   const dry = !!opts.dryRun;
   if (!dry) { pruneRaw(); recoverUnfinished(cfg); }
   const st = derive(readEvents()), tuning = loadTuning(cfg), knobs = tuning.knobs, bo = readJSON(backoffFile(), null);
-  if (isObj(bo) && bo.until > now) return early('backoff', `waiting until ${iso(bo.until)} (${bo.reason})`, { until: iso(bo.until) });
+  const carbonAllowed = canCarbonFallback({ hasFakeClaude: Boolean(process.env.WK_CLAUDE) });
+  let preferCarbon = false;
+  if (isObj(bo) && bo.until > now) {
+    if (carbonAllowed && /^limit\b/.test(String(bo.reason || ''))) preferCarbon = true;
+    else return early('backoff', `waiting until ${iso(bo.until)} (${bo.reason})`, { until: iso(bo.until) });
+  }
   const cap = Math.max(1, Math.ceil(cfg.call.maxPerDay * cfg.pace.ramp[cfg.pace.phase])), recent = [...st.started.values()].filter(e => now - Date.parse(e.at) < DAY);
   if (!opts.force) {
     if (st.lastStart && now - st.lastStart < cfg.call.minGapMin * 60000) return early('gap', `the last visit began less than ${cfg.call.minGapMin} min ago`);
@@ -633,8 +656,9 @@ async function visit(cfg, g, now, opts, early) {
     const oa = ownerActive(cfg, now); if (oa.active) return early('owner', `a Claude session of yours wrote ${Math.round(oa.ageMin)} min ago`);
   }
   const pj = loadProjects(); if (pj.missing) throw new StewardError(pj.problems[0], 1);
-  let project; const el = eligibleProjects(pj.projects, st, now);
-  if (opts.project) { project = pj.projects.find(p => p.id === opts.project); if (!project) throw new StewardError(`no project "${opts.project}" in ${projectsFile()}`, 1); if (!isDir(project.path)) throw new StewardError(`the folder of "${project.id}" is missing`, 1); }
+  let project; const meterNow = readJSON(meterFile(), null), el = applyUpkeepCap(eligibleProjects(pj.projects, st, now), cfg, now, meterNow, pj.projects).el;
+  // P2-273 review: a named visit to an upkeep project checks the cap itself, whatever other reason may have skipped it.
+  if (opts.project) { project = pj.projects.find(p => p.id === opts.project); if (project && isUpkeepProject(cfg, project)) { const u = upkeepReading(cfg, now, meterNow, pj.projects); if (u.over) return early('pace', upkeepWhy(u), { project: project.id }); } if (!project) throw new StewardError(`no project "${opts.project}" in ${projectsFile()}`, 1); if (!isDir(project.path)) throw new StewardError(`the folder of "${project.id}" is missing`, 1); }
   else { if (!el.list.length) return early('no_project', 'no project is ready: ' + (el.skipped.map(s => `${s.id} (${s.why})`).join('; ') || 'the list is empty')); project = pickProject(el.list, st, cfg); }
   if (opts.lens && opts.lens !== 'wildcard' && !Object.hasOwn(cfg.lenses, opts.lens)) throw new StewardError(`unknown lens "${opts.lens}" (${Object.keys(cfg.lenses).join(', ')}, wildcard)`, 1);
   const pick = opts.lens ? { lens: opts.lens, wild: opts.lens === 'wildcard', avoid: [] } : pickLens(cfg, st, project, knobs);
@@ -643,35 +667,85 @@ async function visit(cfg, g, now, opts, early) {
   let meter = readJSON(meterFile(), null);
   // S1 (P2-187 review): a stored meter that is still usable and already says "hold" on the weekly value (ceiling, landed, ahead) needs no probe: asking again would only spend a call after the budget is gone
   const holdsOnStored = cfg.mode === 'login' && meterOk(meter, now, cfg.pace.meterMaxAgeH * HOUR) && ['ceiling', 'landed', 'ahead'].includes(paceDecision({ cfg, win: weekWindow(cfg, now, meter), used: meter.utilization, fiveHour: null }).reason);
-  if (cfg.mode === 'login' && !dry && !holdsOnStored && !meterOk(meter, now, cfg.pace.meterFreshMin * 60000)) {
+  if (!preferCarbon && cfg.mode === 'login' && !dry && !holdsOnStored && !meterOk(meter, now, cfg.pace.meterFreshMin * 60000)) {
     const pr = await probeMeter(cfg, g, now);
     if (pr.kind === 'killed') return early('kill', 'the kill switch went on during the meter check');
     if (pr.kind === 'refused') { const until = setBackoff([], 'auth mode mismatch', now); return early('auth', 'login mode needs the subscription login, but this call would bill another way (apiKeySource is not "none"); nothing was spent beyond the check; waiting until ' + iso(until), { until: iso(until) }); }
-    if (pr.kind === 'limit') { const until = setBackoff(pr.rates, 'limit (meter check)', now); return early('backoff', `the account is at its limit; waiting until ${iso(until)}`, { until: iso(until) }); }
-    if (pr.kind === 'error' || pr.kind === 'timeout' || pr.kind === 'spawn') { const until = setBackoff([], `meter check failed (${pr.reason})`, now); return early('backoff', `the meter check failed (${pr.reason}); waiting until ${iso(until)}`, { until: iso(until) }); }
+    if (pr.kind === 'limit') {
+      const until = setBackoff(pr.rates, 'limit (meter check)', now);
+      if (carbonAllowed) preferCarbon = true;
+      else return early('backoff', `the account is at its limit; waiting until ${iso(until)}`, { until: iso(until) });
+    } else if (pr.kind === 'error' || pr.kind === 'timeout' || pr.kind === 'spawn') {
+      const until = setBackoff([], `meter check failed (${pr.reason})`, now); return early('backoff', `the meter check failed (${pr.reason}); waiting until ${iso(until)}`, { until: iso(until) });
+    }
     if (pr.meter) meter = pr.meter;
   }
   const u = usageFrom(cfg, now, meter), pace = paceDecision({ cfg, win: u.win, used: u.used, fiveHour: u.fiveHour }), paceInfo = { used: pace.used, elapsed: pace.elapsed, limit: pace.limit, headroom: pace.headroom, source: u.source };
-  if (!pace.go) return early('pace', `${pace.reason}: ${pct(pace.used)} of the week used, the line is ${pct(pace.elapsed)}, the limit now is ${pct(pace.limit)}`, { pace: paceInfo, project: project.id });
-  if (!opts.force && cfg.mode === 'login' && u.source === 'ledger' && recent.filter(e => e.pace?.source === 'ledger').length >= cfg.pace.unknownMaxCallsPerDay) return early('cap', `the weekly meter is unreadable, so at most ${cfg.pace.unknownMaxCallsPerDay} visits a day`, { pace: paceInfo });
+  if (!pace.go) {
+    if (carbonAllowed) preferCarbon = true;
+    else return early('pace', `${pace.reason}: ${pct(pace.used)} of the week used, the line is ${pct(pace.elapsed)}, the limit now is ${pct(pace.limit)}`, { pace: paceInfo, project: project.id });
+  }
+  if (!preferCarbon && !opts.force && cfg.mode === 'login' && u.source === 'ledger' && recent.filter(e => e.pace?.source === 'ledger').length >= cfg.pace.unknownMaxCallsPerDay) return early('cap', `the weekly meter is unreadable, so at most ${cfg.pace.unknownMaxCallsPerDay} visits a day`, { pace: paceInfo });
   const tickId = st.nextTick, ctx = { tick: tickId, project: project.id, lens: pick.lens, wild: pick.wild, want: knobs.ideasPerCall, minImpact: knobs.minImpact };
-  if (dry) return { code: 0, dryRun: true, wouldCall: true, tick: tickId, project: project.id, lens: pick.lens, wild: pick.wild, briefChars: brief.text.length, briefTokens: brief.tokens, pace: paceInfo, mode: cfg.mode, brief: opts.showBrief ? brief.text : undefined };
+  if (dry) return { code: 0, dryRun: true, wouldCall: true, tick: tickId, project: project.id, lens: pick.lens, wild: pick.wild, briefChars: brief.text.length, briefTokens: brief.tokens, pace: paceInfo, mode: cfg.mode, ...(preferCarbon ? { provider: 'orchestrator-carbon-high' } : {}), brief: opts.showBrief ? brief.text : undefined };
   const system = fs.readFileSync(path.join(root(), 'playbooks/ideas.md'), 'utf8').split('{{N}}').join(String(knobs.ideasPerCall)).split('{{MIN_IMPACT}}').join(String(knobs.minImpact));
+  const base = { tick: tickId, project: project.id, lens: pick.lens, wild: pick.wild };
+  const finishWithCarbon = async (fallbackWhy) => {
+    const cr = await runCarbonHigh({ prompt: brief.text, system, cwd: isDir(project.path) ? project.path : runDir(), mode: null, sandbox: true, schema: IDEA_SCHEMA, timeoutMs: cfg.call.timeoutMs, killCheck: () => killOn(g), item: `steward:${project.id}` });
+    const afterC = nowMs();
+    if (cr.killed) {
+      appendEvent({ type: 'tick_finished', ...base, outcome: 'error', reason: 'kill_switch', cost_usd: 0, provider: 'orchestrator-carbon-high' }, afterC);
+      return { code: 2, outcome: 'killed', ...base };
+    }
+    if (cr.ok && cr.queued) {
+      // Q163: the visit is queued as a wk-task for Antigravity; no ideas yet, no cost.
+      // S8 (review): while this project's earlier task still waits, nothing new is queued (reused: true); note says where the answer will be.
+      appendEvent({ type: 'tick_finished', ...base, outcome: 'queued', reason: 'queued_for_antigravity', task: cr.taskId || null, ...(cr.reused ? { reused: true } : {}), cost_usd: 0, provider: cr.provider || 'antigravity-queue' }, afterC);
+      return { code: 0, outcome: 'queued', provider: cr.provider || 'antigravity-queue', taskId: cr.taskId || null, reused: Boolean(cr.reused), note: cr.text || '', fallback_reason: fallbackWhy, ...base, cost_usd: 0, pace: paceInfo, meter: null };
+    }
+    if (!cr.ok || !isObj(cr.structured) || !Array.isArray(cr.structured.ideas)) {
+      const reason = cr.reason === 'invalid_json' ? 'invalid' : 'error';
+      appendEvent({ type: 'tick_finished', ...base, outcome: reason, reason: cr.reason || 'carbon_failed', cost_usd: 0, provider: 'orchestrator-carbon-high' }, afterC);
+      return { code: 4, outcome: reason === 'invalid' ? 'invalid' : 'error', reason: cr.stderr || cr.reason || 'carbon_failed', ...base, cost_usd: 0, provider: 'orchestrator-carbon-high' };
+    }
+    const syntheticRes = { subtype: 'success', is_error: false, result: cr.text, structured_output: cr.structured, total_cost_usd: 0, num_turns: 1, usage: { input_tokens: 0, output_tokens: 0 }, modelUsage: { [cr.model]: { costUSD: 0 } } };
+    const rRed = redactRaw(syntheticRes);
+    ensure(sp('raw'));
+    writeAtomic(sp('raw', `${tickId}.json`), JSON.stringify({ tick: tickId, ctx, provider: 'orchestrator-carbon-high', model: cr.model, res: { subtype: rRed.subtype, is_error: false, result: String(rRed.result ?? '').slice(0, 20000), structured_output: rRed.structured_output ?? null, total_cost_usd: 0, num_turns: 1, usage: rRed.usage, modelUsage: rRed.modelUsage } }));
+    const r = guardPolicy(() => ingest({ cfg, ctx, res: syntheticRes }));
+    const st2 = derive(readEvents()); saveTuning(tuneStep({ cfg, tuning: loadTuning(cfg), st: st2, now: afterC }));
+    return { code: 0, outcome: 'ok', provider: 'orchestrator-carbon-high', model: cr.model, fallback_reason: fallbackWhy, ...base, cost_usd: 0, ...r, pace: paceInfo, meter: null };
+  };
+
+  if (preferCarbon) {
+    appendEvent({ type: 'tick_started', tick: tickId, project: project.id, lens: pick.lens, wild: pick.wild, mode: 'orchestrator-carbon-high', phase: cfg.pace.phase, pace: paceInfo, want: ctx.want, minImpact: ctx.minImpact, briefTokens: brief.tokens });
+    return finishWithCarbon(pace.go ? 'claude_limit' : `pace_${pace.reason}`);
+  }
+
   const env = childEnv(cfg);
   appendEvent({ type: 'tick_started', tick: tickId, project: project.id, lens: pick.lens, wild: pick.wild, mode: cfg.mode, phase: cfg.pace.phase, pace: paceInfo, want: ctx.want, minImpact: ctx.minImpact, briefTokens: brief.tokens });
   const run = await runClaude({ args: callArgs({ prompt: brief.text, system, model: cfg.call.model, schema: IDEA_SCHEMA, cap: cfg.call.capUsd, effort: cfg.call.effort }), env, cwd: runDir(), timeoutMs: cfg.call.timeoutMs, killCheck: () => killOn(g), onEvent: authGuard(cfg) });
-  const c = classify(run, { needIdeas: true }), after = nowMs(), base = { tick: tickId, project: project.id, lens: pick.lens, wild: pick.wild };
+  const c = classify(run, { needIdeas: true }), after = nowMs();
   // a paid answer is saved first, so nothing below can lose it (the next visit recovers it from raw/ if this one dies)
   if (c.res && (c.kind === 'ok' || c.kind === 'invalid')) { const r = redactRaw(c.res); ensure(sp('raw')); writeAtomic(sp('raw', `${tickId}.json`), JSON.stringify({ tick: tickId, ctx, res: { subtype: r.subtype, is_error: r.is_error, result: String(r.result ?? '').slice(0, 20000), structured_output: r.structured_output ?? null, total_cost_usd: r.total_cost_usd, num_turns: r.num_turns, usage: r.usage, modelUsage: r.modelUsage } })); }
   const warn = (what, e) => { try { appendEvent({ type: 'warning', tick: tickId, what, detail: tidy(String(e?.message || e), 200) }, after); } catch {} };
   // a call stopped by the timeout or the kill switch sends no result, but it may have spent: a row with the cost unknown and the cap as the estimate
   try { if (c.res) ledgerAdd(`steward:${project.id}`, c.res); else if (c.kind === 'timeout' || c.kind === 'killed') ledgerAddUnknown(`steward:${project.id}`, cfg.call.capUsd); } catch (e) { warn('ledger', e); }
   let m = null; try { m = meterFromEvents(c.rates, after, 'call'); if (m) writeAtomic(meterFile(), JSON.stringify(m)); } catch (e) { warn('meter', e); }
-  const cost =c.res && Number.isFinite(c.res.total_cost_usd) ? round(c.res.total_cost_usd, 5) : 0;
+  const cost = c.res && Number.isFinite(c.res.total_cost_usd) ? round(c.res.total_cost_usd, 5) : 0;
   if (c.kind === 'refused') { setBackoff([], 'auth mode mismatch', after); appendEvent({ type: 'tick_finished', ...base, outcome: 'error', reason: 'auth_mode', cost_usd: cost }, after); return { code: 2, outcome: 'refused', reason: 'auth_mode', ...base, detail: 'the call would not use the expected billing (apiKeySource); its result was discarded' }; }
   if (c.kind === 'killed') { appendEvent({ type: 'tick_finished', ...base, outcome: 'error', reason: 'kill_switch', cost_usd: cost }, after); return { code: 2, outcome: 'killed', ...base }; }
-  if (c.kind === 'limit') { const until = setBackoff(c.rates, 'limit', after); appendEvent({ type: 'tick_finished', ...base, outcome: 'limit', cost_usd: cost, until: iso(until) }, after); return { code: 4, outcome: 'limit', ...base, until: iso(until) }; }
-  if (c.kind === 'error' || c.kind === 'timeout' || c.kind === 'spawn') { appendEvent({ type: 'tick_finished', ...base, outcome: 'error', reason: c.reason, cost_usd: cost }, after); return { code: 4, outcome: c.kind === 'spawn' ? 'error' : c.kind, reason: c.reason, ...base, cost_usd: cost }; }
+  if (c.kind === 'limit') {
+    const until = setBackoff(c.rates, 'limit', after);
+    if (carbonAllowed) return finishWithCarbon('claude_limit');
+    appendEvent({ type: 'tick_finished', ...base, outcome: 'limit', cost_usd: cost, until: iso(until) }, after);
+    return { code: 4, outcome: 'limit', ...base, until: iso(until) };
+  }
+  if (c.kind === 'error' || c.kind === 'timeout' || c.kind === 'spawn') {
+    if (c.kind === 'spawn' && carbonAllowed) return finishWithCarbon('claude_spawn');
+    appendEvent({ type: 'tick_finished', ...base, outcome: 'error', reason: c.reason, cost_usd: cost }, after);
+    return { code: 4, outcome: c.kind === 'spawn' ? 'error' : c.kind, reason: c.reason, ...base, cost_usd: cost };
+  }
   try { fs.unlinkSync(backoffFile()); } catch {}
   if (c.kind === 'invalid') { appendEvent({ type: 'tick_finished', ...base, outcome: 'invalid', reason: c.reason, cost_usd: cost, proposed: 0, kept: 0, dropped: {} }, after); return { code: 4, outcome: 'invalid', reason: c.reason, ...base, cost_usd: cost }; }
   const r = guardPolicy(() => ingest({ cfg, ctx, res: c.res }));
@@ -706,12 +780,12 @@ export function paceLine(r) {
 }
 export function snapshot(cfg, now) {
   const st = derive(readEvents()), tuning = loadTuning(cfg), meter = readJSON(meterFile(), null), u = usageFrom(cfg, now, meter), pace = paceDecision({ cfg, win: u.win, used: u.used, fiveHour: u.fiveHour });
-  const bo = readJSON(backoffFile(), null), lock = readJSON(sp('tick.lock'), null), oa = ownerActive(cfg, now), pj = loadProjects(), el = eligibleProjects(pj.projects, st, now);
+  const bo = readJSON(backoffFile(), null), lock = readJSON(sp('tick.lock'), null), oa = ownerActive(cfg, now), pj = loadProjects(), upk = applyUpkeepCap(eligibleProjects(pj.projects, st, now), cfg, now, meter, pj.projects), el = upk.el;
   const cap = Math.max(1, Math.ceil(cfg.call.maxPerDay * cfg.pace.ramp[cfg.pace.phase])), recent = [...st.started.values()].filter(e => now - Date.parse(e.at) < DAY);
   let killed = false; try { killed = killOn(gates({ allowMismatch: true })); } catch { killed = null; }
   const ideas = [...st.ideas.values()], open = ideas.filter(i => i.status === 'open'), ans = acceptOf(ideas);
   return { mode: cfg.mode, phase: cfg.pace.phase, cap, visits24h: recent.length, win: u.win, source: u.source, used: u.used, meterAgeMin: u.meterAgeMin, pace, backoff: isObj(bo) && bo.until > now ? bo : null, lock: lock && pidAlive(lock.pid) ? lock : null, killed, ownerActive: oa,
-    projects: pj.projects.map(p => ({ id: p.id, weight: p.weight, paused: p.paused })), skipped: el.skipped, problems: pj.problems, last: st.finished.slice(-1)[0] || null, unfinished: st.unfinished.length, warnings: cfg._warnings,
+    upkeep: upk.upkeep, projects: pj.projects.map(p => ({ id: p.id, weight: p.weight, paused: p.paused })), skipped: el.skipped, problems: pj.problems, last: st.finished.slice(-1)[0] || null, unfinished: st.unfinished.length, warnings: cfg._warnings,
     ideas: { open: open.length, auto: open.filter(i => i.gate === 'auto').length, ask: open.filter(i => i.gate === 'ask').length, wait: open.filter(i => i.gate === 'wait').length, answered: ans.n, accept: round(ans.accept, 2) }, tuning };
 }
 export function report(cfg, now) {

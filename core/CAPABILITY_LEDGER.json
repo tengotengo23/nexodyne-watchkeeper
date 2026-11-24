@@ -1,0 +1,2221 @@
+{
+  "schema_version": "2.0.0",
+  "generated_at": "2026-11-22T16:34:55.625868+00:00",
+  "summary": {
+    "total_capabilities": 160,
+    "watchkeeper_counts": {
+      "bin": 36,
+      "hooks": 8,
+      "commands": 6,
+      "agents": 4,
+      "skills": 8,
+      "panel": 25,
+      "antigravity": 28
+    },
+    "reprompt_v130_files": 45,
+    "graphify_status": {
+      "exists": false,
+      "schema_version": null,
+      "graphify_version": null,
+      "nodes": 0,
+      "edges": 0
+    },
+    "local_skills_discovered": 18,
+    "skill_vault_indexed": 22
+  },
+  "external_skills_catalog": [
+    {
+      "scope": "watchkeeper_core",
+      "name": "duo-orchestrator",
+      "path": "skills/duo-orchestrator/SKILL.md",
+      "has_aux": false
+    },
+    {
+      "scope": "watchkeeper_core",
+      "name": "evidence",
+      "path": "skills/evidence/SKILL.md",
+      "has_aux": false
+    },
+    {
+      "scope": "watchkeeper_core",
+      "name": "graphify",
+      "path": "skills/graphify/SKILL.md",
+      "has_aux": true
+    },
+    {
+      "scope": "watchkeeper_core",
+      "name": "lean-tokens",
+      "path": "skills/lean-tokens/SKILL.md",
+      "has_aux": false
+    },
+    {
+      "scope": "watchkeeper_core",
+      "name": "profession-skill-vault",
+      "path": "skills/profession-skill-vault/SKILL.md",
+      "has_aux": false
+    },
+    {
+      "scope": "watchkeeper_core",
+      "name": "re-prompt",
+      "path": "skills/re-prompt/SKILL.md",
+      "has_aux": false
+    },
+    {
+      "scope": "watchkeeper_core",
+      "name": "wk",
+      "path": "skills/wk/SKILL.md",
+      "has_aux": false
+    },
+    {
+      "scope": "watchkeeper_core",
+      "name": "wk-status",
+      "path": "skills/wk-status/SKILL.md",
+      "has_aux": false
+    },
+    {
+      "scope": "antigravity_plugin",
+      "name": "ask-claude",
+      "path": "antigravity/plugins/watchkeeper/skills/ask-claude/SKILL.md",
+      "has_aux": false
+    },
+    {
+      "scope": "antigravity_plugin",
+      "name": "duo-orchestrator",
+      "path": "antigravity/plugins/watchkeeper/skills/duo-orchestrator/SKILL.md",
+      "has_aux": false
+    },
+    {
+      "scope": "antigravity_plugin",
+      "name": "graphify",
+      "path": "antigravity/plugins/watchkeeper/skills/graphify/SKILL.md",
+      "has_aux": true
+    },
+    {
+      "scope": "antigravity_plugin",
+      "name": "profession-skill-vault",
+      "path": "antigravity/plugins/watchkeeper/skills/profession-skill-vault/SKILL.md",
+      "has_aux": false
+    },
+    {
+      "scope": "antigravity_plugin",
+      "name": "re-prompt",
+      "path": "antigravity/plugins/watchkeeper/skills/re-prompt/SKILL.md",
+      "has_aux": false
+    },
+    {
+      "scope": "antigravity_plugin",
+      "name": "wk",
+      "path": "antigravity/plugins/watchkeeper/skills/wk/SKILL.md",
+      "has_aux": false
+    },
+    {
+      "scope": "antigravity_plugin",
+      "name": "wk-add-task",
+      "path": "antigravity/plugins/watchkeeper/skills/wk-add-task/SKILL.md",
+      "has_aux": false
+    },
+    {
+      "scope": "antigravity_plugin",
+      "name": "wk-status",
+      "path": "antigravity/plugins/watchkeeper/skills/wk-status/SKILL.md",
+      "has_aux": false
+    },
+    {
+      "scope": "antigravity_plugin",
+      "name": "wk-suggest",
+      "path": "antigravity/plugins/watchkeeper/skills/wk-suggest/SKILL.md",
+      "has_aux": false
+    },
+    {
+      "scope": "antigravity_plugin",
+      "name": "wk-take-task",
+      "path": "antigravity/plugins/watchkeeper/skills/wk-take-task/SKILL.md",
+      "has_aux": false
+    }
+  ],
+  "capabilities": [
+    {
+      "id": "wk-bin-antigravity-lib.mjs",
+      "origin_component": "watchkeeper",
+      "source_file": "bin/antigravity-lib.mjs",
+      "symbols_or_entrypoints": [
+        "defaultDest",
+        "pluginSource",
+        "findNode",
+        "findPython",
+        "hookFile",
+        "agyConfigFile",
+        "TURBO",
+        "detectPass",
+        "readPass",
+        "writePass",
+        "passWords",
+        "installAntigravity"
+      ],
+      "lifecycle_trigger": "CLI/Panel/Scheduler",
+      "target_unified_module": "bin/antigravity-lib.mjs (preserved + unified)",
+      "verification_assertion": "file_exists('bin/antigravity-lib.mjs')"
+    },
+    {
+      "id": "wk-bin-bridge-link.mjs",
+      "origin_component": "watchkeeper",
+      "source_file": "bin/bridge-link.mjs",
+      "symbols_or_entrypoints": [
+        "MAX_LINE",
+        "BACKOFF",
+        "sshArgv",
+        "backoffMs",
+        "openLink",
+        "keepLinked"
+      ],
+      "lifecycle_trigger": "CLI/Panel/Scheduler",
+      "target_unified_module": "bin/bridge-link.mjs (preserved + unified)",
+      "verification_assertion": "file_exists('bin/bridge-link.mjs')"
+    },
+    {
+      "id": "wk-bin-gemini-lib.mjs",
+      "origin_component": "watchkeeper",
+      "source_file": "bin/gemini-lib.mjs",
+      "symbols_or_entrypoints": [
+        "wkHome",
+        "tasksDir",
+        "worktreesDir",
+        "suggestionsFile",
+        "inboxFile",
+        "sessionsFile",
+        "configFile",
+        "version",
+        "TASK_ID",
+        "SUGGESTION_ID",
+        "FROM_TASK",
+        "FROM_SUGGESTION"
+      ],
+      "lifecycle_trigger": "CLI/Panel/Scheduler",
+      "target_unified_module": "bin/gemini-lib.mjs (preserved + unified)",
+      "verification_assertion": "file_exists('bin/gemini-lib.mjs')"
+    },
+    {
+      "id": "wk-bin-lib.mjs",
+      "origin_component": "watchkeeper",
+      "source_file": "bin/lib.mjs",
+      "symbols_or_entrypoints": [
+        "root",
+        "proj",
+        "readJSON",
+        "policyFile",
+        "gates",
+        "policyPin",
+        "stdin",
+        "globBody",
+        "glob2re",
+        "wkDir",
+        "logBlock",
+        "killFile"
+      ],
+      "lifecycle_trigger": "CLI/Panel/Scheduler",
+      "target_unified_module": "bin/lib.mjs (preserved + unified)",
+      "verification_assertion": "file_exists('bin/lib.mjs')"
+    },
+    {
+      "id": "wk-bin-model-pick.mjs",
+      "origin_component": "watchkeeper",
+      "source_file": "bin/model-pick.mjs",
+      "symbols_or_entrypoints": [
+        "wkHome",
+        "cacheFile",
+        "auditFile",
+        "configFile",
+        "MODEL_ID",
+        "EFFORTS",
+        "config",
+        "order",
+        "inOrder",
+        "readCache",
+        "audit",
+        "pick"
+      ],
+      "lifecycle_trigger": "CLI/Panel/Scheduler",
+      "target_unified_module": "bin/model-pick.mjs (preserved + unified)",
+      "verification_assertion": "file_exists('bin/model-pick.mjs')"
+    },
+    {
+      "id": "wk-bin-remote-lib.mjs",
+      "origin_component": "watchkeeper",
+      "source_file": "bin/remote-lib.mjs",
+      "symbols_or_entrypoints": [
+        "canonical",
+        "b64u",
+        "fromB64u",
+        "sha256",
+        "challengeFor",
+        "wkHome",
+        "FILES",
+        "REMOTE_DEFAULTS",
+        "SET_SERVER",
+        "SET_USER",
+        "SET_COMMAND",
+        "serverProblem"
+      ],
+      "lifecycle_trigger": "CLI/Panel/Scheduler",
+      "target_unified_module": "bin/remote-lib.mjs (preserved + unified)",
+      "verification_assertion": "file_exists('bin/remote-lib.mjs')"
+    },
+    {
+      "id": "wk-bin-steward-lib.mjs",
+      "origin_component": "watchkeeper",
+      "source_file": "bin/steward-lib.mjs",
+      "symbols_or_entrypoints": [
+        "HOUR",
+        "KINDS",
+        "StewardError",
+        "nowMs",
+        "iso",
+        "stewardDir",
+        "estTokens",
+        "writeAtomic",
+        "tidy",
+        "clipWords",
+        "jaccard",
+        "secretHits"
+      ],
+      "lifecycle_trigger": "CLI/Panel/Scheduler",
+      "target_unified_module": "bin/steward-lib.mjs (preserved + unified)",
+      "verification_assertion": "file_exists('bin/steward-lib.mjs')"
+    },
+    {
+      "id": "wk-bin-wk-antigravity.mjs",
+      "origin_component": "watchkeeper",
+      "source_file": "bin/wk-antigravity.mjs",
+      "symbols_or_entrypoints": [
+        "parseArgs"
+      ],
+      "lifecycle_trigger": "CLI/Panel/Scheduler",
+      "target_unified_module": "bin/wk-antigravity.mjs (preserved + unified)",
+      "verification_assertion": "file_exists('bin/wk-antigravity.mjs')"
+    },
+    {
+      "id": "wk-bin-wk-ask-claude.mjs",
+      "origin_component": "watchkeeper",
+      "source_file": "bin/wk-ask-claude.mjs",
+      "symbols_or_entrypoints": [
+        "adviceDir",
+        "ID_RE",
+        "slug",
+        "parseArgs",
+        "listAdvice",
+        "askedToday",
+        "looksSecret",
+        "projectChoice",
+        "mainProject",
+        "voiceFile",
+        "claudeArgs",
+        "promptFor"
+      ],
+      "lifecycle_trigger": "CLI/Panel/Scheduler",
+      "target_unified_module": "bin/wk-ask-claude.mjs (preserved + unified)",
+      "verification_assertion": "file_exists('bin/wk-ask-claude.mjs')"
+    },
+    {
+      "id": "wk-bin-wk-bridge.mjs",
+      "origin_component": "watchkeeper",
+      "source_file": "bin/wk-bridge.mjs",
+      "symbols_or_entrypoints": [
+        "LABEL",
+        "MAX_MODEL",
+        "orchestrationDir",
+        "MAC_LABEL",
+        "QUESTION_CHANGED",
+        "pushedQuestionHash",
+        "panelPaths",
+        "plistFile",
+        "fitModel",
+        "modelHash",
+        "buildModel",
+        "takeKey"
+      ],
+      "lifecycle_trigger": "CLI/Panel/Scheduler",
+      "target_unified_module": "bin/wk-bridge.mjs (preserved + unified)",
+      "verification_assertion": "file_exists('bin/wk-bridge.mjs')"
+    },
+    {
+      "id": "wk-bin-wk-carbon-fallback.mjs",
+      "origin_component": "watchkeeper",
+      "source_file": "bin/wk-carbon-fallback.mjs",
+      "symbols_or_entrypoints": [
+        "CARBON_HIGH_MODEL",
+        "CARBON_FALLBACK_CHAIN",
+        "findAgyBin",
+        "canCarbonFallback",
+        "isClaudeLimitError",
+        "extractJsonFromText",
+        "runCarbonHigh"
+      ],
+      "lifecycle_trigger": "CLI/Panel/Scheduler",
+      "target_unified_module": "bin/wk-carbon-fallback.mjs (preserved + unified)",
+      "verification_assertion": "file_exists('bin/wk-carbon-fallback.mjs')"
+    },
+    {
+      "id": "wk-bin-wk-evidence.mjs",
+      "origin_component": "watchkeeper",
+      "source_file": "bin/wk-evidence.mjs",
+      "symbols_or_entrypoints": [
+        "wk-evidence"
+      ],
+      "lifecycle_trigger": "HookBus:SessionStart|PreToolUse|PostToolUse|Stop",
+      "target_unified_module": "bin/wk-evidence.mjs (preserved + unified)",
+      "verification_assertion": "file_exists('bin/wk-evidence.mjs')"
+    },
+    {
+      "id": "wk-bin-wk-gemini-log.mjs",
+      "origin_component": "watchkeeper",
+      "source_file": "bin/wk-gemini-log.mjs",
+      "symbols_or_entrypoints": [
+        "log"
+      ],
+      "lifecycle_trigger": "HookBus:SessionStart|PreToolUse|PostToolUse|Stop",
+      "target_unified_module": "bin/wk-gemini-log.mjs (preserved + unified)",
+      "verification_assertion": "file_exists('bin/wk-gemini-log.mjs')"
+    },
+    {
+      "id": "wk-bin-wk-graphify.mjs",
+      "origin_component": "graphify",
+      "source_file": "bin/wk-graphify.mjs",
+      "symbols_or_entrypoints": [
+        "GRAPHIFY_VERSION",
+        "GRAPHIFY_PKG",
+        "findGraphify",
+        "readGraphifyVersion",
+        "findInstaller",
+        "registerClaudeGlobal",
+        "installGraphify",
+        "graphifyStatus",
+        "graphifyWords"
+      ],
+      "lifecycle_trigger": "CLI/Panel/Scheduler",
+      "target_unified_module": "core/graph_bridge.py",
+      "verification_assertion": "file_exists('bin/wk-graphify.mjs')"
+    },
+    {
+      "id": "wk-bin-wk-guard-agy.mjs",
+      "origin_component": "watchkeeper",
+      "source_file": "bin/wk-guard-agy.mjs",
+      "symbols_or_entrypoints": [
+        "KNOWN",
+        "callOf",
+        "toGuard",
+        "machinePass",
+        "passDecision",
+        "dataWrite",
+        "isWkWork",
+        "isMarked",
+        "mark",
+        "main"
+      ],
+      "lifecycle_trigger": "HookBus:SessionStart|PreToolUse|PostToolUse|Stop",
+      "target_unified_module": "bin/wk-guard-agy.mjs (preserved + unified)",
+      "verification_assertion": "file_exists('bin/wk-guard-agy.mjs')"
+    },
+    {
+      "id": "wk-bin-wk-guard.mjs",
+      "origin_component": "watchkeeper",
+      "source_file": "bin/wk-guard.mjs",
+      "symbols_or_entrypoints": [
+        "wk-guard"
+      ],
+      "lifecycle_trigger": "HookBus:SessionStart|PreToolUse|PostToolUse|Stop",
+      "target_unified_module": "bin/wk-guard.mjs (preserved + unified)",
+      "verification_assertion": "file_exists('bin/wk-guard.mjs')"
+    },
+    {
+      "id": "wk-bin-wk-handoff.mjs",
+      "origin_component": "watchkeeper",
+      "source_file": "bin/wk-handoff.mjs",
+      "symbols_or_entrypoints": [
+        "DEFAULTS",
+        "END",
+        "dir",
+        "config",
+        "contextTokens",
+        "meterReading",
+        "whyNow",
+        "checkFile",
+        "askText",
+        "onStop",
+        "onStart",
+        "askForJob"
+      ],
+      "lifecycle_trigger": "HookBus:SessionStart|PreToolUse|PostToolUse|Stop",
+      "target_unified_module": "bin/wk-handoff.mjs (preserved + unified)",
+      "verification_assertion": "file_exists('bin/wk-handoff.mjs')"
+    },
+    {
+      "id": "wk-bin-wk-job.mjs",
+      "origin_component": "watchkeeper",
+      "source_file": "bin/wk-job.mjs",
+      "symbols_or_entrypoints": [
+        "FORBIDDEN",
+        "STATES",
+        "MODE_WORDS",
+        "jobsDir",
+        "newJobId",
+        "systemLine",
+        "claudeArgv",
+        "readMeta",
+        "readEvents",
+        "sweep",
+        "freeMb",
+        "pacePct"
+      ],
+      "lifecycle_trigger": "CLI/Panel/Scheduler",
+      "target_unified_module": "bin/wk-job.mjs (preserved + unified)",
+      "verification_assertion": "file_exists('bin/wk-job.mjs')"
+    },
+    {
+      "id": "wk-bin-wk-lane",
+      "origin_component": "watchkeeper",
+      "source_file": "bin/wk-lane",
+      "symbols_or_entrypoints": [
+        "wk-lane"
+      ],
+      "lifecycle_trigger": "CLI/Panel/Scheduler",
+      "target_unified_module": "bin/wk-lane (preserved + unified)",
+      "verification_assertion": "file_exists('bin/wk-lane')"
+    },
+    {
+      "id": "wk-bin-wk-ledger.mjs",
+      "origin_component": "watchkeeper",
+      "source_file": "bin/wk-ledger.mjs",
+      "symbols_or_entrypoints": [
+        "wk-ledger"
+      ],
+      "lifecycle_trigger": "CLI/Panel/Scheduler",
+      "target_unified_module": "bin/wk-ledger.mjs (preserved + unified)",
+      "verification_assertion": "file_exists('bin/wk-ledger.mjs')"
+    },
+    {
+      "id": "wk-bin-wk-optimise.mjs",
+      "origin_component": "watchkeeper",
+      "source_file": "bin/wk-optimise.mjs",
+      "symbols_or_entrypoints": [
+        "wk-optimise"
+      ],
+      "lifecycle_trigger": "CLI/Panel/Scheduler",
+      "target_unified_module": "bin/wk-optimise.mjs (preserved + unified)",
+      "verification_assertion": "file_exists('bin/wk-optimise.mjs')"
+    },
+    {
+      "id": "wk-bin-wk-pin.mjs",
+      "origin_component": "watchkeeper",
+      "source_file": "bin/wk-pin.mjs",
+      "symbols_or_entrypoints": [
+        "wk-pin"
+      ],
+      "lifecycle_trigger": "CLI/Panel/Scheduler",
+      "target_unified_module": "bin/wk-pin.mjs (preserved + unified)",
+      "verification_assertion": "file_exists('bin/wk-pin.mjs')"
+    },
+    {
+      "id": "wk-bin-wk-projects.mjs",
+      "origin_component": "watchkeeper",
+      "source_file": "bin/wk-projects.mjs",
+      "symbols_or_entrypoints": [
+        "projectsFile",
+        "keyOf",
+        "scan",
+        "readProjects",
+        "findProject",
+        "main"
+      ],
+      "lifecycle_trigger": "CLI/Panel/Scheduler",
+      "target_unified_module": "bin/wk-projects.mjs (preserved + unified)",
+      "verification_assertion": "file_exists('bin/wk-projects.mjs')"
+    },
+    {
+      "id": "wk-bin-wk-release.mjs",
+      "origin_component": "watchkeeper",
+      "source_file": "bin/wk-release.mjs",
+      "symbols_or_entrypoints": [
+        "wk-release"
+      ],
+      "lifecycle_trigger": "CLI/Panel/Scheduler",
+      "target_unified_module": "bin/wk-release.mjs (preserved + unified)",
+      "verification_assertion": "file_exists('bin/wk-release.mjs')"
+    },
+    {
+      "id": "wk-bin-wk-run",
+      "origin_component": "watchkeeper",
+      "source_file": "bin/wk-run",
+      "symbols_or_entrypoints": [
+        "wk-run"
+      ],
+      "lifecycle_trigger": "CLI/Panel/Scheduler",
+      "target_unified_module": "bin/wk-run (preserved + unified)",
+      "verification_assertion": "file_exists('bin/wk-run')"
+    },
+    {
+      "id": "wk-bin-wk-skill-sync.mjs",
+      "origin_component": "watchkeeper",
+      "source_file": "bin/wk-skill-sync.mjs",
+      "symbols_or_entrypoints": [
+        "LABEL",
+        "syncStatusFile",
+        "skillSyncPlist",
+        "readSyncStatus",
+        "runSkillSync",
+        "installSkillSync",
+        "uninstallSkillSync"
+      ],
+      "lifecycle_trigger": "CLI/Panel/Scheduler",
+      "target_unified_module": "bin/wk-skill-sync.mjs (preserved + unified)",
+      "verification_assertion": "file_exists('bin/wk-skill-sync.mjs')"
+    },
+    {
+      "id": "wk-bin-wk-snapshot.mjs",
+      "origin_component": "watchkeeper",
+      "source_file": "bin/wk-snapshot.mjs",
+      "symbols_or_entrypoints": [
+        "DENY_KEYS",
+        "badKeys",
+        "realStripeFn",
+        "stripeTotals",
+        "visitorTotals",
+        "buildSnapshot",
+        "writeSnapshot"
+      ],
+      "lifecycle_trigger": "CLI/Panel/Scheduler",
+      "target_unified_module": "bin/wk-snapshot.mjs (preserved + unified)",
+      "verification_assertion": "file_exists('bin/wk-snapshot.mjs')"
+    },
+    {
+      "id": "wk-bin-wk-start.mjs",
+      "origin_component": "watchkeeper",
+      "source_file": "bin/wk-start.mjs",
+      "symbols_or_entrypoints": [
+        "wk-start"
+      ],
+      "lifecycle_trigger": "HookBus:SessionStart|PreToolUse|PostToolUse|Stop",
+      "target_unified_module": "bin/wk-start.mjs (preserved + unified)",
+      "verification_assertion": "file_exists('bin/wk-start.mjs')"
+    },
+    {
+      "id": "wk-bin-wk-state.mjs",
+      "origin_component": "watchkeeper",
+      "source_file": "bin/wk-state.mjs",
+      "symbols_or_entrypoints": [
+        "state"
+      ],
+      "lifecycle_trigger": "CLI/Panel/Scheduler",
+      "target_unified_module": "bin/wk-state.mjs (preserved + unified)",
+      "verification_assertion": "file_exists('bin/wk-state.mjs')"
+    },
+    {
+      "id": "wk-bin-wk-status.mjs",
+      "origin_component": "watchkeeper",
+      "source_file": "bin/wk-status.mjs",
+      "symbols_or_entrypoints": [
+        "buildUnifiedStatus"
+      ],
+      "lifecycle_trigger": "CLI/Panel/Scheduler",
+      "target_unified_module": "bin/wk-status.mjs (preserved + unified)",
+      "verification_assertion": "file_exists('bin/wk-status.mjs')"
+    },
+    {
+      "id": "wk-bin-wk-steward.mjs",
+      "origin_component": "watchkeeper",
+      "source_file": "bin/wk-steward.mjs",
+      "symbols_or_entrypoints": [
+        "wk-steward"
+      ],
+      "lifecycle_trigger": "CLI/Panel/Scheduler",
+      "target_unified_module": "bin/wk-steward.mjs (preserved + unified)",
+      "verification_assertion": "file_exists('bin/wk-steward.mjs')"
+    },
+    {
+      "id": "wk-bin-wk-suggest.mjs",
+      "origin_component": "watchkeeper",
+      "source_file": "bin/wk-suggest.mjs",
+      "symbols_or_entrypoints": [
+        "parseArgs",
+        "add",
+        "decide"
+      ],
+      "lifecycle_trigger": "CLI/Panel/Scheduler",
+      "target_unified_module": "bin/wk-suggest.mjs (preserved + unified)",
+      "verification_assertion": "file_exists('bin/wk-suggest.mjs')"
+    },
+    {
+      "id": "wk-bin-wk-task.mjs",
+      "origin_component": "watchkeeper",
+      "source_file": "bin/wk-task.mjs",
+      "symbols_or_entrypoints": [
+        "parseArgs",
+        "hookDirs",
+        "outOfScope",
+        "addTask",
+        "takeTask",
+        "brief",
+        "doneTask",
+        "mergeTask",
+        "discardTask"
+      ],
+      "lifecycle_trigger": "CLI/Panel/Scheduler",
+      "target_unified_module": "bin/wk-task.mjs (preserved + unified)",
+      "verification_assertion": "file_exists('bin/wk-task.mjs')"
+    },
+    {
+      "id": "wk-bin-wk-update.mjs",
+      "origin_component": "watchkeeper",
+      "source_file": "bin/wk-update.mjs",
+      "symbols_or_entrypoints": [
+        "DEFAULT_CLIS",
+        "ideClis",
+        "parseVersion",
+        "cmpVersion",
+        "newestTag",
+        "localVersion",
+        "role",
+        "fetchProblem",
+        "blocker",
+        "verifyRelease",
+        "installedPanel",
+        "lockFile"
+      ],
+      "lifecycle_trigger": "CLI/Panel/Scheduler",
+      "target_unified_module": "bin/wk-update.mjs (preserved + unified)",
+      "verification_assertion": "file_exists('bin/wk-update.mjs')"
+    },
+    {
+      "id": "wk-bin-wk.mjs",
+      "origin_component": "watchkeeper",
+      "source_file": "bin/wk.mjs",
+      "symbols_or_entrypoints": [
+        "wk"
+      ],
+      "lifecycle_trigger": "CLI/Panel/Scheduler",
+      "target_unified_module": "bin/wk.mjs (preserved + unified)",
+      "verification_assertion": "file_exists('bin/wk.mjs')"
+    },
+    {
+      "id": "wk-hook-SessionStart",
+      "origin_component": "watchkeeper",
+      "source_file": "hooks/hooks.json",
+      "symbols_or_entrypoints": [
+        "SessionStart"
+      ],
+      "lifecycle_trigger": "HookEvent:SessionStart",
+      "target_unified_module": "core/hook_bus.py:SessionStart",
+      "verification_assertion": "hook_registered('SessionStart')"
+    },
+    {
+      "id": "wk-hook-UserPromptSubmit",
+      "origin_component": "watchkeeper",
+      "source_file": "hooks/hooks.json",
+      "symbols_or_entrypoints": [
+        "UserPromptSubmit"
+      ],
+      "lifecycle_trigger": "HookEvent:UserPromptSubmit",
+      "target_unified_module": "core/hook_bus.py:UserPromptSubmit",
+      "verification_assertion": "hook_registered('UserPromptSubmit')"
+    },
+    {
+      "id": "wk-hook-PreToolUse",
+      "origin_component": "watchkeeper",
+      "source_file": "hooks/hooks.json",
+      "symbols_or_entrypoints": [
+        "PreToolUse"
+      ],
+      "lifecycle_trigger": "HookEvent:PreToolUse",
+      "target_unified_module": "core/hook_bus.py:PreToolUse",
+      "verification_assertion": "hook_registered('PreToolUse')"
+    },
+    {
+      "id": "wk-hook-PostToolUse",
+      "origin_component": "watchkeeper",
+      "source_file": "hooks/hooks.json",
+      "symbols_or_entrypoints": [
+        "PostToolUse"
+      ],
+      "lifecycle_trigger": "HookEvent:PostToolUse",
+      "target_unified_module": "core/hook_bus.py:PostToolUse",
+      "verification_assertion": "hook_registered('PostToolUse')"
+    },
+    {
+      "id": "wk-hook-PostToolBatch",
+      "origin_component": "watchkeeper",
+      "source_file": "hooks/hooks.json",
+      "symbols_or_entrypoints": [
+        "PostToolBatch"
+      ],
+      "lifecycle_trigger": "HookEvent:PostToolBatch",
+      "target_unified_module": "core/hook_bus.py:PostToolBatch",
+      "verification_assertion": "hook_registered('PostToolBatch')"
+    },
+    {
+      "id": "wk-hook-SubagentStart",
+      "origin_component": "watchkeeper",
+      "source_file": "hooks/hooks.json",
+      "symbols_or_entrypoints": [
+        "SubagentStart"
+      ],
+      "lifecycle_trigger": "HookEvent:SubagentStart",
+      "target_unified_module": "core/hook_bus.py:SubagentStart",
+      "verification_assertion": "hook_registered('SubagentStart')"
+    },
+    {
+      "id": "wk-hook-SubagentStop",
+      "origin_component": "watchkeeper",
+      "source_file": "hooks/hooks.json",
+      "symbols_or_entrypoints": [
+        "SubagentStop"
+      ],
+      "lifecycle_trigger": "HookEvent:SubagentStop",
+      "target_unified_module": "core/hook_bus.py:SubagentStop",
+      "verification_assertion": "hook_registered('SubagentStop')"
+    },
+    {
+      "id": "wk-hook-Stop",
+      "origin_component": "watchkeeper",
+      "source_file": "hooks/hooks.json",
+      "symbols_or_entrypoints": [
+        "Stop"
+      ],
+      "lifecycle_trigger": "HookEvent:Stop",
+      "target_unified_module": "core/hook_bus.py:Stop",
+      "verification_assertion": "hook_registered('Stop')"
+    },
+    {
+      "id": "wk-cmd-optimise",
+      "origin_component": "watchkeeper",
+      "source_file": "commands/optimise.md",
+      "symbols_or_entrypoints": [
+        "/watchkeeper:optimise"
+      ],
+      "lifecycle_trigger": "SlashCommand:/watchkeeper:optimise",
+      "target_unified_module": "commands/optimise.md + core/wk_cli.py",
+      "verification_assertion": "file_exists('commands/optimise.md')"
+    },
+    {
+      "id": "wk-cmd-orchestrate",
+      "origin_component": "watchkeeper",
+      "source_file": "commands/orchestrate.md",
+      "symbols_or_entrypoints": [
+        "/watchkeeper:orchestrate"
+      ],
+      "lifecycle_trigger": "SlashCommand:/watchkeeper:orchestrate",
+      "target_unified_module": "commands/orchestrate.md + core/wk_cli.py",
+      "verification_assertion": "file_exists('commands/orchestrate.md')"
+    },
+    {
+      "id": "wk-cmd-re-prompt",
+      "origin_component": "watchkeeper",
+      "source_file": "commands/re-prompt.md",
+      "symbols_or_entrypoints": [
+        "/watchkeeper:re-prompt"
+      ],
+      "lifecycle_trigger": "SlashCommand:/watchkeeper:re-prompt",
+      "target_unified_module": "commands/re-prompt.md + core/wk_cli.py",
+      "verification_assertion": "file_exists('commands/re-prompt.md')"
+    },
+    {
+      "id": "wk-cmd-spend",
+      "origin_component": "watchkeeper",
+      "source_file": "commands/spend.md",
+      "symbols_or_entrypoints": [
+        "/watchkeeper:spend"
+      ],
+      "lifecycle_trigger": "SlashCommand:/watchkeeper:spend",
+      "target_unified_module": "commands/spend.md + core/wk_cli.py",
+      "verification_assertion": "file_exists('commands/spend.md')"
+    },
+    {
+      "id": "wk-cmd-status",
+      "origin_component": "watchkeeper",
+      "source_file": "commands/status.md",
+      "symbols_or_entrypoints": [
+        "/watchkeeper:status"
+      ],
+      "lifecycle_trigger": "SlashCommand:/watchkeeper:status",
+      "target_unified_module": "commands/status.md + core/wk_cli.py",
+      "verification_assertion": "file_exists('commands/status.md')"
+    },
+    {
+      "id": "wk-cmd-wk",
+      "origin_component": "watchkeeper",
+      "source_file": "commands/wk.md",
+      "symbols_or_entrypoints": [
+        "/watchkeeper:wk"
+      ],
+      "lifecycle_trigger": "SlashCommand:/watchkeeper:wk",
+      "target_unified_module": "commands/wk.md + core/wk_cli.py",
+      "verification_assertion": "file_exists('commands/wk.md')"
+    },
+    {
+      "id": "wk-agent-builder",
+      "origin_component": "watchkeeper",
+      "source_file": "agents/builder.md",
+      "symbols_or_entrypoints": [
+        "builder"
+      ],
+      "lifecycle_trigger": "SubagentStart/SubagentStop",
+      "target_unified_module": "agents/builder.md + core/fast_path.py",
+      "verification_assertion": "file_exists('agents/builder.md')"
+    },
+    {
+      "id": "wk-agent-quarantine",
+      "origin_component": "watchkeeper",
+      "source_file": "agents/quarantine.md",
+      "symbols_or_entrypoints": [
+        "quarantine"
+      ],
+      "lifecycle_trigger": "SubagentStart/SubagentStop",
+      "target_unified_module": "agents/quarantine.md + core/fast_path.py",
+      "verification_assertion": "file_exists('agents/quarantine.md')"
+    },
+    {
+      "id": "wk-agent-reviewer",
+      "origin_component": "watchkeeper",
+      "source_file": "agents/reviewer.md",
+      "symbols_or_entrypoints": [
+        "reviewer"
+      ],
+      "lifecycle_trigger": "SubagentStart/SubagentStop",
+      "target_unified_module": "agents/reviewer.md + core/fast_path.py",
+      "verification_assertion": "file_exists('agents/reviewer.md')"
+    },
+    {
+      "id": "wk-agent-scout",
+      "origin_component": "watchkeeper",
+      "source_file": "agents/scout.md",
+      "symbols_or_entrypoints": [
+        "scout"
+      ],
+      "lifecycle_trigger": "SubagentStart/SubagentStop",
+      "target_unified_module": "agents/scout.md + core/fast_path.py",
+      "verification_assertion": "file_exists('agents/scout.md')"
+    },
+    {
+      "id": "wk-skill-duo-orchestrator",
+      "origin_component": "watchkeeper",
+      "source_file": "skills/duo-orchestrator/SKILL.md",
+      "symbols_or_entrypoints": [
+        "/duo-orchestrator",
+        "duo-orchestrator"
+      ],
+      "lifecycle_trigger": "SkillRouter/SlashCommand",
+      "target_unified_module": "core/skill_router.py + skills/duo-orchestrator/SKILL.md",
+      "verification_assertion": "skill_indexed('duo-orchestrator')"
+    },
+    {
+      "id": "wk-skill-evidence",
+      "origin_component": "watchkeeper",
+      "source_file": "skills/evidence/SKILL.md",
+      "symbols_or_entrypoints": [
+        "/evidence",
+        "evidence"
+      ],
+      "lifecycle_trigger": "SkillRouter/SlashCommand",
+      "target_unified_module": "core/skill_router.py + skills/evidence/SKILL.md",
+      "verification_assertion": "skill_indexed('evidence')"
+    },
+    {
+      "id": "wk-skill-graphify",
+      "origin_component": "graphify",
+      "source_file": "skills/graphify/SKILL.md",
+      "symbols_or_entrypoints": [
+        "/graphify",
+        "graphify"
+      ],
+      "lifecycle_trigger": "SkillRouter/SlashCommand",
+      "target_unified_module": "core/skill_router.py + skills/graphify/SKILL.md",
+      "verification_assertion": "skill_indexed('graphify')"
+    },
+    {
+      "id": "wk-skill-lean-tokens",
+      "origin_component": "watchkeeper",
+      "source_file": "skills/lean-tokens/SKILL.md",
+      "symbols_or_entrypoints": [
+        "/lean-tokens",
+        "lean-tokens"
+      ],
+      "lifecycle_trigger": "SkillRouter/SlashCommand",
+      "target_unified_module": "core/skill_router.py + skills/lean-tokens/SKILL.md",
+      "verification_assertion": "skill_indexed('lean-tokens')"
+    },
+    {
+      "id": "wk-skill-profession-skill-vault",
+      "origin_component": "watchkeeper",
+      "source_file": "skills/profession-skill-vault/SKILL.md",
+      "symbols_or_entrypoints": [
+        "/profession-skill-vault",
+        "profession-skill-vault"
+      ],
+      "lifecycle_trigger": "SkillRouter/SlashCommand",
+      "target_unified_module": "core/skill_router.py + skills/profession-skill-vault/SKILL.md",
+      "verification_assertion": "skill_indexed('profession-skill-vault')"
+    },
+    {
+      "id": "wk-skill-re-prompt",
+      "origin_component": "watchkeeper",
+      "source_file": "skills/re-prompt/SKILL.md",
+      "symbols_or_entrypoints": [
+        "/re-prompt",
+        "re-prompt"
+      ],
+      "lifecycle_trigger": "SkillRouter/SlashCommand",
+      "target_unified_module": "core/skill_router.py + skills/re-prompt/SKILL.md",
+      "verification_assertion": "skill_indexed('re-prompt')"
+    },
+    {
+      "id": "wk-skill-wk",
+      "origin_component": "watchkeeper",
+      "source_file": "skills/wk/SKILL.md",
+      "symbols_or_entrypoints": [
+        "/wk",
+        "wk"
+      ],
+      "lifecycle_trigger": "SkillRouter/SlashCommand",
+      "target_unified_module": "core/skill_router.py + skills/wk/SKILL.md",
+      "verification_assertion": "skill_indexed('wk')"
+    },
+    {
+      "id": "wk-skill-wk-status",
+      "origin_component": "watchkeeper",
+      "source_file": "skills/wk-status/SKILL.md",
+      "symbols_or_entrypoints": [
+        "/wk-status",
+        "wk-status"
+      ],
+      "lifecycle_trigger": "SkillRouter/SlashCommand",
+      "target_unified_module": "core/skill_router.py + skills/wk-status/SKILL.md",
+      "verification_assertion": "skill_indexed('wk-status')"
+    },
+    {
+      "id": "agy-antigravity/plugins/watchkeeper/agents/wk-builder.md",
+      "origin_component": "watchkeeper",
+      "source_file": "antigravity/plugins/watchkeeper/agents/wk-builder.md",
+      "symbols_or_entrypoints": [
+        "wk-builder.md"
+      ],
+      "lifecycle_trigger": "AntigravityPluginInstall",
+      "target_unified_module": "antigravity/plugins/watchkeeper/agents/wk-builder.md",
+      "verification_assertion": "file_exists('antigravity/plugins/watchkeeper/agents/wk-builder.md')"
+    },
+    {
+      "id": "agy-antigravity/plugins/watchkeeper/agents/wk-reviewer.md",
+      "origin_component": "watchkeeper",
+      "source_file": "antigravity/plugins/watchkeeper/agents/wk-reviewer.md",
+      "symbols_or_entrypoints": [
+        "wk-reviewer.md"
+      ],
+      "lifecycle_trigger": "AntigravityPluginInstall",
+      "target_unified_module": "antigravity/plugins/watchkeeper/agents/wk-reviewer.md",
+      "verification_assertion": "file_exists('antigravity/plugins/watchkeeper/agents/wk-reviewer.md')"
+    },
+    {
+      "id": "agy-antigravity/plugins/watchkeeper/agents/wk-scout.md",
+      "origin_component": "watchkeeper",
+      "source_file": "antigravity/plugins/watchkeeper/agents/wk-scout.md",
+      "symbols_or_entrypoints": [
+        "wk-scout.md"
+      ],
+      "lifecycle_trigger": "AntigravityPluginInstall",
+      "target_unified_module": "antigravity/plugins/watchkeeper/agents/wk-scout.md",
+      "verification_assertion": "file_exists('antigravity/plugins/watchkeeper/agents/wk-scout.md')"
+    },
+    {
+      "id": "agy-antigravity/plugins/watchkeeper/assets/logo.svg",
+      "origin_component": "watchkeeper",
+      "source_file": "antigravity/plugins/watchkeeper/assets/logo.svg",
+      "symbols_or_entrypoints": [
+        "logo.svg"
+      ],
+      "lifecycle_trigger": "AntigravityPluginInstall",
+      "target_unified_module": "antigravity/plugins/watchkeeper/assets/logo.svg",
+      "verification_assertion": "file_exists('antigravity/plugins/watchkeeper/assets/logo.svg')"
+    },
+    {
+      "id": "agy-antigravity/plugins/watchkeeper/hooks.json",
+      "origin_component": "watchkeeper",
+      "source_file": "antigravity/plugins/watchkeeper/hooks.json",
+      "symbols_or_entrypoints": [
+        "hooks.json"
+      ],
+      "lifecycle_trigger": "AntigravityPluginInstall",
+      "target_unified_module": "antigravity/plugins/watchkeeper/hooks.json",
+      "verification_assertion": "file_exists('antigravity/plugins/watchkeeper/hooks.json')"
+    },
+    {
+      "id": "agy-antigravity/plugins/watchkeeper/mcp_config.json",
+      "origin_component": "watchkeeper",
+      "source_file": "antigravity/plugins/watchkeeper/mcp_config.json",
+      "symbols_or_entrypoints": [
+        "mcp_config.json"
+      ],
+      "lifecycle_trigger": "AntigravityPluginInstall",
+      "target_unified_module": "antigravity/plugins/watchkeeper/mcp_config.json",
+      "verification_assertion": "file_exists('antigravity/plugins/watchkeeper/mcp_config.json')"
+    },
+    {
+      "id": "agy-antigravity/plugins/watchkeeper/plugin.json",
+      "origin_component": "watchkeeper",
+      "source_file": "antigravity/plugins/watchkeeper/plugin.json",
+      "symbols_or_entrypoints": [
+        "plugin.json"
+      ],
+      "lifecycle_trigger": "AntigravityPluginInstall",
+      "target_unified_module": "antigravity/plugins/watchkeeper/plugin.json",
+      "verification_assertion": "file_exists('antigravity/plugins/watchkeeper/plugin.json')"
+    },
+    {
+      "id": "agy-antigravity/plugins/watchkeeper/rules/graphify.md",
+      "origin_component": "graphify",
+      "source_file": "antigravity/plugins/watchkeeper/rules/graphify.md",
+      "symbols_or_entrypoints": [
+        "graphify.md"
+      ],
+      "lifecycle_trigger": "AntigravityPluginInstall",
+      "target_unified_module": "antigravity/plugins/watchkeeper/rules/graphify.md",
+      "verification_assertion": "file_exists('antigravity/plugins/watchkeeper/rules/graphify.md')"
+    },
+    {
+      "id": "agy-antigravity/plugins/watchkeeper/rules/re-prompt.md",
+      "origin_component": "re-prompt-v1.3.0",
+      "source_file": "antigravity/plugins/watchkeeper/rules/re-prompt.md",
+      "symbols_or_entrypoints": [
+        "re-prompt.md"
+      ],
+      "lifecycle_trigger": "AntigravityPluginInstall",
+      "target_unified_module": "antigravity/plugins/watchkeeper/rules/re-prompt.md",
+      "verification_assertion": "file_exists('antigravity/plugins/watchkeeper/rules/re-prompt.md')"
+    },
+    {
+      "id": "agy-antigravity/plugins/watchkeeper/rules/watchkeeper.md",
+      "origin_component": "watchkeeper",
+      "source_file": "antigravity/plugins/watchkeeper/rules/watchkeeper.md",
+      "symbols_or_entrypoints": [
+        "watchkeeper.md"
+      ],
+      "lifecycle_trigger": "AntigravityPluginInstall",
+      "target_unified_module": "antigravity/plugins/watchkeeper/rules/watchkeeper.md",
+      "verification_assertion": "file_exists('antigravity/plugins/watchkeeper/rules/watchkeeper.md')"
+    },
+    {
+      "id": "agy-antigravity/plugins/watchkeeper/skills/ask-claude/SKILL.md",
+      "origin_component": "watchkeeper",
+      "source_file": "antigravity/plugins/watchkeeper/skills/ask-claude/SKILL.md",
+      "symbols_or_entrypoints": [
+        "SKILL.md"
+      ],
+      "lifecycle_trigger": "AntigravityPluginInstall",
+      "target_unified_module": "antigravity/plugins/watchkeeper/skills/ask-claude/SKILL.md",
+      "verification_assertion": "file_exists('antigravity/plugins/watchkeeper/skills/ask-claude/SKILL.md')"
+    },
+    {
+      "id": "agy-antigravity/plugins/watchkeeper/skills/duo-orchestrator/SKILL.md",
+      "origin_component": "watchkeeper",
+      "source_file": "antigravity/plugins/watchkeeper/skills/duo-orchestrator/SKILL.md",
+      "symbols_or_entrypoints": [
+        "SKILL.md"
+      ],
+      "lifecycle_trigger": "AntigravityPluginInstall",
+      "target_unified_module": "antigravity/plugins/watchkeeper/skills/duo-orchestrator/SKILL.md",
+      "verification_assertion": "file_exists('antigravity/plugins/watchkeeper/skills/duo-orchestrator/SKILL.md')"
+    },
+    {
+      "id": "agy-antigravity/plugins/watchkeeper/skills/graphify/SKILL.md",
+      "origin_component": "graphify",
+      "source_file": "antigravity/plugins/watchkeeper/skills/graphify/SKILL.md",
+      "symbols_or_entrypoints": [
+        "SKILL.md"
+      ],
+      "lifecycle_trigger": "AntigravityPluginInstall",
+      "target_unified_module": "antigravity/plugins/watchkeeper/skills/graphify/SKILL.md",
+      "verification_assertion": "file_exists('antigravity/plugins/watchkeeper/skills/graphify/SKILL.md')"
+    },
+    {
+      "id": "agy-antigravity/plugins/watchkeeper/skills/graphify/references/add-watch.md",
+      "origin_component": "graphify",
+      "source_file": "antigravity/plugins/watchkeeper/skills/graphify/references/add-watch.md",
+      "symbols_or_entrypoints": [
+        "add-watch.md"
+      ],
+      "lifecycle_trigger": "AntigravityPluginInstall",
+      "target_unified_module": "antigravity/plugins/watchkeeper/skills/graphify/references/add-watch.md",
+      "verification_assertion": "file_exists('antigravity/plugins/watchkeeper/skills/graphify/references/add-watch.md')"
+    },
+    {
+      "id": "agy-antigravity/plugins/watchkeeper/skills/graphify/references/exports.md",
+      "origin_component": "graphify",
+      "source_file": "antigravity/plugins/watchkeeper/skills/graphify/references/exports.md",
+      "symbols_or_entrypoints": [
+        "exports.md"
+      ],
+      "lifecycle_trigger": "AntigravityPluginInstall",
+      "target_unified_module": "antigravity/plugins/watchkeeper/skills/graphify/references/exports.md",
+      "verification_assertion": "file_exists('antigravity/plugins/watchkeeper/skills/graphify/references/exports.md')"
+    },
+    {
+      "id": "agy-antigravity/plugins/watchkeeper/skills/graphify/references/extraction-spec.md",
+      "origin_component": "graphify",
+      "source_file": "antigravity/plugins/watchkeeper/skills/graphify/references/extraction-spec.md",
+      "symbols_or_entrypoints": [
+        "extraction-spec.md"
+      ],
+      "lifecycle_trigger": "AntigravityPluginInstall",
+      "target_unified_module": "antigravity/plugins/watchkeeper/skills/graphify/references/extraction-spec.md",
+      "verification_assertion": "file_exists('antigravity/plugins/watchkeeper/skills/graphify/references/extraction-spec.md')"
+    },
+    {
+      "id": "agy-antigravity/plugins/watchkeeper/skills/graphify/references/github-and-merge.md",
+      "origin_component": "graphify",
+      "source_file": "antigravity/plugins/watchkeeper/skills/graphify/references/github-and-merge.md",
+      "symbols_or_entrypoints": [
+        "github-and-merge.md"
+      ],
+      "lifecycle_trigger": "AntigravityPluginInstall",
+      "target_unified_module": "antigravity/plugins/watchkeeper/skills/graphify/references/github-and-merge.md",
+      "verification_assertion": "file_exists('antigravity/plugins/watchkeeper/skills/graphify/references/github-and-merge.md')"
+    },
+    {
+      "id": "agy-antigravity/plugins/watchkeeper/skills/graphify/references/hooks.md",
+      "origin_component": "graphify",
+      "source_file": "antigravity/plugins/watchkeeper/skills/graphify/references/hooks.md",
+      "symbols_or_entrypoints": [
+        "hooks.md"
+      ],
+      "lifecycle_trigger": "AntigravityPluginInstall",
+      "target_unified_module": "antigravity/plugins/watchkeeper/skills/graphify/references/hooks.md",
+      "verification_assertion": "file_exists('antigravity/plugins/watchkeeper/skills/graphify/references/hooks.md')"
+    },
+    {
+      "id": "agy-antigravity/plugins/watchkeeper/skills/graphify/references/query.md",
+      "origin_component": "graphify",
+      "source_file": "antigravity/plugins/watchkeeper/skills/graphify/references/query.md",
+      "symbols_or_entrypoints": [
+        "query.md"
+      ],
+      "lifecycle_trigger": "AntigravityPluginInstall",
+      "target_unified_module": "antigravity/plugins/watchkeeper/skills/graphify/references/query.md",
+      "verification_assertion": "file_exists('antigravity/plugins/watchkeeper/skills/graphify/references/query.md')"
+    },
+    {
+      "id": "agy-antigravity/plugins/watchkeeper/skills/graphify/references/transcribe.md",
+      "origin_component": "graphify",
+      "source_file": "antigravity/plugins/watchkeeper/skills/graphify/references/transcribe.md",
+      "symbols_or_entrypoints": [
+        "transcribe.md"
+      ],
+      "lifecycle_trigger": "AntigravityPluginInstall",
+      "target_unified_module": "antigravity/plugins/watchkeeper/skills/graphify/references/transcribe.md",
+      "verification_assertion": "file_exists('antigravity/plugins/watchkeeper/skills/graphify/references/transcribe.md')"
+    },
+    {
+      "id": "agy-antigravity/plugins/watchkeeper/skills/graphify/references/update.md",
+      "origin_component": "graphify",
+      "source_file": "antigravity/plugins/watchkeeper/skills/graphify/references/update.md",
+      "symbols_or_entrypoints": [
+        "update.md"
+      ],
+      "lifecycle_trigger": "AntigravityPluginInstall",
+      "target_unified_module": "antigravity/plugins/watchkeeper/skills/graphify/references/update.md",
+      "verification_assertion": "file_exists('antigravity/plugins/watchkeeper/skills/graphify/references/update.md')"
+    },
+    {
+      "id": "agy-antigravity/plugins/watchkeeper/skills/profession-skill-vault/SKILL.md",
+      "origin_component": "watchkeeper",
+      "source_file": "antigravity/plugins/watchkeeper/skills/profession-skill-vault/SKILL.md",
+      "symbols_or_entrypoints": [
+        "SKILL.md"
+      ],
+      "lifecycle_trigger": "AntigravityPluginInstall",
+      "target_unified_module": "antigravity/plugins/watchkeeper/skills/profession-skill-vault/SKILL.md",
+      "verification_assertion": "file_exists('antigravity/plugins/watchkeeper/skills/profession-skill-vault/SKILL.md')"
+    },
+    {
+      "id": "agy-antigravity/plugins/watchkeeper/skills/re-prompt/SKILL.md",
+      "origin_component": "re-prompt-v1.3.0",
+      "source_file": "antigravity/plugins/watchkeeper/skills/re-prompt/SKILL.md",
+      "symbols_or_entrypoints": [
+        "SKILL.md"
+      ],
+      "lifecycle_trigger": "AntigravityPluginInstall",
+      "target_unified_module": "antigravity/plugins/watchkeeper/skills/re-prompt/SKILL.md",
+      "verification_assertion": "file_exists('antigravity/plugins/watchkeeper/skills/re-prompt/SKILL.md')"
+    },
+    {
+      "id": "agy-antigravity/plugins/watchkeeper/skills/wk/SKILL.md",
+      "origin_component": "watchkeeper",
+      "source_file": "antigravity/plugins/watchkeeper/skills/wk/SKILL.md",
+      "symbols_or_entrypoints": [
+        "SKILL.md"
+      ],
+      "lifecycle_trigger": "AntigravityPluginInstall",
+      "target_unified_module": "antigravity/plugins/watchkeeper/skills/wk/SKILL.md",
+      "verification_assertion": "file_exists('antigravity/plugins/watchkeeper/skills/wk/SKILL.md')"
+    },
+    {
+      "id": "agy-antigravity/plugins/watchkeeper/skills/wk-add-task/SKILL.md",
+      "origin_component": "watchkeeper",
+      "source_file": "antigravity/plugins/watchkeeper/skills/wk-add-task/SKILL.md",
+      "symbols_or_entrypoints": [
+        "SKILL.md"
+      ],
+      "lifecycle_trigger": "AntigravityPluginInstall",
+      "target_unified_module": "antigravity/plugins/watchkeeper/skills/wk-add-task/SKILL.md",
+      "verification_assertion": "file_exists('antigravity/plugins/watchkeeper/skills/wk-add-task/SKILL.md')"
+    },
+    {
+      "id": "agy-antigravity/plugins/watchkeeper/skills/wk-status/SKILL.md",
+      "origin_component": "watchkeeper",
+      "source_file": "antigravity/plugins/watchkeeper/skills/wk-status/SKILL.md",
+      "symbols_or_entrypoints": [
+        "SKILL.md"
+      ],
+      "lifecycle_trigger": "AntigravityPluginInstall",
+      "target_unified_module": "antigravity/plugins/watchkeeper/skills/wk-status/SKILL.md",
+      "verification_assertion": "file_exists('antigravity/plugins/watchkeeper/skills/wk-status/SKILL.md')"
+    },
+    {
+      "id": "agy-antigravity/plugins/watchkeeper/skills/wk-suggest/SKILL.md",
+      "origin_component": "watchkeeper",
+      "source_file": "antigravity/plugins/watchkeeper/skills/wk-suggest/SKILL.md",
+      "symbols_or_entrypoints": [
+        "SKILL.md"
+      ],
+      "lifecycle_trigger": "AntigravityPluginInstall",
+      "target_unified_module": "antigravity/plugins/watchkeeper/skills/wk-suggest/SKILL.md",
+      "verification_assertion": "file_exists('antigravity/plugins/watchkeeper/skills/wk-suggest/SKILL.md')"
+    },
+    {
+      "id": "agy-antigravity/plugins/watchkeeper/skills/wk-take-task/SKILL.md",
+      "origin_component": "watchkeeper",
+      "source_file": "antigravity/plugins/watchkeeper/skills/wk-take-task/SKILL.md",
+      "symbols_or_entrypoints": [
+        "SKILL.md"
+      ],
+      "lifecycle_trigger": "AntigravityPluginInstall",
+      "target_unified_module": "antigravity/plugins/watchkeeper/skills/wk-take-task/SKILL.md",
+      "verification_assertion": "file_exists('antigravity/plugins/watchkeeper/skills/wk-take-task/SKILL.md')"
+    },
+    {
+      "id": "panel-panel/README.md",
+      "origin_component": "watchkeeper",
+      "source_file": "panel/README.md",
+      "symbols_or_entrypoints": [
+        "README.md"
+      ],
+      "lifecycle_trigger": "FullIDEWorkspace/Panel",
+      "target_unified_module": "panel/README.md",
+      "verification_assertion": "file_exists('panel/README.md')"
+    },
+    {
+      "id": "panel-panel/extension.js",
+      "origin_component": "watchkeeper",
+      "source_file": "panel/extension.js",
+      "symbols_or_entrypoints": [
+        "activate",
+        "deactivate",
+        "Panel",
+        "RUNS",
+        "UNTRUSTED",
+        "activateRePrompt"
+      ],
+      "lifecycle_trigger": "FullIDEWorkspace/Panel",
+      "target_unified_module": "panel/extension.js",
+      "verification_assertion": "file_exists('panel/extension.js')"
+    },
+    {
+      "id": "panel-panel/media/main.css",
+      "origin_component": "watchkeeper",
+      "source_file": "panel/media/main.css",
+      "symbols_or_entrypoints": [
+        "main.css"
+      ],
+      "lifecycle_trigger": "FullIDEWorkspace/Panel",
+      "target_unified_module": "panel/media/main.css",
+      "verification_assertion": "file_exists('panel/media/main.css')"
+    },
+    {
+      "id": "panel-panel/media/main.js",
+      "origin_component": "watchkeeper",
+      "source_file": "panel/media/main.js",
+      "symbols_or_entrypoints": [],
+      "lifecycle_trigger": "FullIDEWorkspace/Panel",
+      "target_unified_module": "panel/media/main.js",
+      "verification_assertion": "file_exists('panel/media/main.js')"
+    },
+    {
+      "id": "panel-panel/media/reprompt-icon.svg",
+      "origin_component": "watchkeeper",
+      "source_file": "panel/media/reprompt-icon.svg",
+      "symbols_or_entrypoints": [
+        "reprompt-icon.svg"
+      ],
+      "lifecycle_trigger": "FullIDEWorkspace/Panel",
+      "target_unified_module": "panel/media/reprompt-icon.svg",
+      "verification_assertion": "file_exists('panel/media/reprompt-icon.svg')"
+    },
+    {
+      "id": "panel-panel/media/reprompt_app.html",
+      "origin_component": "watchkeeper",
+      "source_file": "panel/media/reprompt_app.html",
+      "symbols_or_entrypoints": [
+        "reprompt_app.html"
+      ],
+      "lifecycle_trigger": "FullIDEWorkspace/Panel",
+      "target_unified_module": "panel/media/reprompt_app.html",
+      "verification_assertion": "file_exists('panel/media/reprompt_app.html')"
+    },
+    {
+      "id": "panel-panel/media/w-colour.svg",
+      "origin_component": "watchkeeper",
+      "source_file": "panel/media/w-colour.svg",
+      "symbols_or_entrypoints": [
+        "w-colour.svg"
+      ],
+      "lifecycle_trigger": "FullIDEWorkspace/Panel",
+      "target_unified_module": "panel/media/w-colour.svg",
+      "verification_assertion": "file_exists('panel/media/w-colour.svg')"
+    },
+    {
+      "id": "panel-panel/media/w.svg",
+      "origin_component": "watchkeeper",
+      "source_file": "panel/media/w.svg",
+      "symbols_or_entrypoints": [
+        "w.svg"
+      ],
+      "lifecycle_trigger": "FullIDEWorkspace/Panel",
+      "target_unified_module": "panel/media/w.svg",
+      "verification_assertion": "file_exists('panel/media/w.svg')"
+    },
+    {
+      "id": "panel-panel/package.json",
+      "origin_component": "watchkeeper",
+      "source_file": "panel/package.json",
+      "symbols_or_entrypoints": [
+        "package.json"
+      ],
+      "lifecycle_trigger": "FullIDEWorkspace/Panel",
+      "target_unified_module": "panel/package.json",
+      "verification_assertion": "file_exists('panel/package.json')"
+    },
+    {
+      "id": "panel-panel/src/actions.js",
+      "origin_component": "watchkeeper",
+      "source_file": "panel/src/actions.js",
+      "symbols_or_entrypoints": [
+        "MONEY_NOTE",
+        "question",
+        "suggestion",
+        "send",
+        "task",
+        "stopSwitch",
+        "installAsk",
+        "jobStart",
+        "jobReply",
+        "jobStop",
+        "phoneKey",
+        "phoneControl"
+      ],
+      "lifecycle_trigger": "FullIDEWorkspace/Panel",
+      "target_unified_module": "panel/src/actions.js",
+      "verification_assertion": "file_exists('panel/src/actions.js')"
+    },
+    {
+      "id": "panel-panel/src/chat-sessions.js",
+      "origin_component": "watchkeeper",
+      "source_file": "panel/src/chat-sessions.js",
+      "symbols_or_entrypoints": [
+        "CHAT_SESSION_ID",
+        "TURN_ID",
+        "sessionsFile",
+        "makeChatSessionId",
+        "makeTurnId",
+        "shortTitle",
+        "loadChatSessions",
+        "saveChatSessions",
+        "getChatSession",
+        "createChatSession",
+        "deleteChatSession",
+        "upsertTurn"
+      ],
+      "lifecycle_trigger": "FullIDEWorkspace/Panel",
+      "target_unified_module": "panel/src/chat-sessions.js",
+      "verification_assertion": "file_exists('panel/src/chat-sessions.js')"
+    },
+    {
+      "id": "panel-panel/src/data.js",
+      "origin_component": "watchkeeper",
+      "source_file": "panel/src/data.js",
+      "symbols_or_entrypoints": [
+        "pluginInstalled",
+        "HEAD_TAIL",
+        "MAX_TEXT",
+        "expandHome",
+        "resolvePaths",
+        "readPace",
+        "readHeadTail",
+        "parseLines",
+        "decodeProject",
+        "modelName",
+        "cleanText",
+        "userText"
+      ],
+      "lifecycle_trigger": "FullIDEWorkspace/Panel",
+      "target_unified_module": "panel/src/data.js",
+      "verification_assertion": "file_exists('panel/src/data.js')"
+    },
+    {
+      "id": "panel-panel/src/graphify-layer.js",
+      "origin_component": "watchkeeper",
+      "source_file": "panel/src/graphify-layer.js",
+      "symbols_or_entrypoints": [
+        "isBootstrappableWorkspace",
+        "estimateWorkspaceTokens",
+        "buildLightweightAstGraph",
+        "getGraphifyContext",
+        "readGraphifyStats"
+      ],
+      "lifecycle_trigger": "FullIDEWorkspace/Panel",
+      "target_unified_module": "panel/src/graphify-layer.js",
+      "verification_assertion": "file_exists('panel/src/graphify-layer.js')"
+    },
+    {
+      "id": "panel-panel/src/legal-words.js",
+      "origin_component": "watchkeeper",
+      "source_file": "panel/src/legal-words.js",
+      "symbols_or_entrypoints": [
+        "LEGAL_WORDS",
+        "isLegal",
+        "legalLabel"
+      ],
+      "lifecycle_trigger": "FullIDEWorkspace/Panel",
+      "target_unified_module": "panel/src/legal-words.js",
+      "verification_assertion": "file_exists('panel/src/legal-words.js')"
+    },
+    {
+      "id": "panel-panel/src/render.js",
+      "origin_component": "watchkeeper",
+      "source_file": "panel/src/render.js",
+      "symbols_or_entrypoints": [
+        "renderJobs",
+        "renderProjects",
+        "renderPhone",
+        "renderOrchestrator",
+        "renderSkills",
+        "renderRail",
+        "renderChatThread",
+        "eventLine",
+        "isLocal",
+        "LOCAL_LINE",
+        "JOB_WORDS",
+        "renderWaiting"
+      ],
+      "lifecycle_trigger": "FullIDEWorkspace/Panel",
+      "target_unified_module": "panel/src/render.js",
+      "verification_assertion": "file_exists('panel/src/render.js')"
+    },
+    {
+      "id": "panel-panel/src/reprompt-controller.js",
+      "origin_component": "watchkeeper",
+      "source_file": "panel/src/reprompt-controller.js",
+      "symbols_or_entrypoints": [
+        "RePromptController",
+        "RePromptWebviewViewProvider",
+        "activateRePrompt",
+        "collectWorkspaceContext",
+        "UNTRUSTED_EXEC_MSG"
+      ],
+      "lifecycle_trigger": "FullIDEWorkspace/Panel",
+      "target_unified_module": "panel/src/reprompt-controller.js",
+      "verification_assertion": "file_exists('panel/src/reprompt-controller.js')"
+    },
+    {
+      "id": "panel-panel/src/reprompt-engine.js",
+      "origin_component": "watchkeeper",
+      "source_file": "panel/src/reprompt-engine.js",
+      "symbols_or_entrypoints": [
+        "TARGETS",
+        "MODES",
+        "REFINEMENTS",
+        "DEFAULT_SETTINGS",
+        "isExecutableFile",
+        "findInPath",
+        "findAgyBinary",
+        "findClaudeBinary",
+        "runSubprocess",
+        "httpPostJson",
+        "buildSystemPrompt",
+        "buildUserPrompt"
+      ],
+      "lifecycle_trigger": "FullIDEWorkspace/Panel",
+      "target_unified_module": "panel/src/reprompt-engine.js",
+      "verification_assertion": "file_exists('panel/src/reprompt-engine.js')"
+    },
+    {
+      "id": "panel-panel/src/reprompt-orchestrator.js",
+      "origin_component": "watchkeeper",
+      "source_file": "panel/src/reprompt-orchestrator.js",
+      "symbols_or_entrypoints": [
+        "judgeSkillsFromVault",
+        "formatSkillDirectives",
+        "injectSkillDirectives",
+        "inferAutoMode",
+        "inferAutoTarget",
+        "parseStreamJsonLines",
+        "CLAUDE_ONLY_CAPABILITIES",
+        "GEMINI_ONLY_CAPABILITIES",
+        "DEFAULT_ORCHESTRATOR_CONFIG",
+        "findGeminiBinary",
+        "detectIntegrations",
+        "estimateTokens"
+      ],
+      "lifecycle_trigger": "FullIDEWorkspace/Panel",
+      "target_unified_module": "panel/src/reprompt-orchestrator.js",
+      "verification_assertion": "file_exists('panel/src/reprompt-orchestrator.js')"
+    },
+    {
+      "id": "panel-panel/test/chat-session.test.js",
+      "origin_component": "watchkeeper",
+      "source_file": "panel/test/chat-session.test.js",
+      "symbols_or_entrypoints": [],
+      "lifecycle_trigger": "FullIDEWorkspace/Panel",
+      "target_unified_module": "panel/test/chat-session.test.js",
+      "verification_assertion": "file_exists('panel/test/chat-session.test.js')"
+    },
+    {
+      "id": "panel-panel/test/data.test.js",
+      "origin_component": "watchkeeper",
+      "source_file": "panel/test/data.test.js",
+      "symbols_or_entrypoints": [
+        "fake",
+        "launch"
+      ],
+      "lifecycle_trigger": "FullIDEWorkspace/Panel",
+      "target_unified_module": "panel/test/data.test.js",
+      "verification_assertion": "file_exists('panel/test/data.test.js')"
+    },
+    {
+      "id": "panel-panel/test/extension.test.js",
+      "origin_component": "watchkeeper",
+      "source_file": "panel/test/extension.test.js",
+      "symbols_or_entrypoints": [],
+      "lifecycle_trigger": "FullIDEWorkspace/Panel",
+      "target_unified_module": "panel/test/extension.test.js",
+      "verification_assertion": "file_exists('panel/test/extension.test.js')"
+    },
+    {
+      "id": "panel-panel/test/remote.test.js",
+      "origin_component": "watchkeeper",
+      "source_file": "panel/test/remote.test.js",
+      "symbols_or_entrypoints": [],
+      "lifecycle_trigger": "FullIDEWorkspace/Panel",
+      "target_unified_module": "panel/test/remote.test.js",
+      "verification_assertion": "file_exists('panel/test/remote.test.js')"
+    },
+    {
+      "id": "panel-panel/test/reprompt.test.js",
+      "origin_component": "watchkeeper",
+      "source_file": "panel/test/reprompt.test.js",
+      "symbols_or_entrypoints": [],
+      "lifecycle_trigger": "FullIDEWorkspace/Panel",
+      "target_unified_module": "panel/test/reprompt.test.js",
+      "verification_assertion": "file_exists('panel/test/reprompt.test.js')"
+    },
+    {
+      "id": "panel-panel/test/waiting.test.js",
+      "origin_component": "watchkeeper",
+      "source_file": "panel/test/waiting.test.js",
+      "symbols_or_entrypoints": [],
+      "lifecycle_trigger": "FullIDEWorkspace/Panel",
+      "target_unified_module": "panel/test/waiting.test.js",
+      "verification_assertion": "file_exists('panel/test/waiting.test.js')"
+    },
+    {
+      "id": "wk-mcp-registry-server",
+      "origin_component": "watchkeeper",
+      "source_file": "server.json",
+      "symbols_or_entrypoints": [
+        "io.github.tengotengo23/nexodyne-watchkeeper"
+      ],
+      "lifecycle_trigger": "MCPRegistry",
+      "target_unified_module": "server.json",
+      "verification_assertion": "file_exists('server.json')"
+    },
+    {
+      "id": "reprompt-v130-LICENSE",
+      "origin_component": "re-prompt-v1.3.0",
+      "source_file": "reprompt/LICENSE",
+      "symbols_or_entrypoints": [
+        "LICENSE"
+      ],
+      "lifecycle_trigger": "Distribution/Docs",
+      "target_unified_module": "reprompt/LICENSE",
+      "verification_assertion": "file_exists('reprompt/LICENSE')"
+    },
+    {
+      "id": "reprompt-v130-README.md",
+      "origin_component": "re-prompt-v1.3.0",
+      "source_file": "reprompt/README.md",
+      "symbols_or_entrypoints": [
+        "README"
+      ],
+      "lifecycle_trigger": "Distribution/Docs",
+      "target_unified_module": "reprompt/README.md",
+      "verification_assertion": "file_exists('reprompt/README.md')"
+    },
+    {
+      "id": "reprompt-v130-SETUP_AND_USAGE.md",
+      "origin_component": "re-prompt-v1.3.0",
+      "source_file": "reprompt/SETUP_AND_USAGE.md",
+      "symbols_or_entrypoints": [
+        "SETUP_AND_USAGE"
+      ],
+      "lifecycle_trigger": "Distribution/Docs",
+      "target_unified_module": "reprompt/SETUP_AND_USAGE.md",
+      "verification_assertion": "file_exists('reprompt/SETUP_AND_USAGE.md')"
+    },
+    {
+      "id": "reprompt-v130-assets/icon.png",
+      "origin_component": "re-prompt-v1.3.0",
+      "source_file": "reprompt/assets/icon.png",
+      "symbols_or_entrypoints": [
+        "icon.png"
+      ],
+      "lifecycle_trigger": "Distribution/Docs",
+      "target_unified_module": "reprompt/assets/icon.png",
+      "verification_assertion": "file_exists('reprompt/assets/icon.png')"
+    },
+    {
+      "id": "reprompt-v130-assets/logo.svg",
+      "origin_component": "re-prompt-v1.3.0",
+      "source_file": "reprompt/assets/logo.svg",
+      "symbols_or_entrypoints": [
+        "logo.svg"
+      ],
+      "lifecycle_trigger": "Distribution/Docs",
+      "target_unified_module": "reprompt/assets/logo.svg",
+      "verification_assertion": "file_exists('reprompt/assets/logo.svg')"
+    },
+    {
+      "id": "reprompt-v130-claude-code-plugin/.claude-plugin/plugin.json",
+      "origin_component": "re-prompt-v1.3.0",
+      "source_file": "reprompt/claude-code-plugin/.claude-plugin/plugin.json",
+      "symbols_or_entrypoints": [
+        "plugin.json"
+      ],
+      "lifecycle_trigger": "Distribution/Docs",
+      "target_unified_module": "reprompt/claude-code-plugin/.claude-plugin/plugin.json",
+      "verification_assertion": "file_exists('reprompt/claude-code-plugin/.claude-plugin/plugin.json')"
+    },
+    {
+      "id": "reprompt-v130-claude-code-plugin/.mcp.json",
+      "origin_component": "re-prompt-v1.3.0",
+      "source_file": "reprompt/claude-code-plugin/.mcp.json",
+      "symbols_or_entrypoints": [
+        ".mcp.json"
+      ],
+      "lifecycle_trigger": "MCPServer",
+      "target_unified_module": "reprompt/claude-code-plugin/.mcp.json",
+      "verification_assertion": "file_exists('reprompt/claude-code-plugin/.mcp.json')"
+    },
+    {
+      "id": "reprompt-v130-claude-code-plugin/bin/run-inline-hook.py",
+      "origin_component": "re-prompt-v1.3.0",
+      "source_file": "reprompt/claude-code-plugin/bin/run-inline-hook.py",
+      "symbols_or_entrypoints": [
+        "parse_inline_trigger",
+        "main"
+      ],
+      "lifecycle_trigger": "Distribution/Docs",
+      "target_unified_module": "reprompt/claude-code-plugin/bin/run-inline-hook.py",
+      "verification_assertion": "file_exists('reprompt/claude-code-plugin/bin/run-inline-hook.py')"
+    },
+    {
+      "id": "reprompt-v130-claude-code-plugin/bin/run-mcp.py",
+      "origin_component": "re-prompt-v1.3.0",
+      "source_file": "reprompt/claude-code-plugin/bin/run-mcp.py",
+      "symbols_or_entrypoints": [],
+      "lifecycle_trigger": "MCPServer",
+      "target_unified_module": "reprompt/claude-code-plugin/bin/run-mcp.py",
+      "verification_assertion": "file_exists('reprompt/claude-code-plugin/bin/run-mcp.py')"
+    },
+    {
+      "id": "reprompt-v130-claude-code-plugin/commands/orchestrate.md",
+      "origin_component": "re-prompt-v1.3.0",
+      "source_file": "reprompt/claude-code-plugin/commands/orchestrate.md",
+      "symbols_or_entrypoints": [
+        "orchestrate"
+      ],
+      "lifecycle_trigger": "Orchestrator",
+      "target_unified_module": "reprompt/claude-code-plugin/commands/orchestrate.md",
+      "verification_assertion": "file_exists('reprompt/claude-code-plugin/commands/orchestrate.md')"
+    },
+    {
+      "id": "reprompt-v130-claude-code-plugin/commands/re-prompt.md",
+      "origin_component": "re-prompt-v1.3.0",
+      "source_file": "reprompt/claude-code-plugin/commands/re-prompt.md",
+      "symbols_or_entrypoints": [
+        "re-prompt"
+      ],
+      "lifecycle_trigger": "Distribution/Docs",
+      "target_unified_module": "reprompt/claude-code-plugin/commands/re-prompt.md",
+      "verification_assertion": "file_exists('reprompt/claude-code-plugin/commands/re-prompt.md')"
+    },
+    {
+      "id": "reprompt-v130-claude-code-plugin/hooks/hooks.json",
+      "origin_component": "re-prompt-v1.3.0",
+      "source_file": "reprompt/claude-code-plugin/hooks/hooks.json",
+      "symbols_or_entrypoints": [
+        "hooks.json"
+      ],
+      "lifecycle_trigger": "Distribution/Docs",
+      "target_unified_module": "reprompt/claude-code-plugin/hooks/hooks.json",
+      "verification_assertion": "file_exists('reprompt/claude-code-plugin/hooks/hooks.json')"
+    },
+    {
+      "id": "reprompt-v130-hooks.json",
+      "origin_component": "re-prompt-v1.3.0",
+      "source_file": "reprompt/hooks.json",
+      "symbols_or_entrypoints": [
+        "hooks.json"
+      ],
+      "lifecycle_trigger": "Distribution/Docs",
+      "target_unified_module": "reprompt/hooks.json",
+      "verification_assertion": "file_exists('reprompt/hooks.json')"
+    },
+    {
+      "id": "reprompt-v130-ide-extension/LICENSE",
+      "origin_component": "re-prompt-v1.3.0",
+      "source_file": "reprompt/ide-extension/LICENSE",
+      "symbols_or_entrypoints": [
+        "LICENSE"
+      ],
+      "lifecycle_trigger": "Distribution/Docs",
+      "target_unified_module": "reprompt/ide-extension/LICENSE",
+      "verification_assertion": "file_exists('reprompt/ide-extension/LICENSE')"
+    },
+    {
+      "id": "reprompt-v130-ide-extension/README.md",
+      "origin_component": "re-prompt-v1.3.0",
+      "source_file": "reprompt/ide-extension/README.md",
+      "symbols_or_entrypoints": [
+        "README"
+      ],
+      "lifecycle_trigger": "Distribution/Docs",
+      "target_unified_module": "reprompt/ide-extension/README.md",
+      "verification_assertion": "file_exists('reprompt/ide-extension/README.md')"
+    },
+    {
+      "id": "reprompt-v130-ide-extension/extension.js",
+      "origin_component": "re-prompt-v1.3.0",
+      "source_file": "reprompt/ide-extension/extension.js",
+      "symbols_or_entrypoints": [
+        "extension.js"
+      ],
+      "lifecycle_trigger": "Distribution/Docs",
+      "target_unified_module": "reprompt/ide-extension/extension.js",
+      "verification_assertion": "file_exists('reprompt/ide-extension/extension.js')"
+    },
+    {
+      "id": "reprompt-v130-ide-extension/media/icon.png",
+      "origin_component": "re-prompt-v1.3.0",
+      "source_file": "reprompt/ide-extension/media/icon.png",
+      "symbols_or_entrypoints": [
+        "icon.png"
+      ],
+      "lifecycle_trigger": "Distribution/Docs",
+      "target_unified_module": "reprompt/ide-extension/media/icon.png",
+      "verification_assertion": "file_exists('reprompt/ide-extension/media/icon.png')"
+    },
+    {
+      "id": "reprompt-v130-ide-extension/media/icon.svg",
+      "origin_component": "re-prompt-v1.3.0",
+      "source_file": "reprompt/ide-extension/media/icon.svg",
+      "symbols_or_entrypoints": [
+        "icon.svg"
+      ],
+      "lifecycle_trigger": "Distribution/Docs",
+      "target_unified_module": "reprompt/ide-extension/media/icon.svg",
+      "verification_assertion": "file_exists('reprompt/ide-extension/media/icon.svg')"
+    },
+    {
+      "id": "reprompt-v130-ide-extension/media/reprompt_app.html",
+      "origin_component": "re-prompt-v1.3.0",
+      "source_file": "reprompt/ide-extension/media/reprompt_app.html",
+      "symbols_or_entrypoints": [
+        "reprompt_app.html"
+      ],
+      "lifecycle_trigger": "PromptCompiler",
+      "target_unified_module": "reprompt/ide-extension/media/reprompt_app.html",
+      "verification_assertion": "file_exists('reprompt/ide-extension/media/reprompt_app.html')"
+    },
+    {
+      "id": "reprompt-v130-ide-extension/orchestrator.js",
+      "origin_component": "re-prompt-v1.3.0",
+      "source_file": "reprompt/ide-extension/orchestrator.js",
+      "symbols_or_entrypoints": [
+        "orchestrator.js"
+      ],
+      "lifecycle_trigger": "Orchestrator",
+      "target_unified_module": "reprompt/ide-extension/orchestrator.js",
+      "verification_assertion": "file_exists('reprompt/ide-extension/orchestrator.js')"
+    },
+    {
+      "id": "reprompt-v130-ide-extension/package.json",
+      "origin_component": "re-prompt-v1.3.0",
+      "source_file": "reprompt/ide-extension/package.json",
+      "symbols_or_entrypoints": [
+        "package.json"
+      ],
+      "lifecycle_trigger": "Distribution/Docs",
+      "target_unified_module": "reprompt/ide-extension/package.json",
+      "verification_assertion": "file_exists('reprompt/ide-extension/package.json')"
+    },
+    {
+      "id": "reprompt-v130-ide-extension/repromptEngine.js",
+      "origin_component": "re-prompt-v1.3.0",
+      "source_file": "reprompt/ide-extension/repromptEngine.js",
+      "symbols_or_entrypoints": [
+        "repromptEngine.js"
+      ],
+      "lifecycle_trigger": "Distribution/Docs",
+      "target_unified_module": "reprompt/ide-extension/repromptEngine.js",
+      "verification_assertion": "file_exists('reprompt/ide-extension/repromptEngine.js')"
+    },
+    {
+      "id": "reprompt-v130-mcp_config.json",
+      "origin_component": "re-prompt-v1.3.0",
+      "source_file": "reprompt/mcp_config.json",
+      "symbols_or_entrypoints": [
+        "mcp_config.json"
+      ],
+      "lifecycle_trigger": "MCPServer",
+      "target_unified_module": "reprompt/mcp_config.json",
+      "verification_assertion": "file_exists('reprompt/mcp_config.json')"
+    },
+    {
+      "id": "reprompt-v130-plugin.json",
+      "origin_component": "re-prompt-v1.3.0",
+      "source_file": "reprompt/plugin.json",
+      "symbols_or_entrypoints": [
+        "plugin.json"
+      ],
+      "lifecycle_trigger": "Distribution/Docs",
+      "target_unified_module": "reprompt/plugin.json",
+      "verification_assertion": "file_exists('reprompt/plugin.json')"
+    },
+    {
+      "id": "reprompt-v130-rules/AGENTS.md",
+      "origin_component": "re-prompt-v1.3.0",
+      "source_file": "reprompt/rules/AGENTS.md",
+      "symbols_or_entrypoints": [
+        "AGENTS"
+      ],
+      "lifecycle_trigger": "Distribution/Docs",
+      "target_unified_module": "reprompt/rules/AGENTS.md",
+      "verification_assertion": "file_exists('reprompt/rules/AGENTS.md')"
+    },
+    {
+      "id": "reprompt-v130-scripts/build_dist.py",
+      "origin_component": "re-prompt-v1.3.0",
+      "source_file": "reprompt/scripts/build_dist.py",
+      "symbols_or_entrypoints": [
+        "generate_icon_png",
+        "sync_shared_assets",
+        "build_antigravity_plugin_zip",
+        "build_claude_plugin_zip",
+        "build_vsix",
+        "main"
+      ],
+      "lifecycle_trigger": "Distribution/Docs",
+      "target_unified_module": "reprompt/scripts/build_dist.py",
+      "verification_assertion": "file_exists('reprompt/scripts/build_dist.py')"
+    },
+    {
+      "id": "reprompt-v130-scripts/install.py",
+      "origin_component": "re-prompt-v1.3.0",
+      "source_file": "reprompt/scripts/install.py",
+      "symbols_or_entrypoints": [
+        "install_antigravity_plugin",
+        "install_ide_vsix",
+        "install_claude_plugin",
+        "main"
+      ],
+      "lifecycle_trigger": "Distribution/Docs",
+      "target_unified_module": "reprompt/scripts/install.py",
+      "verification_assertion": "file_exists('reprompt/scripts/install.py')"
+    },
+    {
+      "id": "reprompt-v130-scripts/install_bundle.sh",
+      "origin_component": "re-prompt-v1.3.0",
+      "source_file": "reprompt/scripts/install_bundle.sh",
+      "symbols_or_entrypoints": [
+        "install_bundle.sh"
+      ],
+      "lifecycle_trigger": "Distribution/Docs",
+      "target_unified_module": "reprompt/scripts/install_bundle.sh",
+      "verification_assertion": "file_exists('reprompt/scripts/install_bundle.sh')"
+    },
+    {
+      "id": "reprompt-v130-scripts/orchestrate.py",
+      "origin_component": "re-prompt-v1.3.0",
+      "source_file": "reprompt/scripts/orchestrate.py",
+      "symbols_or_entrypoints": [
+        "main"
+      ],
+      "lifecycle_trigger": "Orchestrator",
+      "target_unified_module": "reprompt/scripts/orchestrate.py",
+      "verification_assertion": "file_exists('reprompt/scripts/orchestrate.py')"
+    },
+    {
+      "id": "reprompt-v130-scripts/reprompt_inline_hook.py",
+      "origin_component": "re-prompt-v1.3.0",
+      "source_file": "reprompt/scripts/reprompt_inline_hook.py",
+      "symbols_or_entrypoints": [
+        "parse_inline_trigger",
+        "main"
+      ],
+      "lifecycle_trigger": "HookEvent:UserPromptSubmit|PreInvocation",
+      "target_unified_module": "reprompt/scripts/reprompt_inline_hook.py",
+      "verification_assertion": "file_exists('reprompt/scripts/reprompt_inline_hook.py')"
+    },
+    {
+      "id": "reprompt-v130-scripts/reprompt_skill_hook.py",
+      "origin_component": "re-prompt-v1.3.0",
+      "source_file": "reprompt/scripts/reprompt_skill_hook.py",
+      "symbols_or_entrypoints": [
+        "main"
+      ],
+      "lifecycle_trigger": "HookEvent:UserPromptSubmit|PreInvocation",
+      "target_unified_module": "reprompt/scripts/reprompt_skill_hook.py",
+      "verification_assertion": "file_exists('reprompt/scripts/reprompt_skill_hook.py')"
+    },
+    {
+      "id": "reprompt-v130-scripts/skill_router.py",
+      "origin_component": "re-prompt-v1.3.0",
+      "source_file": "reprompt/scripts/skill_router.py",
+      "symbols_or_entrypoints": [
+        "default_session_state",
+        "strip_skill_directives",
+        "score_skill_relevance",
+        "is_trivial_prompt",
+        "detect_domains",
+        "score_complexity",
+        "extract_search_query",
+        "extract_existing_skill_paths",
+        "analyze_session_turn",
+        "judge_skills_for_prompt",
+        "format_skill_directives",
+        "inject_skill_directives"
+      ],
+      "lifecycle_trigger": "SkillRouter",
+      "target_unified_module": "reprompt/scripts/skill_router.py",
+      "verification_assertion": "file_exists('reprompt/scripts/skill_router.py')"
+    },
+    {
+      "id": "reprompt-v130-scripts/skill_vault.py",
+      "origin_component": "re-prompt-v1.3.0",
+      "source_file": "reprompt/scripts/skill_vault.py",
+      "symbols_or_entrypoints": [
+        "load_sources",
+        "run_git",
+        "has_skill_files",
+        "clone_one",
+        "update_one",
+        "strip_quotes",
+        "clean_whitespace",
+        "parse_skill_file",
+        "path_preference_score",
+        "classify_domain",
+        "build_index",
+        "load_index"
+      ],
+      "lifecycle_trigger": "SkillRouter",
+      "target_unified_module": "reprompt/scripts/skill_vault.py",
+      "verification_assertion": "file_exists('reprompt/scripts/skill_vault.py')"
+    },
+    {
+      "id": "reprompt-v130-scripts/sources.json",
+      "origin_component": "re-prompt-v1.3.0",
+      "source_file": "reprompt/scripts/sources.json",
+      "symbols_or_entrypoints": [
+        "sources.json"
+      ],
+      "lifecycle_trigger": "Distribution/Docs",
+      "target_unified_module": "reprompt/scripts/sources.json",
+      "verification_assertion": "file_exists('reprompt/scripts/sources.json')"
+    },
+    {
+      "id": "reprompt-v130-server/__init__.py",
+      "origin_component": "re-prompt-v1.3.0",
+      "source_file": "reprompt/server/__init__.py",
+      "symbols_or_entrypoints": [],
+      "lifecycle_trigger": "Distribution/Docs",
+      "target_unified_module": "reprompt/server/__init__.py",
+      "verification_assertion": "file_exists('reprompt/server/__init__.py')"
+    },
+    {
+      "id": "reprompt-v130-server/orchestrator.py",
+      "origin_component": "re-prompt-v1.3.0",
+      "source_file": "reprompt/server/orchestrator.py",
+      "symbols_or_entrypoints": [
+        "find_gemini_binary",
+        "detect_integrations",
+        "select_channel",
+        "estimate_tokens",
+        "estimate_cost_usd",
+        "classify_task",
+        "UsageLedger",
+        "decide_route",
+        "ProviderExecutionError",
+        "DefaultProviderExecutor",
+        "Orchestrator"
+      ],
+      "lifecycle_trigger": "Orchestrator",
+      "target_unified_module": "reprompt/server/orchestrator.py",
+      "verification_assertion": "file_exists('reprompt/server/orchestrator.py')"
+    },
+    {
+      "id": "reprompt-v130-server/reprompt_engine.py",
+      "origin_component": "re-prompt-v1.3.0",
+      "source_file": "reprompt/server/reprompt_engine.py",
+      "symbols_or_entrypoints": [
+        "default_data_dir",
+        "find_executable",
+        "find_agy_binary",
+        "find_claude_binary",
+        "RePromptStore",
+        "format_skills_section",
+        "ensure_skills_section",
+        "build_system_prompt",
+        "build_user_prompt",
+        "parse_rewrite_response",
+        "offline_rewrite",
+        "list_agy_models"
+      ],
+      "lifecycle_trigger": "PromptCompiler",
+      "target_unified_module": "reprompt/server/reprompt_engine.py",
+      "verification_assertion": "file_exists('reprompt/server/reprompt_engine.py')"
+    },
+    {
+      "id": "reprompt-v130-server/reprompt_mcp_server.py",
+      "origin_component": "re-prompt-v1.3.0",
+      "source_file": "reprompt/server/reprompt_mcp_server.py",
+      "symbols_or_entrypoints": [
+        "log",
+        "send_jsonrpc",
+        "send_result",
+        "send_error",
+        "read_ui_html",
+        "build_state_payload",
+        "execute_tool",
+        "handle_request",
+        "read_next_jsonrpc_message",
+        "main"
+      ],
+      "lifecycle_trigger": "MCPServer",
+      "target_unified_module": "reprompt/server/reprompt_mcp_server.py",
+      "verification_assertion": "file_exists('reprompt/server/reprompt_mcp_server.py')"
+    },
+    {
+      "id": "reprompt-v130-skills/duo-orchestrator/SKILL.md",
+      "origin_component": "re-prompt-v1.3.0",
+      "source_file": "reprompt/skills/duo-orchestrator/SKILL.md",
+      "symbols_or_entrypoints": [
+        "SKILL"
+      ],
+      "lifecycle_trigger": "SkillRouter",
+      "target_unified_module": "reprompt/skills/duo-orchestrator/SKILL.md",
+      "verification_assertion": "file_exists('reprompt/skills/duo-orchestrator/SKILL.md')"
+    },
+    {
+      "id": "reprompt-v130-skills/profession-skill-vault/SKILL.md",
+      "origin_component": "re-prompt-v1.3.0",
+      "source_file": "reprompt/skills/profession-skill-vault/SKILL.md",
+      "symbols_or_entrypoints": [
+        "SKILL"
+      ],
+      "lifecycle_trigger": "SkillRouter",
+      "target_unified_module": "reprompt/skills/profession-skill-vault/SKILL.md",
+      "verification_assertion": "file_exists('reprompt/skills/profession-skill-vault/SKILL.md')"
+    },
+    {
+      "id": "reprompt-v130-skills/re-prompt/SKILL.md",
+      "origin_component": "re-prompt-v1.3.0",
+      "source_file": "reprompt/skills/re-prompt/SKILL.md",
+      "symbols_or_entrypoints": [
+        "SKILL"
+      ],
+      "lifecycle_trigger": "SkillRouter",
+      "target_unified_module": "reprompt/skills/re-prompt/SKILL.md",
+      "verification_assertion": "file_exists('reprompt/skills/re-prompt/SKILL.md')"
+    },
+    {
+      "id": "reprompt-v130-tests/test_orchestrator.py",
+      "origin_component": "re-prompt-v1.3.0",
+      "source_file": "reprompt/tests/test_orchestrator.py",
+      "symbols_or_entrypoints": [
+        "OrchestratorRoutingTests",
+        "OrchestratorCliAndMcpTests"
+      ],
+      "lifecycle_trigger": "Orchestrator",
+      "target_unified_module": "reprompt/tests/test_orchestrator.py",
+      "verification_assertion": "file_exists('reprompt/tests/test_orchestrator.py')"
+    },
+    {
+      "id": "reprompt-v130-tests/test_reprompt.py",
+      "origin_component": "re-prompt-v1.3.0",
+      "source_file": "reprompt/tests/test_reprompt.py",
+      "symbols_or_entrypoints": [
+        "EngineUnitTests",
+        "LiveAgyTests",
+        "McpProtocolTests",
+        "InlineHooksTests",
+        "PackagingAndCspTests"
+      ],
+      "lifecycle_trigger": "Distribution/Docs",
+      "target_unified_module": "reprompt/tests/test_reprompt.py",
+      "verification_assertion": "file_exists('reprompt/tests/test_reprompt.py')"
+    },
+    {
+      "id": "reprompt-v130-tests/test_skill_autosync.py",
+      "origin_component": "re-prompt-v1.3.0",
+      "source_file": "reprompt/tests/test_skill_autosync.py",
+      "symbols_or_entrypoints": [
+        "SkillAutoSyncAndJudgmentTests"
+      ],
+      "lifecycle_trigger": "SkillRouter",
+      "target_unified_module": "reprompt/tests/test_skill_autosync.py",
+      "verification_assertion": "file_exists('reprompt/tests/test_skill_autosync.py')"
+    },
+    {
+      "id": "reprompt-v130-ui/reprompt_app.html",
+      "origin_component": "re-prompt-v1.3.0",
+      "source_file": "reprompt/ui/reprompt_app.html",
+      "symbols_or_entrypoints": [
+        "reprompt_app.html"
+      ],
+      "lifecycle_trigger": "PromptCompiler",
+      "target_unified_module": "reprompt/ui/reprompt_app.html",
+      "verification_assertion": "file_exists('reprompt/ui/reprompt_app.html')"
+    },
+    {
+      "id": "reprompt-v130-standalone-clipboard",
+      "origin_component": "re-prompt-v1.3.0",
+      "source_file": "reprompt/server/reprompt_engine.py",
+      "symbols_or_entrypoints": [
+        "extract_fenced_rewrite",
+        "copy_to_clipboard",
+        "wl-copy",
+        "xclip",
+        "xsel",
+        "pbcopy",
+        "clip.exe"
+      ],
+      "lifecycle_trigger": "Stop:standalone_reprompt",
+      "target_unified_module": "core/clipboard_io.py",
+      "verification_assertion": "symbol_exists('core.clipboard_io', 'copy_to_clipboard')"
+    }
+  ]
+}

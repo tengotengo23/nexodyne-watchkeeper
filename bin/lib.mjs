@@ -47,9 +47,22 @@ export function gates(opts = {}) {
 }
 export const policyPin = () => cachedPin;
 export function stdin() { try { return JSON.parse(fs.readFileSync(0, 'utf8') || '{}'); } catch { return {}; } }
+// A glob as a regular-expression body, read one character at a time so that no rule rewrites another rule's output
+// (chained replaces turned "**" into ".[^/]*", so "x/**" matched one folder level only and nested files slipped past
+// the deny lists): "**/" = any folders or none, "**" = anything, "*" = anything inside one name, "?" = one character.
+export function globBody(g) {
+  let s = '';
+  for (let i = 0; i < g.length; i++) {
+    const c = g[i];
+    if (c === '*' && g[i + 1] === '*') { if (g[i + 2] === '/') { s += '(?:.*/)?'; i += 2; } else { s += '.*'; i += 1; } }
+    else if (c === '*') s += '[^/]*';
+    else if (c === '?') s += '[^/]';
+    else s += c.replace(/[.+^${}()|[\]\\]/g, '\\$&');
+  }
+  return s;
+}
 export function glob2re(g) {
-  const s = g.replace(/[.+^${}()|[\]\\]/g, '\\$&').replace(/\*\*\//g, '(?:.*/)?').replace(/\*\*/g, '.*').replace(/\*/g, '[^/]*');
-  return new RegExp('(^|/)' + s.replace(/^\(\?:\.\*\/\)\?/, '') + '$');
+  return new RegExp('(^|/)' + globBody(g).replace(/^\(\?:\.\*\/\)\?/, '') + '$');
 }
 // <project>/.wk holds the hooks' logs; its own .gitignore ("*") keeps them out of git, written once when missing.
 export const wkDir = () => {
@@ -249,4 +262,22 @@ export function policyShellCheck(cmd, g, cwd) {
   if (interp) return 'interpreters, sh -c and heredocs are refused when the command mentions gate or the config folder; change the policy by hand yourself.';
   if (CONSTRUCT.test(c) || WRITE_VERBS.test(c)) return 'a command that mentions gate (or KILL) with a glob, quote, backslash, expansion, redirect, chaining or writing verb is refused unless it is a plain read; change the policy by hand yourself.';
   return null;
+}
+
+// P2-272 canon: agy (Gemini on the owner's Google login) never runs from Claude: not from the Claude Code hook
+// (WK_CALLER=claude_code), not from any process Claude started (CLAUDECODE=1: its shells, tests, scripts).
+// Under Claude only a test stub inside a temporary HOME may stand in for agy. The same rule lives in
+// reprompt_engine.called_from_claude_code (Python) and panel/src/reprompt-engine.js agyBlockedForClaude.
+export const AGY_CANON_MESSAGE = 'Watchkeeper canon: agy is never run from Claude (tests: a stub inside a temporary HOME)';
+export function agyBlockedForClaude(agyPath, env = process.env) {
+  if (String(env.WK_CALLER || '').trim().toLowerCase() === 'claude_code') return true;
+  if (env.CLAUDECODE !== '1') return false;
+  try {
+    if (!agyPath || !env.HOME) return true;
+    const home = fs.realpathSync(env.HOME);
+    let account;
+    try { account = fs.realpathSync(os.userInfo().homedir); } catch { return true; }
+    if (home === account) return true;
+    return !fs.realpathSync(agyPath).startsWith(home + path.sep);
+  } catch { return true; }
 }

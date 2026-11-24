@@ -145,9 +145,10 @@ test('the page: three new sections hidden until the data says so, with their own
   const page = R.renderPage({ nonce: 'n', cspSource: 'c', scriptUri: 's' });
   for (const k of ['jobs', 'projects', 'phone']) assert.match(page, new RegExp(`data-needs="${k}" hidden><h2 id="h-${k}">`), k);
   assert.match(page, /id="feedback-jobs"/); assert.match(page, /id="feedback-phone"/);
-  assert.equal((page.match(/data-needs="plugin"/g) || []).length, 6);
-  assert.ok(page.indexOf('data-slot="waiting"') < page.indexOf('data-slot="jobs"') && page.indexOf('data-slot="jobs"') < page.indexOf('data-slot="projects"')
-    && page.indexOf('data-slot="projects"') < page.indexOf('data-slot="sessions"'), 'waiting, jobs, projects, sessions');
+  assert.equal((page.match(/data-needs="plugin"/g) || []).length, 7); // P2-272 P3: 6 to 7, the usage card is one more plugin section; nothing cut
+  // P2-272 P3 fixes (S1): the drawer groups "Tasks, jobs and sessions" before "Projects, spend and advice"
+  assert.ok(page.indexOf('data-slot="waiting"') < page.indexOf('data-slot="jobs"') && page.indexOf('data-slot="jobs"') < page.indexOf('data-slot="sessions"')
+    && page.indexOf('data-slot="sessions"') < page.indexOf('data-slot="projects"'), 'waiting, jobs, sessions, projects');
 });
 
 test('messages: the new commands are checked against closed sets and patterns', () => {

@@ -1,0 +1,23 @@
+{
+  "displayName": "Watchkeeper",
+  "description": "A guard and stop switch for agent work, a code graph, Re-Prompt for clearer instructions, a memory of your code corrections, a skills library, and a task queue shared with Claude Code. Runs from its own folder; nothing is sent to Nexodyne.",
+  "logo": "assets/logo.svg",
+  "suggestedPrompts": [
+    "Show Watchkeeper's status",
+    "Build the code graph for this project",
+    "Take the next task from the Watchkeeper queue"
+  ],
+  "author": { "name": "Nexodyne", "url": "https://nexodyne.org" },
+  "homepage": "https://github.com/tengotengo23/nexodyne-watchkeeper",
+  "repository": "https://github.com/tengotengo23/nexodyne-watchkeeper",
+  "license": "MIT",
+  "keywords": [
+    "guardrails",
+    "kill switch",
+    "code graph",
+    "prompt rewriting",
+    "skills",
+    "task queue",
+    "claude code"
+  ]
+}

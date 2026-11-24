@@ -1,45 +1,325 @@
 {
   "name": "watchkeeper-panel",
   "displayName": "Watchkeeper",
-  "description": "See your Claude Code sessions and the subagents they started, in a panel beside your code; with the Watchkeeper plugin, also usage pace, spend, jobs and the Gemini queue. The panel itself makes no network calls; sends nothing to Nexodyne; no telemetry.",
-  "version": "0.6.3",
+  "description": "Full-IDE Watchkeeper workspace for Claude Code & Gemini: Re-Prompt studio, live Running Tasks & subagents, Skills Library with daily trending GitHub sync, Gemini work queued for Antigravity when Claude limits run out, and fail-closed safety guards. Local-only; zero telemetry.",
+  "version": "3.2.1",
   "publisher": "nexodyne",
   "license": "MIT",
   "homepage": "https://github.com/tengotengo23/nexodyne-watchkeeper",
-  "repository": { "type": "git", "url": "https://github.com/tengotengo23/nexodyne-watchkeeper.git" },
-  "bugs": { "url": "https://github.com/tengotengo23/nexodyne-watchkeeper/issues" },
-  "engines": { "vscode": "^1.90.0" },
-  "categories": ["AI", "Visualization", "Other"],
-  "keywords": ["claude code", "claude-code", "claude", "anthropic", "subagents", "agents", "sessions", "token usage", "usage", "cost", "dashboard", "antigravity", "gemini", "monitor"],
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/tengotengo23/nexodyne-watchkeeper.git"
+  },
+  "bugs": {
+    "url": "https://github.com/tengotengo23/nexodyne-watchkeeper/issues"
+  },
+  "engines": {
+    "vscode": "^1.90.0"
+  },
+  "categories": [
+    "AI",
+    "Chat",
+    "Visualization"
+  ],
+  "keywords": [
+    "claude code",
+    "claude-code",
+    "claude",
+    "gemini",
+    "antigravity",
+    "re-prompt",
+    "prompt engineering",
+    "orchestrator",
+    "skills library",
+    "token efficiency",
+    "subagents",
+    "agents",
+    "sessions",
+    "dashboard",
+    "monitor",
+    "mcp"
+  ],
   "icon": "media/icon.png",
   "main": "./extension.js",
-  "activationEvents": ["onView:watchkeeper.panel"],
-  "capabilities": { "untrustedWorkspaces": { "supported": "limited", "description": "In a folder you have not trusted, Watchkeeper shows your sessions but runs nothing: answering, deciding, adding a task, jobs and the phone controls are off." }, "virtualWorkspaces": true },
+  "activationEvents": [
+    "onStartupFinished",
+    "onWebviewPanel:watchkeeper.workspacePanel",
+    "onView:watchkeeper.panel",
+    "onView:reprompt.sidebarView",
+    "onView:reprompt.composerView"
+  ],
+  "capabilities": {
+    "untrustedWorkspaces": {
+      "supported": "limited",
+      "description": "In a folder you have not trusted, Watchkeeper shows your sessions but runs nothing: answering, deciding, adding a task, jobs, phone controls, and Re-Prompt CLI/provider execution are off."
+    },
+    "virtualWorkspaces": true
+  },
   "contributes": {
     "viewsContainers": {
-      "activitybar": [{ "id": "watchkeeper", "title": "Watchkeeper", "icon": "media/w.svg" }]
+      "activitybar": [
+        {
+          "id": "watchkeeper",
+          "title": "Watchkeeper",
+          "icon": "media/w.svg"
+        }
+      ],
+      "panel": [
+        {
+          "id": "reprompt-panel",
+          "title": "Re-Prompt"
+        }
+      ]
     },
     "views": {
-      "watchkeeper": [{ "type": "webview", "id": "watchkeeper.panel", "name": "Sessions", "icon": "media/w.svg" }]
+      "watchkeeper": [
+        {
+          "type": "webview",
+          "id": "watchkeeper.panel",
+          "name": "Watchkeeper",
+          "icon": "media/w.svg"
+        },
+        {
+          "type": "webview",
+          "id": "reprompt.sidebarView",
+          "name": "Re-Prompt Studio",
+          "when": "config.watchkeeper.preferredLocation == 'studio'"
+        }
+      ],
+      "reprompt-panel": [
+        {
+          "type": "webview",
+          "id": "reprompt.composerView",
+          "name": "Re-Prompt Composer"
+        }
+      ]
     },
     "commands": [
-      { "command": "watchkeeper.refresh", "title": "Refresh", "category": "Watchkeeper", "icon": "$(refresh)" }
+      {
+        "command": "watchkeeper.openWorkspace",
+        "title": "Open Full-IDE Workspace",
+        "category": "Watchkeeper",
+        "icon": "$(layout)"
+      },
+      {
+        "command": "watchkeeper.maximizeWorkspace",
+        "title": "Open Maximized Workspace",
+        "category": "Watchkeeper",
+        "icon": "$(screen-full)"
+      },
+      {
+        "command": "watchkeeper.refresh",
+        "title": "Refresh",
+        "category": "Watchkeeper",
+        "icon": "$(refresh)"
+      },
+      {
+        "command": "reprompt.openOverlay",
+        "title": "Open Overlay Composer",
+        "category": "Re-Prompt",
+        "icon": "$(sparkle)"
+      },
+      {
+        "command": "reprompt.quickOverlay",
+        "title": "Quick Floating Rewrite Overlay",
+        "category": "Re-Prompt",
+        "icon": "$(zap)"
+      },
+      {
+        "command": "reprompt.rewriteSelection",
+        "title": "Rewrite Selected Text as Prompt",
+        "category": "Re-Prompt"
+      },
+      {
+        "command": "reprompt.focusView",
+        "title": "Focus Docked Composer",
+        "category": "Re-Prompt"
+      },
+      {
+        "command": "reprompt.openWindow",
+        "title": "Open in Separate Floating Window",
+        "category": "Re-Prompt",
+        "icon": "$(empty-window)"
+      },
+      {
+        "command": "reprompt.popOutWindow",
+        "title": "Open in Separate Floating Window",
+        "category": "Re-Prompt",
+        "icon": "$(link-external)"
+      },
+      {
+        "command": "reprompt.orchestrateTask",
+        "title": "Orchestrate Task (Gemini + Claude)",
+        "category": "Re-Prompt",
+        "icon": "$(rocket)"
+      },
+      {
+        "command": "reprompt.orchestratorStatus",
+        "title": "Gemini + Claude Orchestrator Status",
+        "category": "Re-Prompt",
+        "icon": "$(pulse)"
+      },
+      {
+        "command": "watchkeeper.searchSnippets",
+        "title": "Search Verified Snippets",
+        "category": "Watchkeeper",
+        "icon": "$(search)"
+      },
+      {
+        "command": "watchkeeper.captureSnippet",
+        "title": "Save Selection to Verified Snippets",
+        "category": "Watchkeeper",
+        "icon": "$(bookmark)"
+      },
+      {
+        "command": "watchkeeper.learningStats",
+        "title": "Show Autonomous Learning Stats",
+        "category": "Watchkeeper",
+        "icon": "$(database)"
+      },
+      {
+        "command": "watchkeeper.watchdogScan",
+        "title": "Watchdog: Scan for Hanging Tasks",
+        "category": "Watchkeeper",
+        "icon": "$(pulse)"
+      },
+      {
+        "command": "watchkeeper.watchdogRecover",
+        "title": "Watchdog: Recover Hanging Tasks",
+        "category": "Watchkeeper",
+        "icon": "$(sync)"
+      }
+    ],
+    "keybindings": [
+      {
+        "command": "watchkeeper.openWorkspace",
+        "key": "ctrl+alt+w",
+        "mac": "cmd+alt+w",
+        "when": "!terminalFocus && !inputFocus"
+      },
+      {
+        "command": "watchkeeper.maximizeWorkspace",
+        "key": "ctrl+alt+shift+w",
+        "mac": "cmd+alt+shift+w",
+        "when": "!terminalFocus && !inputFocus"
+      },
+      {
+        "command": "reprompt.openOverlay",
+        "key": "ctrl+alt+r",
+        "mac": "cmd+alt+r",
+        "when": "!terminalFocus && !inputFocus"
+      },
+      {
+        "command": "reprompt.quickOverlay",
+        "key": "ctrl+alt+shift+r",
+        "mac": "cmd+alt+shift+r",
+        "when": "!terminalFocus && !inputFocus"
+      }
     ],
     "menus": {
-      "view/title": [{ "command": "watchkeeper.refresh", "when": "view == watchkeeper.panel", "group": "navigation" }]
+      "editor/context": [
+        {
+          "command": "reprompt.rewriteSelection",
+          "when": "editorHasSelection",
+          "group": "1_modification@100"
+        },
+        {
+          "command": "watchkeeper.captureSnippet",
+          "when": "editorHasSelection",
+          "group": "1_modification@101"
+        }
+      ],
+      "editor/title": [
+        {
+          "command": "watchkeeper.openWorkspace",
+          "group": "navigation"
+        }
+      ],
+      "view/title": [
+        {
+          "command": "watchkeeper.openWorkspace",
+          "when": "view == watchkeeper.panel",
+          "group": "navigation@1"
+        },
+        {
+          "command": "watchkeeper.refresh",
+          "when": "view == watchkeeper.panel",
+          "group": "navigation@2"
+        },
+        {
+          "command": "reprompt.openOverlay",
+          "when": "view == reprompt.sidebarView || view == reprompt.composerView",
+          "group": "navigation"
+        },
+        {
+          "command": "reprompt.openWindow",
+          "when": "view == reprompt.sidebarView || view == reprompt.composerView",
+          "group": "navigation@2"
+        }
+      ]
     },
     "configuration": {
       "title": "Watchkeeper",
       "properties": {
-        "watchkeeper.pluginPath": { "type": "string", "default": "", "markdownDescription": "Folder of the Watchkeeper plugin (holds `bin/wk-ledger.mjs` and `config/gates.json`). Empty: found automatically, first `~/Projects/watchkeeper`, then the plugin as Claude Code installed it.", "scope": "machine" },
-        "watchkeeper.dataDir": { "type": "string", "default": "~/.wk", "markdownDescription": "The Watchkeeper plugin's data folder (ledger, meter, notes).", "scope": "machine" },
-        "watchkeeper.claudeDir": { "type": "string", "default": "~/.claude", "markdownDescription": "Claude Code's folder (session transcripts live in `projects/`).", "scope": "machine" },
-        "watchkeeper.orchestrationDir": { "type": "string", "default": "", "markdownDescription": "Optional: a folder that holds `locks/`, one file per locked area, first line `pid|label|since`. Empty: the `orchestration` folder of the open workspace, if it has one. Questions come only from the folder named as \"orchestration\" in `~/.wk/remote.json`.", "scope": "machine" }
+        "watchkeeper.preferredLocation": {
+          "type": "string",
+          "enum": [
+            "editor-maximized",
+            "editor",
+            "sidebar",
+            "studio"
+          ],
+          "default": "sidebar",
+          "markdownDescription": "Where Watchkeeper opens: `editor-maximized` fills most of the Antigravity IDE window, `editor` opens as a full editor workspace tab like Claude Code, `sidebar` keeps it in the side bar, and `studio` opens in the Re-Prompt Studio view container.",
+          "scope": "window"
+        },
+        "watchkeeper.openOnStartup": {
+          "type": "boolean",
+          "default": false,
+          "markdownDescription": "Automatically open the full-IDE Watchkeeper Workspace tab when Antigravity IDE starts.",
+          "scope": "window"
+        },
+        "watchkeeper.autoTakeTasks": {
+          "type": "boolean",
+          "default": false,
+          "markdownDescription": "Run queued Watchkeeper tasks here with your Gemini API key (added in Settings): the panel claims each queued task (`wk-task take`), runs it and checks it with `wk-task done`. Off by default: the queue is for Antigravity to pick up.",
+          "scope": "window"
+        },
+        "watchkeeper.pluginPath": {
+          "type": "string",
+          "default": "",
+          "markdownDescription": "Folder of the Watchkeeper plugin (holds `bin/wk-ledger.mjs` and `config/gates.json`). Empty: found automatically, first `~/Projects/watchkeeper`, then the plugin as Claude Code installed it.",
+          "scope": "machine"
+        },
+        "watchkeeper.dataDir": {
+          "type": "string",
+          "default": "~/.wk",
+          "markdownDescription": "The Watchkeeper plugin's data folder (ledger, meter, notes).",
+          "scope": "machine"
+        },
+        "watchkeeper.claudeDir": {
+          "type": "string",
+          "default": "~/.claude",
+          "markdownDescription": "Claude Code's folder (session transcripts live in `projects/`).",
+          "scope": "machine"
+        },
+        "watchkeeper.orchestrationDir": {
+          "type": "string",
+          "default": "",
+          "markdownDescription": "Optional: a folder that holds `locks/`, one file per locked area, first line `pid|label|since`. Empty: the `orchestration` folder of the open workspace, if it has one. Questions come only from the folder named as \"orchestration\" in `~/.wk/remote.json`.",
+          "scope": "machine"
+        },
+        "watchkeeper.geminiAccountLabel": {
+          "type": "string",
+          "default": "",
+          "markdownDescription": "Optional: a name for the Gemini account, shown on the usage card. Watchkeeper never reads Antigravity's sign-in files; empty shows \"Gemini / Antigravity\".",
+          "scope": "machine"
+        }
       }
     }
   },
   "scripts": {
-    "test": "node --test test/data.test.js test/extension.test.js test/waiting.test.js test/remote.test.js",
+    "test": "node --test test/data.test.js test/p3-data.test.js test/extension.test.js test/waiting.test.js test/remote.test.js test/reprompt.test.js test/chat-session.test.js test/learning-bridge.test.js test/watchdog.test.js test/removals.test.js test/audit-regressions.test.js test/settings-store.test.js test/frame.test.js test/channel-render.test.js test/p3-fixes.test.js test/dag-runner.test.js ../test/p2-272-app-page.test.mjs",
     "render": "node test/render.mjs",
     "icon": "node scripts/icon.mjs",
     "package": "node scripts/package.mjs",

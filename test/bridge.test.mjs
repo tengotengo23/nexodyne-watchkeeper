@@ -149,6 +149,9 @@ test('fitModel cuts the oldest detail first and logs it; the change hash ignores
   assert.deepEqual(logged.slice(1), ['ledger detail', 'session detail']); assert.equal(out2.sessions.sessions.length, 5); assert.equal(out2.sessions.more, 35);
   const out3 = B.fitModel({ ...JSON.parse(JSON.stringify(m)), questions: { items: Array(5000).fill(big) } }, 10000, () => {});
   assert.equal(out3.cut, true); assert.deepEqual(out3.jobs, [{ id: 'j' }]); assert.ok(!('questions' in out3));
+  // P2-272 phase 3: the phone page shows the same status line as the panel, so the last cut keeps it
+  const out4 = B.fitModel({ ...JSON.parse(JSON.stringify(m)), statusLine: 'All quiet.', statusState: 'ok', questions: { items: Array(5000).fill(big) } }, 10000, () => {});
+  assert.equal(out4.cut, true); assert.equal(out4.statusLine, 'All quiet.'); assert.equal(out4.statusState, 'ok');
   const a = { now: 1, mac: { free_mb: 3401 }, bridge: { pushed_at: 1 }, x: 1 }, b = { now: 2, mac: { free_mb: 3420 }, bridge: { pushed_at: 9 }, x: 1 };
   assert.equal(B.modelHash(a), B.modelHash(b)); assert.notEqual(B.modelHash(a), B.modelHash({ ...b, x: 2 }));
 });

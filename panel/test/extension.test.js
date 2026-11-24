@@ -274,7 +274,7 @@ function hostileFixture(prefix) {
   const ran = path.join(w, 'ran.jsonl');
   const logger = `#!/usr/bin/env node\nrequire('fs').appendFileSync(${JSON.stringify(ran)}, JSON.stringify(process.argv.slice(1)) + '\\n');\n`;
   fs.writeFileSync(path.join(orch, 'nx'), logger, { mode: 0o755 });
-  for (const f of ['wk-suggest.mjs', 'wk-task.mjs', 'wk-job.mjs', 'wk-bridge.mjs', 'wk-ask-claude.mjs']) fs.writeFileSync(path.join(plugin, 'bin', f), logger.replace('#!/usr/bin/env node\n', ''));
+  for (const f of ['wk-suggest.mjs', 'wk-task.mjs', 'wk-job.mjs', 'wk-bridge.mjs', 'wk-ask-claude.mjs', 'wk-skill-sync.mjs']) fs.writeFileSync(path.join(plugin, 'bin', f), logger.replace('#!/usr/bin/env node\n', ''));
   fs.writeFileSync(path.join(plugin, 'bin', 'wk-ledger.mjs'), 'process.exit(3);');
   fs.writeFileSync(path.join(plugin, 'config', 'gates.json'), JSON.stringify({ kill_switch: { file: path.join(data, 'KILL') } }));
   fs.writeFileSync(path.join(data, 'suggestions.jsonl'), JSON.stringify({ id: 'S-20261114-100000-abcd', at: new Date().toISOString(), from: 'claude', title: 'Go?', action: { type: 'none' } }) + '\n');
@@ -283,7 +283,14 @@ function hostileFixture(prefix) {
 }
 const RUN_MESSAGES = [{ cmd: 'answerQuestion', n: '3', useRecommended: true }, { cmd: 'answerQuestion', n: '3', text: 'yes' }, { cmd: 'decideSuggestion', id: 'S-20261114-100000-abcd', choice: 'ok' },
   { cmd: 'addTask', title: 'Fix it', text: 'x', kind: 'auto' }, { cmd: 'installAsk' }, { cmd: 'jobStart', project: 'site', prompt: 'hi', model: 'sonnet', mode: 'plan' },
-  { cmd: 'jobReply', job: 'J-20261114-1000-abcd', prompt: 'hi' }, { cmd: 'jobStop', job: 'J-20261114-1000-abcd' }, { cmd: 'trustKey', id: 'AAAAAAAAAAAAAAAA' }, { cmd: 'rejectKey', id: 'AAAAAAAAAAAAAAAA' }, { cmd: 'remoteOn' }, { cmd: 'remoteOff' }];
+  { cmd: 'jobReply', job: 'J-20261114-1000-abcd', prompt: 'hi' }, { cmd: 'jobStop', job: 'J-20261114-1000-abcd' }, { cmd: 'trustKey', id: 'AAAAAAAAAAAAAAAA' }, { cmd: 'rejectKey', id: 'AAAAAAAAAAAAAAAA' }, { cmd: 'remoteOn' }, { cmd: 'remoteOff' },
+  { cmd: 'repromptRewrite', draft: 'fix bug', target: 'antigravity', mode: 'balanced', skills: '' }, { cmd: 'repromptSend', text: 'fix bug', target: 'antigravity' }, { cmd: 'orchestrateRun', prompt: 'check logs', prefer: 'auto' }, { cmd: 'skillsSync' },
+  { cmd: 'chatDraft', prompt: 'fix bug', confirmBeforeGo: true }, { cmd: 'chatConfirm', sessionId: 'WKS-20261122-120000-abcd', turnId: 'T-123456', repromptedText: 'fix' }, { cmd: 'chatSendToIde', sessionId: 'WKS-20261122-120000-abcd', turnId: 'T-123456', repromptedText: 'fix' },
+  { cmd: 'chatContinueFromClaude', sessionId: 'sess_1234' }, { cmd: 'chatTakeTask' }, { cmd: 'chatHandoffToClaude', sessionId: 'WKS-20261122-120000-abcd', note: 'next' },
+  { cmd: 'watchdogScan' }, { cmd: 'watchdogRecover' }, { cmd: 'graphRefresh' }, { cmd: 'removal', id: 'wt-1', choice: 'ok' },
+  { cmd: 'skillApprove', slug: 'some-source' }, { cmd: 'skillReject', slug: 'owner/repo' },
+  { cmd: 'dagRun', sessionId: 'WKS-20261122-120000-abcd', turnId: 'T-123456' }, { cmd: 'dagStop', sessionId: 'WKS-20261122-120000-abcd', turnId: 'T-123456' },
+  { cmd: 'dagMerge', sessionId: 'WKS-20261122-120000-abcd', turnId: 'T-123456' }, { cmd: 'dagCheck', sessionId: 'WKS-20261122-120000-abcd', turnId: 'T-123456' }];
 
 // Copy review must 7: a workspace's own orchestration/nx is never run, and its questions are not listed; only remote.json names that folder.
 test('a workspace that ships orchestration/nx: its questions are not listed and its nx never runs', async () => {
@@ -361,4 +368,67 @@ test('the vsix carries every file the extension requires (scripts/package.mjs FI
     }
   }
   for (const f of ['src/actions.js', 'src/legal-words.js']) assert.ok(seen.has(f), f);
+});
+
+test('full-IDE workspace: openWorkspace renders wk-full-ide tabs and skillsSync triggers wk-skill-sync.mjs', async () => {
+  const provider = registered['watchkeeper.panel'];
+  const saved = { ...cfg }, f = hostileFixture('wk-fullide-');
+  const origCreatePanel = fakeVscode.window.createWebviewPanel;
+  const origExec = fakeVscode.commands.executeCommand;
+  const origViewColumn = fakeVscode.ViewColumn;
+  const panels = [];
+  fakeVscode.ViewColumn = { ...(origViewColumn || {}), One: 1 };
+  fakeVscode.commands.executeCommand = async () => {};
+  fakeVscode.window.createWebviewPanel = (id, title) => {
+    const view = fakeView();
+    const p = { id, title, webview: view.webview, posted: view.posted, send: view.send, reveal() {}, onDidDispose: () => ({ dispose() {} }) };
+    panels.push(p);
+    return p;
+  };
+  try {
+    const ranSync = path.join(f.w, 'ran-sync.jsonl');
+    fs.writeFileSync(
+      path.join(f.plugin, 'bin', 'wk-skill-sync.mjs'),
+      `import fs from 'node:fs';\nfs.appendFileSync(${JSON.stringify(ranSync)}, JSON.stringify(process.argv.slice(1)) + '\\n');\n`,
+    );
+    Object.assign(cfg, { pluginPath: f.plugin, dataDir: f.data, orchestrationDir: '' });
+    fakeVscode.workspace.isTrusted = true;
+    await provider.openWorkspace({ maximize: false });
+    assert.equal(panels.length, 1);
+    const wp = panels[0];
+    assert.match(wp.webview.html, /class="wk-full-ide"/);
+    // P2-272 (P3-A): the five tabs became one frame (rail, status bar, Ops drawer, stream, composer); each former
+    // tab's content must still be in the full-IDE page: Re-Prompt, Running Tasks, Skills Library, Guard & Pace.
+    assert.doesNotMatch(wp.webview.html, /class="wk-tab\b/, 'no tab buttons left');
+    for (const [tab, mark] of [['Re-Prompt', 'id="sec-reprompt"'], ['Running Tasks', 'id="h-jobs"'], ['Skills Library', 'id="sec-review"'],
+      ['Guard & Pace', 'id="wk-ops"'], ['Guard & Pace', 'id="h-controls"'], ['Guard & Pace', 'id="h-pace"'], ['rail', '+ New Session']]) {
+      assert.ok(wp.webview.html.includes(mark), `full-IDE HTML keeps ${tab} (${mark})`);
+    }
+    assert.match(wp.webview.html, /id="sec-orchestrator"/);
+    assert.match(wp.webview.html, /id="sec-skills"/);
+    await wp.send({ cmd: 'skillsSync' });
+    assert.equal(fs.existsSync(ranSync), true, `skillsSync invoked wk-skill-sync.mjs; posted=${JSON.stringify(wp.posted)}`);
+    const syncArgv = JSON.parse(fs.readFileSync(ranSync, 'utf8').trim().split('\n')[0]);
+    assert.deepEqual(syncArgv.slice(1), ['run', '--force', '--no-clone']);
+  } finally {
+    provider.stop();
+    provider.workspacePanel = null;
+    fakeVscode.window.createWebviewPanel = origCreatePanel;
+    fakeVscode.commands.executeCommand = origExec;
+    fakeVscode.ViewColumn = origViewColumn;
+    Object.assign(cfg, saved);
+  }
+});
+
+test('P2-273: a panel paste over 30 words is marked so the Antigravity hook sends it as is', () => {
+  const pp = require('../src/prompt-prefix.js');
+  const long = Array(31).fill('word').join(' ');
+  const short = 'fix the login page';
+  assert.equal(ext.ideTaskFor(short, {}), short);
+  assert.equal(ext.ideTaskFor(long, { autoRewriteOverWords: 0 }), long, 'word rule off: nothing to mark');
+  const marked = ext.ideTaskFor(long, {});
+  assert.ok(marked.startsWith(long) && marked.endsWith(ext.PANEL_AS_IS_MARK));
+  assert.equal(pp.wantsAutoRewrite(marked, 30), false, 'the hook does not rewrite it again');
+  assert.ok(ext.ideTaskFor(short, { hookAutoAll: true }).endsWith(ext.PANEL_AS_IS_MARK), 'rewrite-everything mode marks short text too');
+  assert.equal(ext.ideTaskFor(long, null).endsWith(ext.PANEL_AS_IS_MARK), true, 'no settings: the default rule');
 });

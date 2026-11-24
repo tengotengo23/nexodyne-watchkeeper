@@ -5,6 +5,7 @@
 //       A prompt with legal wording (panel/src/legal-words.js) runs on the newest top model in config/models.json "legal" at xhigh
 //       effort, whatever --model says; "not available" moves to the next model, a busy answer waits and tries the same one again.
 //   wk-job reply <id> (--prompt "<t>" | stdin)                          -> only while the job waits: --resume, same model and mode
+//   wk-job handoff <id>                                                 -> asks the waiting job for a continue file (wk-handoff.mjs); wk-job clear <id> -> only once that file is ready: a fresh job from it, this one closed
 //   wk-job stop <id>                                                    -> SIGTERM to the job's process group, SIGKILL after 10 s
 //   wk-job list [--json] · wk-job show <id> [--json] [--after <n>]
 //   wk-job _run <id>                                                    -> (internal) the runner, started detached by start and reply
@@ -17,9 +18,12 @@ import path from 'node:path';
 import crypto from 'node:crypto';
 import { spawn, spawnSync } from 'node:child_process';
 import { gates, killOn } from './lib.mjs';
+import { askForJob, peekForJob, usedForJob } from './wk-handoff.mjs';
 import { wkHome, readRemote, JOB_ID, PROJECT_KEY, MODELS, MODES, scrub, cleanCut, readJsonFile, writePrivate } from './remote-lib.mjs';
 import { findProject } from './wk-projects.mjs';
 import { isLegal, legalLabel, inOrder, order, runPicked, config as modelConfig, EFFORTS } from './model-pick.mjs';
+import { canCarbonFallback, isClaudeLimitError, runCarbonHigh } from './wk-carbon-fallback.mjs';
+import { createDynamicStallGuard } from './wk-watchdog.mjs';
 
 const SELF = new URL(import.meta.url).pathname;
 export const FORBIDDEN = ['bypassPermissions', 'dontAsk', '--dangerously-skip-permissions', '--add-dir', '--mcp-config', '--settings', '--allowedTools'];
@@ -44,13 +48,13 @@ export const systemLine = id => `Started from the owner's phone through Watchkee
 
 // ---------------------------------------------------------------- the one argv
 // A legal job (legal: true) may also run a model from the legal order in config/models.json, with --effort.
-export function claudeArgv({ id, model, mode, max_turns, session_id, effort = null, legal = false }) {
+export function claudeArgv({ id, model, mode, max_turns, session_id, effort = null, legal = false, system = null }) {
   if (!MODELS.includes(model) && !(legal && inOrder('legal', model))) bad('unknown model');
   if (effort !== null && !EFFORTS.includes(effort)) bad('unknown effort');
   if (!MODES.includes(mode)) bad('unknown mode');
   if (!(Number.isInteger(max_turns) && max_turns >= 1 && max_turns <= 400)) bad('turns must be 1 to 400');
   const a = ['-p', '--output-format', 'stream-json', '--verbose', '--permission-mode', mode, '--permission-prompts', 'none', '--model', model,
-    ...(effort ? ['--effort', effort] : []), '--max-turns', String(max_turns), '--append-system-prompt', systemLine(id)];
+    ...(effort ? ['--effort', effort] : []), '--max-turns', String(max_turns), '--append-system-prompt', typeof system === 'string' && system.trim() ? system : systemLine(id)];   // system: P2-272 task-splitter steps say where they come from
   if (session_id) a.push('--resume', session_id);
   if (a.some(x => FORBIDDEN.includes(x))) throw new Error('a forbidden flag reached the argv');   // never: the sets above are closed
   return a;
@@ -134,25 +138,31 @@ const defaults = () => ({
   pacePct: process.env.WK_JOB_PACE_PCT === 'none' ? () => null : envNum('WK_JOB_PACE_PCT') !== undefined ? () => envNum('WK_JOB_PACE_PCT') : pacePct,
   spawnRunner,
 });
+const jobHasFakeClaude = () => Boolean(process.env.WK_CLAUDE_BIN || process.env.WK_JOB_PACE_PCT !== undefined);
 
 // Why a job may not start now, or null. The order: stop switch, LOW_RAM, free RAM, running jobs, pace, project.
-export function whyNot({ project, remote = readRemote(), deps = defaults(), now = Date.now() }) {
-  if (stopSwitchOn()) return { code: 3, text: 'The stop switch is on: no job starts until it is off.' };
+function checkCanStart({ project, remote = readRemote(), deps = defaults(), now = Date.now() }) {
+  if (stopSwitchOn()) return { block: { code: 3, text: 'The stop switch is on: no job starts until it is off.' }, pct: null };
   const p = findProject(project);
   const repo = p ? (p.kind === 'folder' && p.repo ? p.repo : p.path) : null;
   const orch = orchestrationDir(remote);
   for (const f of [orch && path.join(orch, 'LOW_RAM'), repo && path.join(repo, 'orchestration', 'LOW_RAM')].filter(Boolean)) {
-    if (fs.existsSync(f)) return { code: 1, text: 'The Mac is low on memory (LOW_RAM is set): no job starts until it clears.' };
+    if (fs.existsSync(f)) return { block: { code: 1, text: 'The Mac is low on memory (LOW_RAM is set): no job starts until it clears.' }, pct: null };
   }
   const mb = deps.freeMb();
-  if (Number.isFinite(mb) && mb < MIN_FREE_MB) return { code: 1, text: `The Mac has ${Math.round(mb)} MB free, under ${MIN_FREE_MB} MB: no job starts until more is free.` };
+  if (Number.isFinite(mb) && mb < MIN_FREE_MB) return { block: { code: 1, text: `The Mac has ${Math.round(mb)} MB free, under ${MIN_FREE_MB} MB: no job starts until more is free.` }, pct: null };
   const running = sweep(now).filter(m => m.state === 'running' || m.state === 'queued').length;
-  if (running >= remote.max_jobs) return { code: 1, text: `${running} jobs are running, the most at once is ${remote.max_jobs}. Wait for one to finish or stop one.` };
+  if (running >= remote.max_jobs) return { block: { code: 1, text: `${running} jobs are running, the most at once is ${remote.max_jobs}. Wait for one to finish or stop one.` }, pct: null };
   const pct = deps.pacePct();
-  if (Number.isFinite(pct) && pct >= remote.pace_stop_pct) return { code: 1, text: `This week's use is at ${Math.round(pct)}%, at or over the ${remote.pace_stop_pct}% line: no new job this week.` };
-  if (!p) return { code: 1, text: `"${String(project).slice(0, 64)}" is not in the projects list. Run wk-projects scan on the Mac.` };
-  if (!fs.existsSync(repo)) return { code: 1, text: `The folder for "${p.key}" is not there any more.` };
-  return null;
+  if (Number.isFinite(pct) && pct >= remote.pace_stop_pct && !canCarbonFallback({ hasFakeClaude: jobHasFakeClaude() })) {
+    return { block: { code: 1, text: `This week's use is at ${Math.round(pct)}%, at or over the ${remote.pace_stop_pct}% line: no new job this week.` }, pct };
+  }
+  if (!p) return { block: { code: 1, text: `"${String(project).slice(0, 64)}" is not in the projects list. Run wk-projects scan on the Mac.` }, pct };
+  if (!fs.existsSync(repo)) return { block: { code: 1, text: `The folder for "${p.key}" is not there any more.` }, pct };
+  return { block: null, pct };
+}
+export function whyNot(opts) {
+  return checkCanStart(opts).block;
 }
 
 // ---------------------------------------------------------------- start, reply, stop
@@ -165,8 +175,9 @@ export function start({ project, prompt, model = 'sonnet', mode = 'auto', max_tu
   if (!['phone', 'panel', 'cli'].includes(from)) bad('unknown --from');
   claudeArgv({ id: 'J-00000000-0000-0000', model, mode, max_turns });   // checks the model, mode and turns
   const remote = readRemote();
-  const no = whyNot({ project, remote, deps, now: now.getTime() });
+  const { block: no, pct } = checkCanStart({ project, remote, deps, now: now.getTime() });
   if (no) throw new Stop(no.code, no.text);
+  const useCarbon = Number.isFinite(pct) && pct >= remote.pace_stop_pct && canCarbonFallback({ hasFakeClaude: jobHasFakeClaude() });
   const p = findProject(project);
   const cwd = p.kind === 'folder' && p.repo ? p.repo : p.path;
   const text = p.kind === 'folder' && p.repo ? `Work in ${path.relative(p.repo, p.path)}/ (project ${p.name}).\n${prompt}` : prompt;
@@ -179,9 +190,12 @@ export function start({ project, prompt, model = 'sonnet', mode = 'auto', max_tu
   fs.chmodSync(dirOf(id), 0o700);
   writePrivate(path.join(dirOf(id), 'prompt-1.txt'), text);
   const legal = isLegal(prompt);
-  const m = { id, project: p.key, cwd, model, mode, max_turns, from, state: 'queued', legal: !!legal, model_id: null, effort: null, session_id: null, started_at: now.getTime(), queued_at: now.getTime(), ended_at: null,
+  const m = { id, project: p.key, cwd, model, mode, max_turns, from, state: 'queued', legal: !!legal, model_id: null, effort: null, session_id: null,
+    carbon_fallback: useCarbon, provider: useCarbon ? 'orchestrator-carbon-high' : 'claude',
+    started_at: now.getTime(), queued_at: now.getTime(), ended_at: null,
     cost_usd: 0, turns: 0, last_text: '', prompts: 1, events: 0, runner_pid: null, pgid: null, wall_ms: Number(process.env.WK_JOB_WALL_MS) || remote.job_hours * 3600000 };
   appendEvents(m, [{ type: 'prompt', text: cleanCut(prompt, LIMITS.text) }]);
+  if (useCarbon) appendEvents(m, [{ type: 'note', text: `Claude Code usage (${Math.round(pct)}%) reached the ${remote.pace_stop_pct}% ceiling; the task goes to the queue for Antigravity (wk-task), never run here.` }]);
   if (legal) appendEvents(m, [{ type: 'note', text: legalNote(legal) }]);
   saveMeta(m);
   m.runner_pid = deps.spawnRunner(id);   // the runner writes its own pid into meta.json (a write here could undo the runner's)
@@ -198,9 +212,14 @@ export function reply(id, prompt, { deps = defaults(), now = Date.now() } = {}) 
   const m = readMeta(id);
   if (!m) refuse(`There is no job ${id}.`);
   if (m.state !== 'waiting') refuse(`Job ${id} is ${m.state}, not waiting for a reply.`);
-  if (!m.session_id) refuse(`Job ${id} has no session to continue.`);
+  if (!m.session_id && !m.carbon_fallback) refuse(`Job ${id} has no session to continue.`);
   if (alive(m.runner_pid)) refuse(`Job ${id} is still running.`);   // never two runs on one session
   if (stopSwitchOn()) throw new Stop(3, 'The stop switch is on: no job runs until it is off.');
+  const pct = deps.pacePct(), remote = readRemote();
+  if (Number.isFinite(pct) && pct >= remote.pace_stop_pct && canCarbonFallback({ hasFakeClaude: jobHasFakeClaude() })) {
+    m.carbon_fallback = true;
+    m.provider = 'orchestrator-carbon-high';
+  }
   m.prompts = (m.prompts || 1) + 1;
   writePrivate(path.join(dirOf(id), `prompt-${m.prompts}.txt`), prompt);
   m.state = 'queued'; m.queued_at = now; m.ended_at = null;
@@ -213,6 +232,30 @@ export function reply(id, prompt, { deps = defaults(), now = Date.now() } = {}) 
   m.runner_pid = deps.spawnRunner(id);
   if (Number.isInteger(m.runner_pid)) writePrivate(runnerPidFile(id), String(m.runner_pid));
   return m;
+}
+
+// W's clear for a job (P2-257). handoff: ask the waiting job, as its next reply, to write the continue file. clear: only when that file is
+// ready and the job waits, start a fresh job in the same project with the file as its prompt, and close this one. W does nothing else to it.
+export function handoff(id, { why = 'the job has grown large', deps = defaults(), now = Date.now() } = {}) {
+  if (!JOB_ID.test(String(id))) bad('unknown job');
+  const a = askForJob(id, why, now);
+  return { file: a.file, m: reply(id, a.text, { deps, now }) };
+}
+export function clear(id, { deps = defaults(), now = Date.now() } = {}) {
+  if (!JOB_ID.test(String(id))) bad('unknown job');
+  sweep(now);
+  const m = readMeta(id);
+  if (!m) refuse(`There is no job ${id}.`);
+  if (m.state !== 'waiting') refuse(`Job ${id} is ${m.state}: it can be cleared only while it waits.`);
+  if (alive(m.runner_pid)) refuse(`Job ${id} is still running.`);
+  const r = peekForJob(id);
+  if (!r.ok) refuse(`Job ${id} has no usable continue file (${r.why}). Ask for one with: wk-job handoff ${id}`);
+  const next = start({ project: m.project, prompt: `This is a fresh session: job ${id} was cleared and you continue its work. Its own continue prompt follows; check the state before you act on it.\n\n${r.text}`,
+    model: m.model, mode: m.mode, max_turns: m.max_turns, from: m.from }, { deps, now: new Date(now) });
+  usedForJob(id, next.id, now);
+  const old = readMeta(id) || m; old.state = 'done'; old.ended_at = now; old.last_text = `Cleared: continued in ${next.id}.`;
+  appendEvents(old, [{ type: 'note', text: `Cleared: continued in ${next.id}.` }]); saveMeta(old);
+  return { old: id, next };
 }
 
 export function stop(id, { now = Date.now() } = {}) {
@@ -277,7 +320,7 @@ async function runOnce(m, id, prompt, { model, effort = null, resume = null, wal
   let child;
   try { child = spawn(claudeBin(), argv, { cwd: m.cwd, detached: true, stdio: ['pipe', 'pipe', 'pipe'], env: process.env }); }
   catch (e) { return { spawnError: e, why: null, end: {}, result: null, raw: [], errTail: '' }; }
-  m.state = 'running'; m.pgid = child.pid; m.runner_pid = process.pid; m.run_started_at = m.run_started_at || Date.now();
+  m.state = 'running'; m.pgid = child.pid; m.runner_pid = process.pid; m.run_started_at = m.run_started_at || Date.now(); m.last_activity_at = Date.now();
   saveMeta(m);
   const done = new Promise(resolve => {
     child.on('error', e => resolve({ code: null, error: e }));
@@ -290,9 +333,12 @@ async function runOnce(m, id, prompt, { model, effort = null, resume = null, wal
   let buf = '', errTail = '', result = null, why = null, killTimer = null;
   const raw = [];   // what the model picker reads: the result line, a "<synthetic>" message, a rate limit that was not allowed
   const pending = [];
-  const flush = () => { if (!pending.length) return; const cur = readMeta(id) || m; m.events = cur.events; appendEvents(m, pending.splice(0)); saveMeta(m); };
+  let stallGuard = null;
+  const flush = () => { if (!pending.length) return; const cur = readMeta(id) || m; m.events = cur.events; m.last_activity_at = Date.now(); appendEvents(m, pending.splice(0)); saveMeta(m); };
   child.stdout.setEncoding('utf8');
   child.stdout.on('data', d => {
+    if (stallGuard) stallGuard.touch();
+    m.last_activity_at = Date.now();
     buf += d;
     if (buf.length > 4 * 1024 * 1024) buf = buf.slice(-1024 * 1024);
     let i;
@@ -316,19 +362,39 @@ async function runOnce(m, id, prompt, { model, effort = null, resume = null, wal
     }
   });
   child.stderr.setEncoding('utf8');
-  child.stderr.on('data', d => { errTail = (errTail + d).slice(-2000); });
+  child.stderr.on('data', d => {
+    if (stallGuard) stallGuard.touch();
+    m.last_activity_at = Date.now();
+    errTail = (errTail + d).slice(-2000);
+  });
   const killGroup = sig => { try { process.kill(-child.pid, sig); } catch { /* gone */ } };
   const halt = reason => {
     if (why) return; why = reason;
     killGroup('SIGTERM');
     killTimer = setTimeout(() => killGroup('SIGKILL'), KILL_MS());
+    if (killTimer && typeof killTimer.unref === 'function') killTimer.unref();
   };
   haltNow = halt;
+  const stallMs = Number(process.env.WK_JOB_STALL_MS) || 15 * 60 * 1000;
+  stallGuard = createDynamicStallGuard({
+    pid: child.pid,
+    pgid: child.pid,
+    stallMs,
+    maxWallMs: Math.max(1000, wallMs),
+    onWarning: ({ idleMs }) => {
+      const cur = readMeta(id) || m; m.events = cur.events;
+      appendEvents(m, [{ type: 'note', text: `Job idle for ${Math.round(idleMs / 1000)}s; watchdog monitoring process activity.` }]);
+      saveMeta(m);
+    },
+    onStall: ({ reason }) => halt(reason === 'wall' ? 'wall' : 'stall'),
+  });
   const poll = setInterval(() => { if (fs.existsSync(stopFlag(id))) halt('stop'); }, 200);
+  if (poll && typeof poll.unref === 'function') poll.unref();
   if (fs.existsSync(stopFlag(id))) halt('stop');   // a stop between the check above and the spawn: now, not at the next poll
   const wall = setTimeout(() => halt('wall'), Math.max(1000, wallMs));
+  if (wall && typeof wall.unref === 'function') wall.unref();
   const end = await done;
-  clearInterval(poll); clearTimeout(wall); haltNow = null;
+  clearInterval(poll); clearTimeout(wall); stallGuard.stop(); haltNow = null;
   if (!why && fs.existsSync(stopFlag(id))) why = 'stop';   // `stop` signals the group itself: claude can end before the next poll
   // the group may still hold children of claude: they go too
   killGroup('SIGKILL'); if (killTimer) clearTimeout(killTimer);
@@ -345,6 +411,7 @@ function finishRun(m, id, o, extra = null) {
   m.ended_at = Date.now();
   if (o.spawnError) { m.state = 'failed'; m.last_text = `Claude Code could not start: ${cleanCut(o.spawnError.message, 200)}`; appendEvents(m, [{ type: 'note', text: m.last_text }]); }
   else if (o.why === 'stop') { m.state = 'stopped'; m.last_text = 'Stopped by the owner.'; appendEvents(m, [{ type: 'note', text: m.last_text }]); }
+  else if (o.why === 'stall') { m.state = 'failed'; m.last_text = 'Stopped: the job hung with no output or CPU activity.'; appendEvents(m, [{ type: 'note', text: m.last_text }]); }
   else if (o.why === 'wall') { m.state = 'failed'; m.last_text = `Stopped: the ${Math.round((m.wall_ms || 0) / 60000)}-minute limit was reached.`; appendEvents(m, [{ type: 'note', text: m.last_text }]); }
   else if (extra) { m.state = 'failed'; m.last_text = extra; appendEvents(m, [{ type: 'note', text: m.last_text }]); }
   else if (o.end.code === 0 && o.result && o.result.subtype === 'success' && !o.isError) m.state = 'waiting';
@@ -364,13 +431,104 @@ const stoppableSleep = id => ms => new Promise(resolve => {
   const iv = setInterval(() => { if (fs.existsSync(stopFlag(id)) || Date.now() - t0 >= ms) { clearInterval(iv); resolve(); } }, Math.min(200, Math.max(10, ms)));
 });
 
+export function jobReplyContext(m, id, prompt) {
+  if ((m.prompts || 1) <= 1) return prompt;
+  const parts = [];
+  for (let i = 1; i < m.prompts; i += 1) {
+    try {
+      const pTxt = fs.readFileSync(path.join(dirOf(id), `prompt-${i}.txt`), 'utf8').trim();
+      if (pTxt) parts.push(`Turn ${i} request:\n${pTxt}`);
+    } catch { /* ignore */ }
+  }
+  if (m.last_text) parts.push(`Previous assistant output:\n${m.last_text}`);
+  parts.push(`Follow-up request:\n${prompt}`);
+  return parts.join('\n\n---\n\n');
+}
+
+async function runJobCarbon(m, id, prompt, wallMs, reasonNote = '') {
+  const cur0 = readMeta(id) || m;
+  m.events = cur0.events;
+  m.state = 'running';
+  m.runner_pid = process.pid;
+  m.run_started_at = m.run_started_at || Date.now();
+  m.last_activity_at = Date.now();
+  m.carbon_fallback = true;
+  m.provider = 'orchestrator-carbon-high';
+  if (reasonNote) appendEvents(m, [{ type: 'note', text: reasonNote }]);
+  saveMeta(m);
+
+  const cr = await runCarbonHigh({
+    prompt: jobReplyContext(m, id, prompt),
+    system: systemLine(id),
+    cwd: m.cwd,
+    mode: m.mode,
+    timeoutMs: Math.max(5000, wallMs),
+    killCheck: () => fs.existsSync(stopFlag(id)) || stopSwitchOn(),
+    item: `job:${id}`,
+    editCwd: m.mode !== 'plan',   // A7: a plan job is answer-only; an edit job may change files under its project folder only
+  });
+
+  const cur = readMeta(id) || m;
+  m.events = cur.events;
+  m.ended_at = Date.now();
+  if (cr.killed || fs.existsSync(stopFlag(id))) {
+    m.state = 'stopped';
+    m.last_text = 'Stopped by the owner.';
+    appendEvents(m, [{ type: 'note', text: m.last_text }]);
+  } else if (cr.ok && cr.queued) {
+    // Q163: Watchkeeper never runs Gemini itself; the job waits as a wk-task until Antigravity takes it.
+    m.state = 'waiting';
+    m.provider = cr.provider || 'antigravity-queue';
+    m.queued_task = cr.taskId || null;
+    m.last_text = cleanCut(cr.text, LIMITS.last);
+    appendEvents(m, [{ type: 'note', text: m.last_text }]);
+  } else if (cr.ok && cr.text) {
+    m.state = 'waiting';
+    m.model_id = cr.model;
+    m.effort = 'high';
+    m.turns = (m.turns || 0) + 1;
+    m.last_text = scrub(cleanCut(cr.text, LIMITS.last));
+    appendEvents(m, [
+      { type: 'model', model: cr.model, effort: 'high', text: `Gemini (${cr.model})` },
+      { type: 'text', text: cleanCut(cr.text, LIMITS.text) },
+      { type: 'result', subtype: 'success', cost_usd: 0, turns: 1, text: cleanCut(cr.text, LIMITS.result) },
+    ]);
+  } else {
+    m.state = 'failed';
+    m.last_text = cleanCut(`Queueing for Antigravity failed: ${cr.stderr || cr.reason || 'unknown error'}`, LIMITS.last);
+    appendEvents(m, [{ type: 'note', text: m.last_text }]);
+  }
+  try { fs.rmSync(stopFlag(id), { force: true }); } catch { /* none */ }
+  saveMeta(m);
+  return cr.ok ? 0 : 1;
+}
+
+const jobHitClaudeLimit = o => {
+  if (!o) return false;
+  if (o.why === 'stop' || o.why === 'wall') return false;
+  if (o.end && o.end.code === 0 && o.result && o.result.subtype === 'success' && !o.isError) return false;
+  return (Array.isArray(o.raw) && o.raw.some(isClaudeLimitError)) ||
+    isClaudeLimitError(o.errTail) ||
+    isClaudeLimitError(o.result && o.result.text) ||
+    (o.spawnError && o.spawnError.code === 'ENOENT');
+};
+
 export async function runJob(id) {
   let m = readMeta(id);
   if (!m || m.state !== 'queued') return 1;
   const prompt = fs.readFileSync(path.join(dirOf(id), `prompt-${m.prompts}.txt`), 'utf8');
   const resume = m.prompts > 1 ? m.session_id : null;
   const t0 = Date.now(), wallLeft = () => (m.wall_ms || 3 * 3600000) - (Date.now() - t0);
-  if (!m.legal) return finishRun(m, id, await runOnce(m, id, prompt, { model: m.model, resume, wallMs: wallLeft() }));
+  if (m.carbon_fallback) {
+    return runJobCarbon(m, id, prompt, wallLeft());
+  }
+  if (!m.legal) {
+    const o = await runOnce(m, id, prompt, { model: m.model, resume, wallMs: wallLeft() });
+    if (jobHitClaudeLimit(o) && canCarbonFallback({ hasFakeClaude: jobHasFakeClaude() })) {
+      return runJobCarbon(m, id, prompt, wallLeft(), 'Claude Code is at its limit; queueing this task for Antigravity.');
+    }
+    return finishRun(m, id, o);
+  }
 
   // Legal wording: the newest top model the plan has (config/models.json "legal"), at xhigh effort, whatever model was picked.
   const c = modelConfig(), effort = c.legal_effort_job;
@@ -391,6 +549,9 @@ export async function runJob(id) {
     onBusy: (model, n, ms) => note(`Claude is busy (a rate limit or overload). Waiting ${Math.round(ms / 1000)} s, then trying ${model} again (try ${n + 1}); the model stays the same.`),
   });
   const o = res.r.o;
+  if ((res.busy || res.exhausted || jobHitClaudeLimit(o)) && canCarbonFallback({ hasFakeClaude: jobHasFakeClaude() })) {
+    return runJobCarbon(m, id, prompt, wallLeft(), 'Claude Code is at its limit; queueing this task for Antigravity.');
+  }
   if (res.exhausted) return finishRun(m, id, o, `No model in the legal order (${order('legal', c).join(', ')}) is available on this plan.`);
   if (res.busy) return finishRun(m, id, o, `Claude stayed busy (a rate limit or overload) and the job stopped without changing the model (${res.model}). Reply later to try again.`);
   return finishRun(m, id, o);
@@ -399,6 +560,7 @@ export async function runJob(id) {
 // ---------------------------------------------------------------- the command line
 function readStdin() { try { return fs.readFileSync(0, 'utf8'); } catch { return ''; } }
 export function parseArgs(argv) {
+  if (argv.includes('--help') || argv.includes('-h')) return { cmd: 'help', id: null, json: false };
   const o = { cmd: argv[0] || '', id: null, json: false };
   const VAL = { '--project': 'project', '--model': 'model', '--mode': 'mode', '--max-turns': 'max_turns', '--from': 'from', '--prompt': 'prompt', '--after': 'after' };
   const a = argv.slice(1);
@@ -412,18 +574,24 @@ export function parseArgs(argv) {
   if (o.max_turns !== undefined) { if (!/^\d{1,3}$/.test(o.max_turns)) bad('--max-turns must be 1 to 400'); o.max_turns = Number(o.max_turns); }
   return o;
 }
-const summary = m => ({ id: m.id, project: m.project, model: m.model, ...(m.legal ? { legal: true, model_id: m.model_id || null, effort: m.effort || null } : {}), mode: m.mode, from: m.from, state: m.state, started_at: m.started_at, ended_at: m.ended_at,
+const summary = m => ({ id: m.id, project: m.project, model: m.model, ...(m.legal ? { legal: true, model_id: m.model_id || null, effort: m.effort || null } : {}), ...(m.carbon_fallback ? { carbon_fallback: true, provider: m.provider || 'orchestrator-carbon-high', model_id: m.model_id || null } : {}), mode: m.mode, from: m.from, state: m.state, started_at: m.started_at, ended_at: m.ended_at,
   cost_usd: m.cost_usd, turns: m.turns, last_text: String(m.last_text || '').slice(0, 300) });
 
 export async function main(argv, out = s => process.stdout.write(s + '\n')) {
   const o = parseArgs(argv);
+  if (o.cmd === 'help') {
+    out('usage: wk-job start|reply|handoff|clear|stop|list|show (see the top of bin/wk-job.mjs)');
+    return 0;
+  }
   if (o.cmd === 'start') {
     const m = start({ project: o.project, prompt: o.prompt ?? readStdin(), model: o.model || 'sonnet', mode: o.mode || 'auto', max_turns: o.max_turns ?? 150, from: o.from || 'cli' });
-    out(o.json ? JSON.stringify(summary(m)) : `Started ${m.id} in ${m.project} (${m.legal ? legalLabel() : m.model}, ${MODE_WORDS[m.mode].toLowerCase()}).`);
+    out(o.json ? JSON.stringify(summary(m)) : `Started ${m.id} in ${m.project} (${m.carbon_fallback ? 'queued for Antigravity' : m.legal ? legalLabel() : m.model}, ${MODE_WORDS[m.mode].toLowerCase()}).`);
     return 0;
   }
   if (o.cmd === 'reply') { const m = reply(o.id, o.prompt ?? readStdin()); out(o.json ? JSON.stringify(summary(m)) : `Sent the reply to ${m.id}.`); return 0; }
   if (o.cmd === 'stop') { const r = stop(o.id); out(r.text); return 0; }
+  if (o.cmd === 'handoff') { const r = handoff(o.id); out(`Asked job ${o.id} for a continue file: ${r.file}. When it is written, run: wk-job clear ${o.id}`); return 0; }
+  if (o.cmd === 'clear') { const r = clear(o.id); out(`Cleared ${r.old}: the work continues in ${r.next.id}.`); return 0; }
   if (o.cmd === 'list') {
     const ms = sweep();
     if (o.json) out(JSON.stringify(ms.map(summary)));
@@ -440,7 +608,7 @@ export async function main(argv, out = s => process.stdout.write(s + '\n')) {
     return 0;
   }
   if (o.cmd === '_run') return runJob(String(o.id));
-  bad('usage: wk-job start|reply|stop|list|show (see the top of bin/wk-job.mjs)');
+  bad('usage: wk-job start|reply|handoff|clear|stop|list|show (see the top of bin/wk-job.mjs)');
 }
 
 const isMain = process.argv[1] && fs.realpathSync(process.argv[1]) === fs.realpathSync(SELF);

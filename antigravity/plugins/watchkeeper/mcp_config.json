@@ -1,0 +1,12 @@
+{
+  "mcpServers": {
+    "re-prompt": {
+      "command": "{{PYTHON}}",
+      "args": [
+        "{{WK_REPROMPT_DIR}}/server/reprompt_mcp_server.py",
+        "--data-dir",
+        "${PLUGIN_DATA}"
+      ]
+    }
+  }
+}

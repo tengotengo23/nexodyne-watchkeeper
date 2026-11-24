@@ -9,6 +9,7 @@
 // what they were and nothing is committed.
 // While it works it holds the update lock (~/.wk/update.lock, so no update check builds the half-made version) and a hold
 // file in the git folder (syncprojects.hold, so claude-notes' hourly sync does not commit the bumped files).
+// Other computers move only to a release the developer signed off afterwards (bin/wk-sign.mjs release vX.Y.Z, P2-272).
 // Exit: 0 released, 1 refused or failed, 2 bad input.
 import fs from 'node:fs';
 import os from 'node:os';
@@ -38,7 +39,7 @@ if (git('status', '--porcelain', '--untracked-files=no').stdout.trim()) stop('co
 if (push) {
   const f = git('fetch', '--quiet', 'origin', 'main');
   if (f.status !== 0) stop(`could not reach GitHub (${(f.stderr || '').trim().split('\n')[0]})`);
-  if (git('merge-base', '--is-ancestor', 'origin/main', 'HEAD').status !== 0) stop('GitHub has commits this folder lacks; pull first (git pull --rebase)');
+  if (git('merge-base', '--is-ancestor', 'refs/remotes/origin/main', 'HEAD').status !== 0) stop('GitHub has commits this folder lacks; pull first (git pull --rebase)');
 }
 
 // 2. the version places (P2-223 added the Antigravity plugin; P2-243 public/README.md, and INSTALL.html only where it exists)
@@ -51,12 +52,13 @@ const bumpJson = (s, f) => {
   return t;
 };
 const bumpTitle = (s, f) => { const t = s.replace(/^(# .*· v)\d+\.\d+\.\d+/, `$1${want}`); if (t === s) throw new Error(`${f} title has no "· vX.Y.Z"`); return t; };
-const OPTIONAL = new Set(['public/README.md', 'panel/install/INSTALL.html']);   // bumped and checked only when the folder has them
+const OPTIONAL = new Set(['public/README.md', 'panel/install/INSTALL.html', 'server.json']);   // bumped and checked only when the folder has them
 const ALL = {
   '.claude-plugin/plugin.json': s => bumpJson(s, 'plugin.json'),
   '.claude-plugin/marketplace.json': s => bumpJson(s, 'marketplace.json'),
   'panel/package.json': s => bumpJson(s, 'panel/package.json'),
   'antigravity/plugins/watchkeeper/plugin.json': s => bumpJson(s, 'antigravity plugin.json'),
+  'server.json': s => bumpJson(s, 'server.json'),
   'README.md': s => bumpTitle(s, 'README'),
   'public/README.md': s => bumpTitle(s, 'public/README.md'),
   'panel/install/INSTALL.html': s => {
@@ -117,9 +119,11 @@ if (c.status !== 0) {
 const t = git('tag', '-a', `v${want}`, '-m', `Watchkeeper v${want}`);
 if (t.status !== 0) stop(`tag failed: ${(t.stderr || '').trim().split('\n')[0]} (the commit is made; tag it by hand)`);
 say(`committed and tagged v${want}`);
-if (!push) { say('not pushed (--no-push): git push origin main && git push origin v' + want); process.exit(0); }
+const signOff = `Now test it. When you are happy: node bin/wk-sign.mjs release v${want}`;
+if (!push) { say('not pushed (--no-push): git push origin main && git push origin v' + want); say(signOff); process.exit(0); }
 for (const ref of ['main', `v${want}`]) {
   const p = git('push', '-q', 'origin', ref);
   if (p.status !== 0) stop(`push of ${ref} failed: ${(p.stderr || '').trim().split('\n')[0]}`);
 }
-say(`pushed main and v${want}; other computers move to it at their next check (every 3 hours, or: node bin/wk-update.mjs check)`);
+say(`pushed main and v${want}; other computers move to it only after you sign it off (they check every 3 hours, or: node bin/wk-update.mjs check)`);
+say(signOff);

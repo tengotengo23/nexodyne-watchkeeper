@@ -8,5 +8,6 @@ Cost is context size times call count. Measured on a real set-up (67 sessions): 
 - Subagent windows are set per agent in frontmatter (autoCompactWindow, maxTurns, model, effort): this plugin ships `scout` (haiku, 100k, 15 turns), `builder` (sonnet, 150k, 30) and `reviewer` (opus, 200k, 20). Use them instead of general-purpose (908 of 908 past runs were general-purpose at a 2.2M median). CLAUDE_AUTOCOMPACT_PCT_OVERRIDE applies to subagents too.
 - Subagents only for independent work, at most three, each counted at about 2.2M input tokens. Routine work is a single call with a strict output schema.
 - Run tests through `${CLAUDE_PLUGIN_ROOT}/bin/wk-run <cmd>` (counts, failures, last 20 lines; full log on disk). Read files with `wc -l` first, then `grep -n` and a range.
+- When `graphify-out/graph.json` exists, run `graphify query "<question>"` (or `path` / `explain` / `section`) before raw grep or source reads, and `graphify update .` after code edits (local AST, zero API tokens).
 - Reuse proven open-source code before writing a script; log the search in one line.
 - Rules files: core under 15KB, long sections in an on-demand file read only when pointed to. Start-up under 20k tokens.

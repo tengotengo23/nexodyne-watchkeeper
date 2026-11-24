@@ -1,0 +1,3070 @@
+<!DOCTYPE html>
+<!--
+  ONE SOURCE. This file (reprompt/ui/reprompt_app.html) is the only page to edit.
+  Copies, made byte for byte: panel/media/reprompt_app.html and reprompt/ide-extension/media/reprompt_app.html.
+  Remake them with: node bin/wk-sync-app-page.mjs   (the panel packaging and the drift test check them).
+  The host (VS Code webview or the page served by the MCP server) is detected at run time: typeof acquireVsCodeApi.
+-->
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Re-Prompt</title>
+  <style>
+    :root {
+      --rp-bg: var(--color-background-primary, var(--vscode-editor-background, #11131a));
+      --rp-bg-2: var(--color-background-secondary, var(--vscode-sideBar-background, #181b26));
+      --rp-bg-3: var(--color-background-tertiary, var(--vscode-input-background, #202433));
+      --rp-fg: var(--color-text-primary, var(--vscode-foreground, #eef1f7));
+      --rp-fg-2: var(--color-text-secondary, var(--vscode-descriptionForeground, #a7b0c4));
+      --rp-fg-3: var(--color-text-tertiary, #7a8399);
+      --rp-border: var(--color-border-primary, var(--vscode-panel-border, rgba(255, 255, 255, 0.11)));
+      --rp-border-2: var(--color-border-secondary, rgba(255, 255, 255, 0.06));
+      --rp-accent: var(--vscode-button-background, #5b5ef4);
+      --rp-accent-fg: var(--vscode-button-foreground, #ffffff);
+      --rp-accent-hover: var(--vscode-button-hoverBackground, #4f52e0);
+      --rp-accent-soft: rgba(91, 94, 244, 0.16);
+      --rp-cyan: #22d3ee;
+      --rp-cyan-soft: rgba(34, 211, 238, 0.14);
+      --rp-ok: var(--color-text-success, #34d399);
+      --rp-ok-soft: var(--color-background-success, rgba(52, 211, 153, 0.14));
+      --rp-err: var(--color-text-danger, #f87171);
+      --rp-err-soft: var(--color-background-danger, rgba(248, 113, 113, 0.14));
+      --rp-warn: var(--color-text-warning, #fbbf24);
+      --rp-font: var(--font-sans, var(--vscode-font-family, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif));
+      --rp-mono: var(--vscode-editor-font-family, ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace);
+      --rp-radius: 10px;
+      --rp-radius-sm: 7px;
+    }
+
+    html[data-theme="light"],
+    body.vscode-light {
+      --rp-bg: var(--color-background-primary, var(--vscode-editor-background, #f8fafc));
+      --rp-bg-2: var(--color-background-secondary, var(--vscode-sideBar-background, #ffffff));
+      --rp-bg-3: var(--color-background-tertiary, var(--vscode-input-background, #f1f5f9));
+      --rp-fg: var(--color-text-primary, var(--vscode-foreground, #0f172a));
+      --rp-fg-2: var(--color-text-secondary, var(--vscode-descriptionForeground, #475569));
+      --rp-fg-3: var(--color-text-tertiary, #64748b);
+      --rp-border: var(--color-border-primary, var(--vscode-panel-border, rgba(15, 23, 42, 0.12)));
+      --rp-border-2: var(--color-border-secondary, rgba(15, 23, 42, 0.07));
+      --rp-accent-soft: rgba(79, 70, 229, 0.10);
+      --rp-cyan-soft: rgba(14, 165, 233, 0.12);
+      --rp-ok: var(--color-text-success, #059669);
+      --rp-ok-soft: var(--color-background-success, rgba(16, 185, 129, 0.12));
+      --rp-err: var(--color-text-danger, #dc2626);
+      --rp-err-soft: var(--color-background-danger, rgba(220, 38, 38, 0.10));
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    html,
+    body {
+      margin: 0;
+      padding: 0;
+      background: var(--rp-bg);
+      color: var(--rp-fg);
+      font-family: var(--rp-font);
+      font-size: 13px;
+      line-height: 1.45;
+      -webkit-font-smoothing: antialiased;
+    }
+
+    button,
+    input,
+    select,
+    textarea {
+      font-family: inherit;
+      font-size: inherit;
+      color: inherit;
+    }
+
+    .app-shell {
+      position: relative;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+      padding: 12px;
+      max-width: 960px;
+      margin: 0 auto;
+      min-height: 100vh;
+    }
+
+    /* Header */
+    .topbar {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
+      flex-wrap: wrap;
+      padding-bottom: 8px;
+      border-bottom: 1px solid var(--rp-border);
+    }
+
+    .brand {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .brand-icon {
+      width: 26px;
+      height: 26px;
+      border-radius: 7px;
+      background: linear-gradient(135deg, #4f46e5, #0ea5e9);
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      flex-shrink: 0;
+      box-shadow: 0 2px 8px rgba(79, 70, 229, 0.28);
+    }
+
+    .brand-title {
+      font-weight: 700;
+      font-size: 14px;
+      letter-spacing: -0.01em;
+    }
+
+    .provider-pill {
+      font-size: 11px;
+      padding: 2px 8px;
+      border-radius: 999px;
+      background: var(--rp-bg-3);
+      border: 1px solid var(--rp-border);
+      color: var(--rp-fg-2);
+      cursor: pointer;
+      max-width: 190px;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .provider-pill:hover {
+      border-color: var(--rp-accent);
+      color: var(--rp-fg);
+    }
+
+    .topbar-controls {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      flex-wrap: wrap;
+    }
+
+    .seg {
+      display: inline-flex;
+      background: var(--rp-bg-3);
+      border: 1px solid var(--rp-border);
+      border-radius: 8px;
+      padding: 2px;
+      gap: 2px;
+    }
+
+    .seg-btn {
+      border: none;
+      background: transparent;
+      color: var(--rp-fg-2);
+      padding: 4px 9px;
+      border-radius: 6px;
+      font-size: 11.5px;
+      font-weight: 500;
+      cursor: pointer;
+      transition: all 0.14s ease;
+    }
+
+    .seg-btn:hover {
+      color: var(--rp-fg);
+    }
+
+    .seg-btn.active {
+      background: var(--rp-accent);
+      color: var(--rp-accent-fg);
+      box-shadow: 0 1px 4px rgba(0, 0, 0, 0.22);
+    }
+
+    .icon-btn {
+      display: inline-flex;
+      align-items: center;
+      gap: 5px;
+      background: var(--rp-bg-3);
+      border: 1px solid var(--rp-border);
+      color: var(--rp-fg-2);
+      border-radius: 7px;
+      padding: 5px 8px;
+      font-size: 11.5px;
+      cursor: pointer;
+      transition: all 0.14s ease;
+    }
+
+    .icon-btn:hover {
+      border-color: var(--rp-accent);
+      color: var(--rp-fg);
+    }
+
+    .icon-btn.active {
+      background: var(--rp-accent-soft);
+      border-color: var(--rp-accent);
+      color: var(--rp-fg);
+    }
+
+    /* Mode & Context row */
+    .subbar {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
+      flex-wrap: wrap;
+    }
+
+    .mode-pills {
+      display: flex;
+      align-items: center;
+      gap: 5px;
+      flex-wrap: wrap;
+    }
+
+    .pill {
+      border: 1px solid var(--rp-border);
+      background: var(--rp-bg-2);
+      color: var(--rp-fg-2);
+      border-radius: 999px;
+      padding: 3px 10px;
+      font-size: 11.5px;
+      font-weight: 500;
+      cursor: pointer;
+      transition: all 0.14s ease;
+    }
+
+    .pill:hover {
+      border-color: var(--rp-accent);
+      color: var(--rp-fg);
+    }
+
+    .pill.active {
+      background: var(--rp-accent-soft);
+      border-color: var(--rp-accent);
+      color: var(--rp-fg);
+    }
+
+    .ctx-chip {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 3px 8px;
+      border-radius: 999px;
+      background: var(--rp-cyan-soft);
+      border: 1px solid rgba(34, 211, 238, 0.32);
+      color: var(--rp-fg);
+      font-size: 11px;
+      max-width: 100%;
+    }
+
+    .ctx-chip-text {
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+      max-width: 240px;
+    }
+
+    .ctx-x {
+      background: none;
+      border: none;
+      color: var(--rp-fg-2);
+      cursor: pointer;
+      padding: 0 2px;
+      font-size: 13px;
+      line-height: 1;
+    }
+
+    .ctx-x:hover {
+      color: var(--rp-fg);
+    }
+
+    /* Cards */
+    .card {
+      background: var(--rp-bg-2);
+      border: 1px solid var(--rp-border);
+      border-radius: var(--rp-radius);
+      padding: 10px 12px;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      transition: border-color 0.2s ease;
+    }
+
+    .card.rewriting {
+      border-color: var(--rp-accent);
+      box-shadow: 0 0 0 1px var(--rp-accent-soft);
+    }
+
+    .card-head {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
+      flex-wrap: wrap;
+    }
+
+    .card-label {
+      font-size: 11.5px;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+      color: var(--rp-fg-2);
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    .draft-input {
+      width: 100%;
+      min-height: 82px;
+      max-height: 220px;
+      resize: vertical;
+      background: var(--rp-bg-3);
+      border: 1px solid var(--rp-border);
+      border-radius: var(--rp-radius-sm);
+      padding: 9px 10px;
+      color: var(--rp-fg);
+      line-height: 1.5;
+      outline: none;
+    }
+
+    .draft-input:focus {
+      border-color: var(--rp-accent);
+    }
+
+    .draft-input::placeholder {
+      color: var(--rp-fg-3);
+    }
+
+    .card-foot {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
+      flex-wrap: wrap;
+    }
+
+    .muted {
+      font-size: 11px;
+      color: var(--rp-fg-3);
+    }
+
+    .btn-row {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      flex-wrap: wrap;
+    }
+
+    .btn {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 5px;
+      border-radius: var(--rp-radius-sm);
+      padding: 6px 12px;
+      font-size: 12px;
+      font-weight: 600;
+      border: 1px solid var(--rp-border);
+      background: var(--rp-bg-3);
+      color: var(--rp-fg);
+      cursor: pointer;
+      transition: all 0.14s ease;
+    }
+
+    .btn:hover:not(:disabled) {
+      border-color: var(--rp-accent);
+    }
+
+    .btn:disabled {
+      opacity: 0.5;
+      cursor: not-allowed;
+    }
+
+    .btn-primary {
+      background: linear-gradient(135deg, #4f46e5, #0284c7);
+      border-color: transparent;
+      color: #ffffff;
+    }
+
+    .btn-primary:hover:not(:disabled) {
+      filter: brightness(1.08);
+    }
+
+    .btn-claude {
+      background: rgba(217, 119, 6, 0.16);
+      border-color: rgba(245, 158, 11, 0.45);
+      color: var(--rp-fg);
+    }
+
+    .btn-claude:hover:not(:disabled) {
+      background: rgba(217, 119, 6, 0.28);
+    }
+
+    .btn-ghost {
+      background: transparent;
+      border-color: transparent;
+      color: var(--rp-fg-2);
+      padding: 5px 8px;
+    }
+
+    .btn-ghost:hover:not(:disabled) {
+      background: var(--rp-bg-3);
+      color: var(--rp-fg);
+    }
+
+    /* Banner */
+    .banner {
+      padding: 8px 10px;
+      border-radius: var(--rp-radius-sm);
+      font-size: 12px;
+      display: none;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
+    }
+
+    .banner.show {
+      display: flex;
+    }
+
+    .banner.err {
+      background: var(--rp-err-soft);
+      border: 1px solid rgba(248, 113, 113, 0.35);
+      color: var(--rp-err);
+    }
+
+    .banner.ok {
+      background: var(--rp-ok-soft);
+      border: 1px solid rgba(52, 211, 153, 0.35);
+      color: var(--rp-ok);
+    }
+
+    /* Output views */
+    .summary-box {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
+      flex-wrap: wrap;
+      padding: 7px 10px;
+      background: var(--rp-bg-3);
+      border: 1px solid var(--rp-border-2);
+      border-radius: var(--rp-radius-sm);
+    }
+
+    .summary-text {
+      font-size: 12px;
+      color: var(--rp-fg-2);
+    }
+
+    .imp-tags {
+      display: flex;
+      gap: 5px;
+      flex-wrap: wrap;
+    }
+
+    .imp-tag {
+      font-size: 10.5px;
+      padding: 2px 7px;
+      border-radius: 999px;
+      background: var(--rp-ok-soft);
+      color: var(--rp-ok);
+      font-weight: 600;
+    }
+
+    .preview-pane {
+      background: var(--rp-bg-3);
+      border: 1px solid var(--rp-border);
+      border-radius: var(--rp-radius-sm);
+      padding: 10px 12px;
+      min-height: 120px;
+      max-height: 360px;
+      overflow-y: auto;
+      line-height: 1.55;
+    }
+
+    .preview-pane h2,
+    .preview-pane h3 {
+      margin: 10px 0 4px 0;
+      font-size: 12.5px;
+      font-weight: 700;
+      color: var(--rp-cyan);
+      letter-spacing: 0.01em;
+    }
+
+    .preview-pane h2:first-child,
+    .preview-pane h3:first-child {
+      margin-top: 0;
+    }
+
+    .preview-pane p {
+      margin: 4px 0;
+    }
+
+    .preview-pane ul,
+    .preview-pane ol {
+      margin: 4px 0 8px 0;
+      padding-left: 18px;
+    }
+
+    .preview-pane li {
+      margin: 2px 0;
+    }
+
+    .preview-pane code {
+      font-family: var(--rp-mono);
+      font-size: 11.5px;
+      background: rgba(127, 127, 127, 0.16);
+      padding: 1px 4px;
+      border-radius: 4px;
+    }
+
+    .preview-pane pre {
+      font-family: var(--rp-mono);
+      font-size: 11.5px;
+      background: rgba(0, 0, 0, 0.25);
+      padding: 8px;
+      border-radius: 6px;
+      overflow-x: auto;
+      margin: 6px 0;
+    }
+
+    .edit-pane {
+      width: 100%;
+      min-height: 170px;
+      max-height: 360px;
+      resize: vertical;
+      background: var(--rp-bg-3);
+      border: 1px solid var(--rp-border);
+      border-radius: var(--rp-radius-sm);
+      padding: 10px 12px;
+      font-family: var(--rp-mono);
+      font-size: 12px;
+      line-height: 1.5;
+      outline: none;
+    }
+
+    .edit-pane:focus {
+      border-color: var(--rp-accent);
+    }
+
+    .compare-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 8px;
+    }
+
+    @media (max-width: 620px) {
+      .compare-grid {
+        grid-template-columns: 1fr;
+      }
+    }
+
+    .compare-col {
+      background: var(--rp-bg-3);
+      border: 1px solid var(--rp-border);
+      border-radius: var(--rp-radius-sm);
+      padding: 8px 10px;
+      max-height: 300px;
+      overflow-y: auto;
+    }
+
+    .compare-title {
+      font-size: 10.5px;
+      font-weight: 700;
+      text-transform: uppercase;
+      color: var(--rp-fg-3);
+      margin-bottom: 5px;
+    }
+
+    .compare-pre {
+      white-space: pre-wrap;
+      word-break: break-word;
+      margin: 0;
+      font-size: 12px;
+    }
+
+    .refine-row {
+      display: flex;
+      align-items: center;
+      gap: 5px;
+      flex-wrap: wrap;
+    }
+
+    .refine-btn {
+      font-size: 11px;
+      padding: 3px 9px;
+      border-radius: 999px;
+      border: 1px solid var(--rp-border);
+      background: var(--rp-bg);
+      color: var(--rp-fg-2);
+      cursor: pointer;
+    }
+
+    .refine-btn:hover:not(:disabled) {
+      border-color: var(--rp-accent);
+      color: var(--rp-fg);
+    }
+
+    .empty-output {
+      text-align: center;
+      padding: 20px 12px;
+      color: var(--rp-fg-3);
+      font-size: 12.5px;
+    }
+
+    /* Spinner */
+    .spinner {
+      width: 13px;
+      height: 13px;
+      border: 2px solid rgba(255, 255, 255, 0.35);
+      border-top-color: #ffffff;
+      border-radius: 50%;
+      animation: spin 0.7s linear infinite;
+      display: inline-block;
+    }
+
+    @keyframes spin {
+      to {
+        transform: rotate(360deg);
+      }
+    }
+
+    /* Drawers */
+    .drawer-backdrop {
+      position: fixed;
+      inset: 0;
+      background: rgba(0, 0, 0, 0.45);
+      display: none;
+      justify-content: flex-end;
+      z-index: 40;
+    }
+
+    .drawer-backdrop.open {
+      display: flex;
+    }
+
+    .drawer {
+      width: min(400px, 100vw);
+      height: 100%;
+      background: var(--rp-bg-2);
+      border-left: 1px solid var(--rp-border);
+      padding: 14px;
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+      overflow-y: auto;
+    }
+
+    .drawer-head {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding-bottom: 8px;
+      border-bottom: 1px solid var(--rp-border);
+    }
+
+    .drawer-title {
+      font-weight: 700;
+      font-size: 14px;
+    }
+
+    .field {
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+    }
+
+    .field label {
+      font-size: 11.5px;
+      font-weight: 600;
+      color: var(--rp-fg-2);
+    }
+
+    .field input,
+    .field select {
+      background: var(--rp-bg-3);
+      border: 1px solid var(--rp-border);
+      border-radius: 6px;
+      padding: 6px 8px;
+      color: var(--rp-fg);
+      outline: none;
+    }
+
+    .field input:focus,
+    .field select:focus {
+      border-color: var(--rp-accent);
+    }
+
+    .field-row {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    .field-row>input,
+    .field-row>select {
+      flex: 1;
+      min-width: 0;
+    }
+
+    .check-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
+      padding: 6px 8px;
+      background: var(--rp-bg-3);
+      border-radius: 6px;
+      border: 1px solid var(--rp-border-2);
+      font-size: 12px;
+    }
+
+    .hist-item {
+      background: var(--rp-bg-3);
+      border: 1px solid var(--rp-border);
+      border-radius: 8px;
+      padding: 8px 10px;
+      display: flex;
+      flex-direction: column;
+      gap: 5px;
+    }
+
+    .hist-meta {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      font-size: 10.5px;
+      color: var(--rp-fg-3);
+    }
+
+    .hist-orig {
+      font-size: 12px;
+      font-weight: 600;
+      color: var(--rp-fg);
+      display: -webkit-box;
+      -webkit-line-clamp: 2;
+      -webkit-box-orient: vertical;
+      overflow: hidden;
+    }
+
+    .hidden {
+      display: none !important;
+    }
+
+    /* Session & Skill Routing Strip */
+    .session-strip {
+      background: var(--rp-bg-2);
+      border: 1px solid var(--rp-border);
+      border-radius: var(--rp-radius);
+      padding: 8px 10px;
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+
+    .session-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
+      flex-wrap: wrap;
+    }
+
+    .session-meta {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      font-size: 11.5px;
+      color: var(--rp-fg-2);
+      font-weight: 500;
+    }
+
+    .session-dot {
+      width: 7px;
+      height: 7px;
+      border-radius: 50%;
+      background: var(--rp-ok);
+      display: inline-block;
+    }
+
+    .session-btn {
+      font-size: 11px;
+      padding: 3px 8px;
+      border-radius: 6px;
+    }
+
+    .skill-chips {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      flex-wrap: wrap;
+    }
+
+    .skill-chip {
+      display: inline-flex;
+      align-items: center;
+      gap: 5px;
+      padding: 3px 8px;
+      border-radius: 999px;
+      background: var(--rp-accent-soft);
+      border: 1px solid rgba(91, 94, 244, 0.35);
+      color: var(--rp-fg);
+      font-size: 11px;
+    }
+
+    .skill-chip-dom {
+      font-size: 10px;
+      color: var(--rp-fg-2);
+      background: var(--rp-bg-3);
+      padding: 1px 5px;
+      border-radius: 999px;
+    }
+
+    .rec-banner {
+      background: rgba(245, 158, 11, 0.10);
+      border: 1px solid rgba(245, 158, 11, 0.36);
+      border-radius: var(--rp-radius-sm);
+      padding: 7px 9px;
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+
+    .rec-head {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
+      font-size: 11.5px;
+      color: var(--rp-warn);
+      font-weight: 600;
+    }
+
+    .rec-actions {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      flex-wrap: wrap;
+    }
+
+    .rec-btn {
+      font-size: 11px;
+      padding: 3px 9px;
+      border-radius: 999px;
+      background: var(--rp-bg-2);
+      border: 1px solid rgba(245, 158, 11, 0.45);
+      color: var(--rp-fg);
+      cursor: pointer;
+      font-weight: 500;
+    }
+
+    .rec-btn:hover {
+      border-color: var(--rp-warn);
+      background: rgba(245, 158, 11, 0.18);
+    }
+
+    .vault-box {
+      padding: 8px;
+      background: var(--rp-bg-3);
+      border-radius: 6px;
+      border: 1px solid var(--rp-border-2);
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+
+    /* Main Tabs & Gemini+Claude Router UI */
+    .main-tabs {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    .orch-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 10px;
+    }
+
+    @media (max-width: 620px) {
+      .orch-grid {
+        grid-template-columns: 1fr;
+      }
+    }
+
+    .orch-card {
+      background: var(--rp-bg-2);
+      border: 1px solid var(--rp-border);
+      border-radius: var(--rp-radius);
+      padding: 10px 12px;
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+
+    .orch-card-head {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
+      font-weight: 700;
+    }
+
+    .badge-ready {
+      font-size: 10.5px;
+      padding: 2px 7px;
+      border-radius: 999px;
+      background: var(--rp-ok-soft);
+      color: var(--rp-ok);
+      font-weight: 600;
+    }
+
+    .badge-warn {
+      font-size: 10.5px;
+      padding: 2px 7px;
+      border-radius: 999px;
+      background: var(--rp-err-soft);
+      color: var(--rp-err);
+      font-weight: 600;
+    }
+
+    .meter {
+      height: 6px;
+      width: 100%;
+      border-radius: 999px;
+      background: var(--rp-bg-3);
+      overflow: hidden;
+    }
+
+    .meter-fill {
+      height: 100%;
+      border-radius: 999px;
+      background: linear-gradient(90deg, #4f46e5, #22d3ee);
+      transition: width 0.25s ease;
+    }
+
+    .meter-fill.warn {
+      background: linear-gradient(90deg, #f59e0b, #ef4444);
+    }
+
+    .trace-item {
+      font-size: 11.5px;
+      padding: 5px 8px;
+      border-radius: 6px;
+      background: var(--rp-bg-3);
+      border: 1px solid var(--rp-border-2);
+      display: flex;
+      justify-content: space-between;
+      gap: 8px;
+      flex-wrap: wrap;
+    }
+  </style>
+</head>
+
+<body>
+  <div class="app-shell" id="appRoot">
+    <!-- Header -->
+    <header class="topbar">
+      <div class="brand">
+        <span class="brand-icon" aria-hidden="true">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2.2"
+            stroke-linecap="round" stroke-linejoin="round">
+            <path d="M12 3l1.8 4.2L18 9l-4.2 1.8L12 15l-1.8-4.2L6 9l4.2-1.8L12 3z" />
+            <path d="M5 18l2-2-2-2" />
+            <path d="M11 18h8" />
+          </svg>
+        </span>
+        <span class="brand-title">Re-Prompt</span>
+        <button class="provider-pill" id="providerPill" title="Configure AI provider and model">agy ·
+          gemini-pro-orchestrator</button>
+      </div>
+
+      <div class="topbar-controls">
+        <div class="seg" role="group" aria-label="Target AI">
+          <button class="seg-btn active" data-target="antigravity">Antigravity</button>
+          <button class="seg-btn" data-target="claude_code">Claude Code</button>
+          <button class="seg-btn" data-target="general">General</button>
+        </div>
+
+        <button class="icon-btn" id="autoToggleBtn" title="Automatically rewrite shortly after you pause typing">
+          <span id="autoDot">●</span> Auto
+        </button>
+        <button class="icon-btn hidden" id="popOutBtn" title="Pop out Re-Prompt into its own separate floating window">⧉
+          Window</button>
+        <button class="icon-btn" id="historyBtn" title="Prompt history">History</button>
+        <button class="icon-btn" id="settingsBtn" title="Provider & overlay settings">Settings</button>
+      </div>
+    </header>
+
+    <!-- Feedback Banner -->
+    <div class="banner" id="banner">
+      <span id="bannerText"></span>
+      <button class="ctx-x" id="bannerClose" aria-label="Dismiss">×</button>
+    </div>
+
+    <!-- Top Mode Tabs -->
+    <div class="main-tabs">
+      <div class="seg" role="tablist" aria-label="Studio Mode">
+        <button class="seg-btn active" id="tabRepromptBtn" data-main-tab="reprompt">✨ Re-Prompt</button>
+        <button class="seg-btn" id="tabOrchBtn" data-main-tab="orchestrator">⚡ Running Tasks &amp; Antigravity queue</button>
+        <button class="seg-btn" id="tabSkillsBtn" data-main-tab="skills">📚 Skills Library</button>
+      </div>
+      <span class="muted" id="orchSavingsBadge"></span>
+    </div>
+
+    <div id="repromptView" style="display:flex;flex-direction:column;gap:10px;">
+      <!-- Modes + Workspace Context -->
+      <div class="subbar">
+        <div class="mode-pills" role="group" aria-label="Rewrite mode">
+          <button class="pill active" data-mode="balanced">Balanced</button>
+          <button class="pill" data-mode="deep_spec">Deep Spec</button>
+          <button class="pill" data-mode="bug_fix">Bug Fix</button>
+          <button class="pill" data-mode="refactor">Refactor</button>
+          <button class="pill" data-mode="concise">Concise</button>
+        </div>
+
+        <div class="ctx-chip hidden" id="ctxChip">
+          <span class="ctx-chip-text" id="ctxChipText">Active file</span>
+          <button class="ctx-x" id="ctxToggleBtn" title="Detach workspace context for this prompt">×</button>
+        </div>
+      </div>
+
+      <!-- Session & Skill Routing Strip -->
+      <section class="session-strip" id="sessionStrip">
+        <div class="session-row">
+          <div class="session-meta">
+            <span class="session-dot"></span>
+            <span id="sessionSummary">Session · Turn 1 (New)</span>
+          </div>
+          <div class="btn-row">
+            <span class="muted" id="vaultMiniBadge"></span>
+            <button class="btn session-btn" id="newSessionBtn" title="Reset session turn counter and assumed skills">New
+              Session</button>
+          </div>
+        </div>
+        <div class="skill-chips hidden" id="activeSkillsRow"></div>
+        <div class="skill-chips hidden" id="lastJudgmentRow"></div>
+        <div class="rec-banner hidden" id="recBanner">
+          <div class="rec-head">
+            <span id="recTitle">Session complexity grew — recommended skills:</span>
+            <button class="ctx-x" id="dismissRecBtn" title="Dismiss recommendations">×</button>
+          </div>
+          <div class="rec-actions" id="recButtons"></div>
+        </div>
+      </section>
+
+      <!-- Rough Prompt Input Card -->
+      <section class="card" id="draftCard">
+        <div class="card-head">
+          <span class="card-label">Your Rough Prompt</span>
+          <span class="muted" id="draftStats">0 chars · Ctrl+Enter to rewrite</span>
+        </div>
+        <textarea id="draftInput" class="draft-input"
+          placeholder="Write what you want in plain words... e.g. &quot;make the login form validate email, show errors, and add unit tests&quot;"></textarea>
+        <div class="card-foot">
+          <div class="btn-row">
+            <button class="btn btn-ghost" id="clearDraftBtn">Clear</button>
+            <button class="btn btn-ghost hidden" id="restoreCtxBtn">Re-attach File Context</button>
+          </div>
+          <div class="btn-row">
+            <button class="btn btn-primary" id="rewriteBtn">
+              <span id="rewriteBtnIcon">✨</span>
+              <span id="rewriteBtnLabel">Re-Prompt</span>
+            </button>
+          </div>
+        </div>
+      </section>
+
+      <!-- Rewritten Dual-Readable Output Card -->
+      <section class="card" id="outputCard">
+        <div class="card-head">
+          <span class="card-label">
+            AI-Ready &amp; Human-Readable Prompt
+            <span class="muted" id="outputMeta"></span>
+          </span>
+          <div class="seg" role="tablist" aria-label="Output view">
+            <button class="seg-btn active" data-view="readable">Readable</button>
+            <button class="seg-btn" data-view="edit">Edit</button>
+            <button class="seg-btn" data-view="compare">Compare</button>
+          </div>
+        </div>
+
+        <div id="outputEmpty" class="empty-output">
+          Type a prompt above and click <strong>Re-Prompt</strong> (or press <strong>Ctrl+Enter</strong>) to transform
+          it into structured, unambiguous instructions.
+        </div>
+
+        <div id="outputBody" class="hidden" style="display:flex;flex-direction:column;gap:8px;">
+          <div class="summary-box">
+            <span class="summary-text" id="summaryText"></span>
+            <div class="imp-tags" id="impTags"></div>
+          </div>
+
+          <div id="readableView" class="preview-pane"></div>
+          <textarea id="editView" class="edit-pane hidden"></textarea>
+          <div id="compareView" class="compare-grid hidden">
+            <div class="compare-col">
+              <div class="compare-title">Original Input</div>
+              <pre class="compare-pre" id="compareOriginal"></pre>
+            </div>
+            <div class="compare-col">
+              <div class="compare-title">Re-Prompted Output</div>
+              <pre class="compare-pre" id="compareRewritten"></pre>
+            </div>
+          </div>
+
+          <div class="refine-row">
+            <span class="muted">Refine:</span>
+            <button class="refine-btn" data-refine="shorter">Shorter</button>
+            <button class="refine-btn" data-refine="detailed">More Detailed</button>
+            <button class="refine-btn" data-refine="edge_cases">Add Edge Cases</button>
+            <button class="refine-btn" data-refine="add_tests">Add Tests</button>
+          </div>
+
+          <div class="card-foot">
+            <div class="btn-row">
+              <button class="btn" id="copyBtn">Copy Prompt</button>
+              <button class="btn hidden" id="attachCtxBtn">Attach Context</button>
+            </div>
+            <div class="btn-row">
+              <button class="btn btn-claude" id="sendClaudeBtn">Send to Claude Code</button>
+              <button class="btn hidden" id="sendAgyNewBtn"
+                title="Start a brand-new separate Antigravity session with this prompt">Start New Session</button>
+              <button class="btn btn-primary" id="sendAgyBtn">Send to Current Session</button>
+            </div>
+          </div>
+        </div>
+      </section>
+    </div> <!-- /#repromptView -->
+
+    <!-- Gemini + Claude Quota & Spend-Aware Router View -->
+    <div id="orchestratorView" class="hidden" style="display:flex;flex-direction:column;gap:10px;">
+      <div class="orch-grid">
+        <div class="orch-card" id="orchGeminiCard">
+          <div class="orch-card-head">
+            <span>Gemini</span>
+            <span class="badge-ready" id="orchGeminiBadge">Checking...</span>
+          </div>
+          <div class="muted" id="orchGeminiHint"></div>
+          <div class="muted" id="orchGeminiSpend">Spend: $0.00 / $10.00</div>
+          <div class="meter">
+            <div class="meter-fill" id="orchGeminiBar" style="width:0%"></div>
+          </div>
+          <div class="muted" id="orchGeminiTokens">Tokens: 0 / 4,000,000 · RPM: 0/30</div>
+        </div>
+
+        <div class="orch-card" id="orchClaudeCard">
+          <div class="orch-card-head">
+            <span>Claude</span>
+            <span class="badge-ready" id="orchClaudeBadge">Checking...</span>
+          </div>
+          <div class="muted" id="orchClaudeHint"></div>
+          <div class="muted" id="orchClaudeSpend">Spend: $0.00 / $10.00</div>
+          <div class="meter">
+            <div class="meter-fill" id="orchClaudeBar" style="width:0%"></div>
+          </div>
+          <div class="muted" id="orchClaudeTokens">Tokens: 0 / 800,000 · RPM: 0/15</div>
+        </div>
+      </div>
+
+      <section class="card">
+        <div class="card-head">
+          <span class="card-label">Unified Task &amp; Workflow Runner</span>
+          <span class="muted" id="orchOverallBadge">Auto-routes across Gemini &amp; Claude</span>
+        </div>
+        <textarea id="orchTaskInput" class="draft-input"
+          placeholder="Describe a task (e.g. &quot;summarize these 5,000 lines of logs&quot; is queued for Antigravity; &quot;design a distributed lock manager&quot; goes to Claude)..."></textarea>
+        <textarea id="orchContextInput" class="draft-input" style="min-height:54px;"
+          placeholder="Optional large context / logs / code snippet (contexts &gt;= 3,000 tokens are auto-compressed via Gemini)..."></textarea>
+        <div class="card-foot">
+          <div class="btn-row">
+            <select id="orchRole" class="icon-btn">
+              <option value="auto">Role: Auto</option>
+              <option value="execution">Role: Execution</option>
+              <option value="orchestrator">Role: Orchestrator Subtask</option>
+              <option value="planning">Role: Planning</option>
+            </select>
+            <select id="orchOverride" class="icon-btn">
+              <option value="">Route: Auto (Smart)</option>
+              <option value="gemini">Override: Force Gemini</option>
+              <option value="claude">Override: Force Claude</option>
+            </select>
+          </div>
+          <div class="btn-row">
+            <button class="btn" id="orchPreviewBtn" type="button">Preview Route</button>
+            <button class="btn btn-primary" id="orchRunBtn" type="button">⚡ Run Orchestrated Task</button>
+          </div>
+        </div>
+      </section>
+
+      <section class="card hidden" id="orchResultCard">
+        <div class="card-head">
+          <span class="card-label" id="orchResultTitle">Routing Decision</span>
+          <span class="imp-tag" id="orchResultBadge"></span>
+        </div>
+        <div class="summary-box">
+          <span class="summary-text" id="orchResultReason"></span>
+          <span class="muted" id="orchResultMetrics"></span>
+        </div>
+        <div class="skill-chips hidden" id="orchSkillRow"></div>
+        <div id="orchTraceList" style="display:flex;flex-direction:column;gap:5px;"></div>
+        <div id="orchOutputPane" class="preview-pane hidden"></div>
+      </section>
+
+      <section class="card">
+        <div class="card-head">
+          <span class="card-label">Budgets &amp; Spend Pacing</span>
+          <div class="btn-row">
+            <button class="btn btn-ghost" id="orchResetBtn" type="button">Reset Daily Counters</button>
+            <button class="btn" id="orchSaveCfgBtn" type="button">Save Pacing</button>
+          </div>
+        </div>
+        <div class="orch-grid">
+          <div class="field">
+            <label for="orchGemBudget">Gemini Daily Budget ($)</label>
+            <input id="orchGemBudget" type="number" step="0.5" min="0.5" value="10" />
+          </div>
+          <div class="field">
+            <label for="orchClaBudget">Claude Daily Budget ($)</label>
+            <input id="orchClaBudget" type="number" step="0.5" min="0.5" value="10" />
+          </div>
+        </div>
+        <div class="field">
+          <label for="orchPreserveThresh">Claude Preservation Threshold (0.10 - 0.95)</label>
+          <input id="orchPreserveThresh" type="number" step="0.05" min="0.1" max="0.95" value="0.70" />
+        </div>
+      </section>
+    </div>
+
+    <!-- Skills Library View -->
+    <div id="skillsView" class="hidden" style="display:flex;flex-direction:column;gap:10px;">
+      <section class="card">
+        <div class="card-head">
+          <span class="card-label">Skills Library &amp; Daily Trending Sync</span>
+          <span class="muted" id="skillsSummaryMeta">Loading...</span>
+        </div>
+        <div class="field-row">
+          <input id="skillsFilterInput" type="text" placeholder="Search skills (react, audit, mcp, debugging...)" />
+          <select id="skillsDomainFilter">
+            <option value="">All domains</option>
+          </select>
+          <button class="btn btn-primary" id="skillsSyncNowBtn" type="button" title="Update the skills library from its sources">Sync skills</button>
+        </div>
+      </section>
+      <div id="skillsCardsList" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(230px,1fr));gap:8px;">
+      </div>
+    </div>
+  </div>
+
+  <!-- Settings Drawer -->
+  <div class="drawer-backdrop" id="settingsDrawer">
+    <div class="drawer" role="dialog" aria-label="Re-Prompt Settings">
+      <div class="drawer-head">
+        <span class="drawer-title">Re-Prompt Settings</span>
+        <button class="btn btn-ghost" id="closeSettingsBtn">✕</button>
+      </div>
+
+      <div class="field">
+        <label for="setProvider">AI Provider</label>
+        <select id="setProvider">
+          <option value="agy">Antigravity CLI (agy) — not run by Watchkeeper; the local template rewrites</option>
+          <option value="auto">Auto Smart Router (Gemini + Claude)</option>
+          <option value="claude_cli">Claude Code CLI (claude)</option>
+          <option value="gemini_api">Gemini REST API</option>
+          <option value="anthropic_api">Anthropic Messages API</option>
+          <option value="openai_compat">OpenAI-Compatible / Ollama</option>
+          <option value="offline_template">Offline Structural Template</option>
+        </select>
+        <span class="muted" id="providerHint"></span>
+      </div>
+
+      <div class="field" id="agyModelWrap">
+        <label for="setAgyModel">Antigravity Model</label>
+        <div class="field-row">
+          <select id="setAgyModel">
+            <option value="gemini-pro-orchestrator">Gemini 4 Carbon High (Antigravity queue)</option>
+            <option value="gemini-4-carbon-high">Gemini 4 Carbon (High)</option>
+            <option value="gemini-pro-orchestrator-argon">Orchestrator (Argon)</option>
+            <option value="gemini-pro-orchestrator-neon">Orchestrator (Neon)</option>
+            <option value="gemini-4-hydrogen-high">Gemini 4 Hydrogen (High)</option>
+            <option value="gemini-3.8-flash-low">gemini-3.8-flash-low (Fast)</option>
+            <option value="gemini-4-argon-high">gemini-4-argon-high</option>
+            <option value="gemini-4-neon-high">gemini-4-neon-high</option>
+            <option value="gemini-3.8-flash-medium">gemini-3.8-flash-medium</option>
+            <option value="gemini-4-neon-medium">gemini-4-neon-medium</option>
+            <option value="claude-sonnet-5-5-low">claude-sonnet-5-5-low</option>
+          </select>
+          <button class="btn" id="refreshModelsBtn" type="button">Refresh</button>
+        </div>
+        <span class="muted">Watchkeeper never runs agy (it uses your Google login), so this model is not used; the local template rewrites the prompt.</span>
+      </div>
+
+      <div class="field hidden" id="claudeModelWrap">
+        <label for="setClaudeModel">Claude CLI Model (optional)</label>
+        <input id="setClaudeModel" type="text" placeholder="Leave blank for default, or e.g. sonnet" />
+      </div>
+
+      <div class="field hidden" id="geminiApiWrap">
+        <label for="setGeminiModel">Gemini API Model</label>
+        <input id="setGeminiModel" type="text" placeholder="gemini-4-hydrogen" />
+        <label for="setGeminiKey" style="margin-top:6px;">Gemini API Key <span id="geminiKeyStatus"
+            class="muted"></span></label>
+        <div class="field-row">
+          <input id="setGeminiKey" type="password" placeholder="Enter new key to save..." autocomplete="off" />
+          <button class="btn" id="clearGeminiKeyBtn" type="button">Clear</button>
+        </div>
+      </div>
+
+      <div class="field hidden" id="anthropicApiWrap">
+        <label for="setAnthropicModel">Anthropic Model</label>
+        <input id="setAnthropicModel" type="text" placeholder="claude-sonnet-4-20250514" />
+        <label for="setAnthropicKey" style="margin-top:6px;">Anthropic API Key <span id="anthropicKeyStatus"
+            class="muted"></span></label>
+        <div class="field-row">
+          <input id="setAnthropicKey" type="password" placeholder="Enter new key to save..." autocomplete="off" />
+          <button class="btn" id="clearAnthropicKeyBtn" type="button">Clear</button>
+        </div>
+      </div>
+
+      <div class="field hidden" id="openaiWrap">
+        <label for="setOpenaiUrl">Base URL (OpenAI / OpenRouter / Ollama)</label>
+        <input id="setOpenaiUrl" type="text" placeholder="https://api.openai.com/v1" />
+        <label for="setOpenaiModel" style="margin-top:6px;">Model</label>
+        <input id="setOpenaiModel" type="text" placeholder="gpt-4o-mini" />
+        <label for="setOpenaiKey" style="margin-top:6px;">API Key (optional for Ollama) <span id="openaiKeyStatus"
+            class="muted"></span></label>
+        <div class="field-row">
+          <input id="setOpenaiKey" type="password" placeholder="Enter new key to save..." autocomplete="off" />
+          <button class="btn" id="clearOpenaiKeyBtn" type="button">Clear</button>
+        </div>
+      </div>
+
+      <div class="field">
+        <label for="setDefaultTarget">Default Target</label>
+        <select id="setDefaultTarget">
+          <option value="antigravity">Antigravity</option>
+          <option value="claude_code">Claude Code</option>
+          <option value="general">General AI</option>
+        </select>
+      </div>
+
+      <div class="field">
+        <label for="setDefaultMode">Default Mode</label>
+        <select id="setDefaultMode">
+          <option value="balanced">Balanced</option>
+          <option value="deep_spec">Deep Spec</option>
+          <option value="bug_fix">Bug Fix</option>
+          <option value="refactor">Refactor</option>
+          <option value="concise">Concise</option>
+        </select>
+      </div>
+
+      <label class="check-row">
+        <span>Auto-rewrite after typing pause</span>
+        <input type="checkbox" id="setAutoRewrite" />
+      </label>
+
+      <div class="field">
+        <label for="setDelay">Auto-rewrite Pause Delay</label>
+        <select id="setDelay">
+          <option value="800">Fast (0.8s)</option>
+          <option value="1200">Balanced (1.2s)</option>
+          <option value="1800">Relaxed (1.8s)</option>
+        </select>
+      </div>
+
+      <label class="check-row">
+        <span>Attach active IDE file &amp; selection</span>
+        <input type="checkbox" id="setIncludeCtx" />
+      </label>
+
+      <label class="check-row">
+        <span>Auto-assume skills on Turn 1 &amp; recommend on complexity growth</span>
+        <input type="checkbox" id="setEnableSkillRouting" />
+      </label>
+
+      <label class="check-row hidden" id="openInWindowRow">
+        <span>Open IDE overlay in a separate floating window</span>
+        <input type="checkbox" id="setOpenInWindow" />
+      </label>
+
+      <label class="check-row">
+        <span>Auto re-prompt ALL chat messages in hook (otherwise use <code>rp:</code> prefix)</span>
+        <input type="checkbox" id="setHookAutoAll" />
+      </label>
+
+      <div class="vault-box">
+        <div class="field-row" style="justify-content:space-between;">
+          <span class="muted" id="vaultStatusText">Vault: checking...</span>
+          <button class="btn" id="syncVaultBtn" type="button" title="Update the skills library from its sources">Sync skills</button>
+        </div>
+      </div>
+
+      <div class="btn-row" style="justify-content:flex-end;margin-top:6px;">
+        <button class="btn" id="cancelSettingsBtn">Cancel</button>
+        <button class="btn btn-primary" id="saveSettingsBtn">Save Settings</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- History Drawer -->
+  <div class="drawer-backdrop" id="historyDrawer">
+    <div class="drawer" role="dialog" aria-label="Re-Prompt History">
+      <div class="drawer-head">
+        <span class="drawer-title">Prompt History</span>
+        <div class="btn-row">
+          <button class="btn btn-ghost" id="clearHistoryBtn">Clear All</button>
+          <button class="btn btn-ghost" id="closeHistoryBtn">✕</button>
+        </div>
+      </div>
+      <div class="field">
+        <input id="historySearch" type="text" placeholder="Filter past prompts..." />
+      </div>
+      <div id="historyList" style="display:flex;flex-direction:column;gap:8px;"></div>
+    </div>
+  </div>
+
+  <script>
+    (function () {
+      "use strict";
+
+      // ---------------------------------------------------------------------------
+      // Host Bridge (VS Code Webview | MCP App SEP-1865 | Standalone fallback)
+      // ---------------------------------------------------------------------------
+      function createHostBridge() {
+        const hasVsCode = typeof acquireVsCodeApi === "function";
+        if (hasVsCode) {
+          const vscode = acquireVsCodeApi();
+          let nextId = 1;
+          const pending = new Map();
+          const eventHandlers = [];
+
+          window.addEventListener("message", (ev) => {
+            const msg = ev.data;
+            if (!msg || typeof msg !== "object") return;
+            if (msg.type === "response" && pending.has(msg.id)) {
+              const { resolve, reject } = pending.get(msg.id);
+              pending.delete(msg.id);
+              if (msg.error) reject(new Error(msg.error));
+              else resolve(msg.result);
+            } else if (msg.type === "event") {
+              for (const fn of eventHandlers) fn(msg.event, msg.data);
+            }
+          });
+
+          return {
+            kind: "vscode",
+            capabilities: { message: true, claudeCode: true, updateModelContext: false },
+            connect: async () => {
+              const isLight =
+                document.body.classList.contains("vscode-light") ||
+                document.body.classList.contains("vscode-high-contrast-light");
+              document.documentElement.dataset.theme = isLight ? "light" : "dark";
+              return { kind: "vscode" };
+            },
+            request: (method, params) =>
+              new Promise((resolve, reject) => {
+                const id = nextId++;
+                pending.set(id, { resolve, reject });
+                vscode.postMessage({ type: "request", id, method, params: params || {} });
+              }),
+            onEvent: (fn) => eventHandlers.push(fn),
+            notifySize: () => { },
+          };
+        }
+
+        const isIframe = window.parent && window.parent !== window;
+        if (isIframe) {
+          let nextId = 1;
+          const pending = new Map();
+          const eventHandlers = [];
+          let hostCapabilities = {};
+
+          function postRpc(payload) {
+            window.parent.postMessage(payload, "*");
+          }
+
+          function sendRpcRequest(method, params) {
+            return new Promise((resolve, reject) => {
+              const id = nextId++;
+              const timer = setTimeout(() => {
+                if (pending.has(id)) {
+                  pending.delete(id);
+                  reject(new Error(`Timeout waiting for ${method}`));
+                }
+              }, 60000);
+              pending.set(id, {
+                resolve: (val) => { clearTimeout(timer); resolve(val); },
+                reject: (err) => { clearTimeout(timer); reject(err); },
+              });
+              postRpc({ jsonrpc: "2.0", id, method, params: params || {} });
+            });
+          }
+
+          function applyHostContext(ctx) {
+            if (!ctx || typeof ctx !== "object") return;
+            if (ctx.theme === "light" || ctx.theme === "dark") {
+              document.documentElement.dataset.theme = ctx.theme;
+            }
+            const vars = ctx.styles && ctx.styles.variables;
+            if (vars && typeof vars === "object") {
+              for (const [k, v] of Object.entries(vars)) {
+                if (typeof v === "string") {
+                  const prop = k.startsWith("--") ? k : `--${k}`;
+                  document.documentElement.style.setProperty(prop, v);
+                }
+              }
+            }
+          }
+
+          // Register listener BEFORE handshake so no message is missed
+          window.addEventListener("message", (ev) => {
+            const msg = ev.data;
+            if (!msg || typeof msg !== "object" || msg.jsonrpc !== "2.0") return;
+
+            // Response to our request
+            if ("id" in msg && msg.method === undefined && pending.has(msg.id)) {
+              const { resolve, reject } = pending.get(msg.id);
+              pending.delete(msg.id);
+              if (msg.error) reject(new Error(msg.error.message || JSON.stringify(msg.error)));
+              else resolve(msg.result);
+              return;
+            }
+
+            // Request from host (e.g. ping)
+            if ("id" in msg && typeof msg.method === "string") {
+              if (msg.method === "ping") {
+                postRpc({ jsonrpc: "2.0", id: msg.id, result: {} });
+              } else {
+                postRpc({
+                  jsonrpc: "2.0",
+                  id: msg.id,
+                  error: { code: -32601, message: `Method not found: ${msg.method}` },
+                });
+              }
+              return;
+            }
+
+            // Notification from host
+            if (typeof msg.method === "string") {
+              const params = msg.params || {};
+              if (msg.method === "ui/notifications/host-context-changed") {
+                applyHostContext(params);
+              } else if (msg.method === "ui/notifications/tool-input") {
+                for (const fn of eventHandlers) fn("toolInput", params);
+              } else if (msg.method === "ui/notifications/tool-result") {
+                for (const fn of eventHandlers) fn("toolResult", params);
+              } else if (msg.method === "ui/notifications/tool-cancelled") {
+                for (const fn of eventHandlers) fn("toolCancelled", params);
+              }
+            }
+          });
+
+          const bridge = {
+            kind: "mcp-app",
+            capabilities: hostCapabilities,
+            connect: async () => {
+              const initRes = await sendRpcRequest("ui/initialize", {
+                protocolVersion: "2026-01-26",
+                appInfo: { name: "Re-Prompt", version: "1.0.0" },
+                appCapabilities: {},
+              });
+              hostCapabilities = (initRes && initRes.hostCapabilities) || {};
+              bridge.capabilities = hostCapabilities;
+              if (initRes && initRes.hostContext) applyHostContext(initRes.hostContext);
+              postRpc({ jsonrpc: "2.0", method: "ui/notifications/initialized", params: {} });
+              return initRes;
+            },
+            request: async (method, params) => {
+              if (method === "getState") {
+                const res = await sendRpcRequest("tools/call", { name: "app_get_state", arguments: {} });
+                return res && res.structuredContent ? res.structuredContent : {};
+              }
+              if (method === "saveSettings") {
+                const res = await sendRpcRequest("tools/call", { name: "app_save_settings", arguments: params || {} });
+                return res && res.structuredContent ? res.structuredContent : {};
+              }
+              if (method === "rewrite") {
+                const res = await sendRpcRequest("tools/call", { name: "app_rewrite", arguments: params || {} });
+                if (res && res.isError) {
+                  const msg = (res.structuredContent && res.structuredContent.error) ||
+                    (res.content && res.content[0] && res.content[0].text) || "Re-Prompt error";
+                  throw new Error(msg);
+                }
+                return res && res.structuredContent ? res.structuredContent : {};
+              }
+              if (method === "listModels") {
+                const res = await sendRpcRequest("tools/call", { name: "app_list_models", arguments: {} });
+                return res && res.structuredContent ? res.structuredContent : { models: [] };
+              }
+              if (method === "clearHistory") {
+                const res = await sendRpcRequest("tools/call", { name: "app_clear_history", arguments: {} });
+                return res && res.structuredContent ? res.structuredContent : { history: [] };
+              }
+              if (method === "deleteHistory") {
+                const res = await sendRpcRequest("tools/call", { name: "app_delete_history", arguments: params || {} });
+                return res && res.structuredContent ? res.structuredContent : { history: [] };
+              }
+              if (method === "sendToAntigravity") {
+                await sendRpcRequest("ui/message", {
+                  role: "user",
+                  content: [{ type: "text", text: params.text }],
+                });
+                return { sent: true };
+              }
+              if (method === "sendToAntigravityNewSession") {
+                const res = await sendRpcRequest("ui/message", {
+                  role: "user",
+                  content: [{ type: "text", text: params.text }],
+                  _meta: { "com.google.antigravity/message": { target: "new" } },
+                });
+                const metaMsg = res && res._meta && res._meta["com.google.antigravity/message"];
+                const cid = metaMsg && metaMsg.conversationId;
+                return {
+                  sent: true,
+                  conversationId: cid || "",
+                  message: cid
+                    ? `Started new Antigravity session (${cid.slice(0, 8)}...) with your rewritten prompt.`
+                    : "Started a new Antigravity session with your rewritten prompt.",
+                };
+              }
+              if (method === "attachContext") {
+                await sendRpcRequest("ui/update-model-context", {
+                  content: [{ type: "text", text: params.text }],
+                });
+                return { attached: true };
+              }
+              if (method === "newSession") {
+                const res = await sendRpcRequest("tools/call", { name: "app_new_session", arguments: params || {} });
+                return res && res.structuredContent ? res.structuredContent : {};
+              }
+              if (method === "loadSkill") {
+                const res = await sendRpcRequest("tools/call", { name: "app_session_load_skill", arguments: params || {} });
+                return res && res.structuredContent ? res.structuredContent : {};
+              }
+              if (method === "removeSkill") {
+                const res = await sendRpcRequest("tools/call", { name: "app_session_remove_skill", arguments: params || {} });
+                return res && res.structuredContent ? res.structuredContent : {};
+              }
+              if (method === "syncVault") {
+                const res = await sendRpcRequest("tools/call", { name: "app_vault_sync", arguments: params || {} });
+                if (res && res.isError) {
+                  const msg = (res.structuredContent && res.structuredContent.error) || "Vault sync failed";
+                  throw new Error(msg);
+                }
+                return res && res.structuredContent ? res.structuredContent : {};
+              }
+              if (method === "orchestratorStatus") {
+                const res = await sendRpcRequest("tools/call", { name: "app_orchestrator_status", arguments: {} });
+                return res && res.structuredContent ? res.structuredContent : {};
+              }
+              if (method === "orchestratorPreview") {
+                const res = await sendRpcRequest("tools/call", { name: "app_orchestrator_route_preview", arguments: params || {} });
+                return res && res.structuredContent ? res.structuredContent : {};
+              }
+              if (method === "orchestratorRun") {
+                const res = await sendRpcRequest("tools/call", { name: "app_orchestrator_run", arguments: params || {} });
+                if (res && res.isError) {
+                  const msg = (res.structuredContent && res.structuredContent.error) || (res.content && res.content[0] && res.content[0].text) || "Orchestration failed";
+                  throw new Error(msg);
+                }
+                return res && res.structuredContent ? res.structuredContent : {};
+              }
+              if (method === "orchestratorSaveConfig") {
+                const res = await sendRpcRequest("tools/call", { name: "app_orchestrator_update_config", arguments: params || {} });
+                return res && res.structuredContent ? res.structuredContent : {};
+              }
+              if (method === "orchestratorResetUsage") {
+                const res = await sendRpcRequest("tools/call", { name: "app_orchestrator_reset_usage", arguments: {} });
+                return res && res.structuredContent ? res.structuredContent : {};
+              }
+              if (method === "vaultList") {
+                const res = await sendRpcRequest("tools/call", { name: "app_vault_search", arguments: { query: (params && params.query) || "agent skill code", limit: 40 } });
+                const sc = (res && res.structuredContent) || {};
+                return { ready: Boolean((sc.vault || {}).ready), total: (sc.vault || {}).skill_count || 0, repos: (sc.vault || {}).repo_count || 0, domains: [], items: sc.results || [] };
+              }
+              if (method === "vaultDiscoverTrending") {
+                const res = await sendRpcRequest("tools/call", { name: "app_vault_discover_trending", arguments: { force: true, no_clone: true } });
+                return res && res.structuredContent ? res.structuredContent : {};
+              }
+              return {};
+            },
+            onEvent: (fn) => eventHandlers.push(fn),
+            notifySize: (w, h) => {
+              postRpc({
+                jsonrpc: "2.0",
+                method: "ui/notifications/size-changed",
+                params: { width: Math.round(w), height: Math.round(h) },
+              });
+            },
+          };
+          return bridge;
+        }
+
+        // Standalone local browser fallback
+        return {
+          kind: "standalone",
+          capabilities: { message: false, updateModelContext: false, claudeCode: false },
+          connect: async () => ({ kind: "standalone" }),
+          request: async (method, params) => {
+            if (method === "getState") {
+              return {
+                settings: {
+                  provider: "offline_template",
+                  agyModel: "gemini-pro-orchestrator",
+                  defaultTarget: "antigravity",
+                  defaultMode: "balanced",
+                  autoRewrite: false,
+                  autoRewriteDelayMs: 1200,
+                  includeWorkspaceContext: true,
+                  enableSkillRouting: true,
+                },
+                providers: [{ id: "offline_template", label: "Offline Structural Template", available: true }],
+                history: [],
+                session: { turn_count: 0, loaded_skills: [], loaded_domains: [] },
+                vault: { ready: false, skill_count: 0, repo_count: 0, cloned_repo_count: 0 },
+              };
+            }
+            if (method === "newSession") {
+              return { session: { turn_count: 0, loaded_skills: [], loaded_domains: [] } };
+            }
+            if (method === "loadSkill" || method === "removeSkill") {
+              return {};
+            }
+            if (method === "rewrite") {
+              const p = (params && params.prompt) || "";
+              return {
+                original: p,
+                rewritten_prompt: `## Goal\n${p}\n\n## Requirements\n- Implement the requested change cleanly.\n\n## Verification\n- Run tests and verify output.`,
+                summary: "Formatted locally in standalone preview mode.",
+                improvements: ["Structured Goal", "Verification"],
+                target: params.target || "antigravity",
+                mode: params.mode || "balanced",
+                provider: "offline_template",
+                model: "preview",
+                duration_ms: 1,
+              };
+            }
+            return {};
+          },
+          onEvent: () => { },
+          notifySize: () => { },
+        };
+      }
+
+      // ---------------------------------------------------------------------------
+      // Markdown Renderer (XSS-safe HTML escaping + clean headings/lists/code)
+      // ---------------------------------------------------------------------------
+      function escapeHtml(str) {
+        return String(str)
+          .replace(/&/g, "&amp;")
+          .replace(/</g, "&lt;")
+          .replace(/>/g, "&gt;")
+          .replace(/"/g, "&quot;");
+      }
+
+      function formatInline(text) {
+        let s = escapeHtml(text);
+        s = s.replace(/`([^`]+)`/g, "<code>$1</code>");
+        s = s.replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>");
+        return s;
+      }
+
+      function renderMarkdown(md) {
+        const lines = String(md || "").replace(/\r\n/g, "\n").split("\n");
+        const out = [];
+        let inUl = false;
+        let inOl = false;
+        let inPre = false;
+        let preLines = [];
+
+        function closeLists() {
+          if (inUl) { out.push("</ul>"); inUl = false; }
+          if (inOl) { out.push("</ol>"); inOl = false; }
+        }
+
+        for (const rawLine of lines) {
+          if (rawLine.trim().startsWith("```")) {
+            closeLists();
+            if (!inPre) {
+              inPre = true;
+              preLines = [];
+            } else {
+              out.push(`<pre><code>${escapeHtml(preLines.join("\n"))}</code></pre>`);
+              inPre = false;
+            }
+            continue;
+          }
+          if (inPre) {
+            preLines.push(rawLine);
+            continue;
+          }
+
+          const line = rawLine.trim();
+          if (!line) {
+            closeLists();
+            continue;
+          }
+          if (line.startsWith("### ")) {
+            closeLists();
+            out.push(`<h3>${formatInline(line.slice(4))}</h3>`);
+          } else if (line.startsWith("## ") || line.startsWith("# ")) {
+            closeLists();
+            const text = line.replace(/^#+\s+/, "");
+            out.push(`<h2>${formatInline(text)}</h2>`);
+          } else if (/^[-*]\s+/.test(line)) {
+            if (inOl) { out.push("</ol>"); inOl = false; }
+            if (!inUl) { out.push("<ul>"); inUl = true; }
+            out.push(`<li>${formatInline(line.replace(/^[-*]\s+/, ""))}</li>`);
+          } else if (/^\d+\.\s+/.test(line)) {
+            if (inUl) { out.push("</ul>"); inUl = false; }
+            if (!inOl) { out.push("<ol>"); inOl = true; }
+            out.push(`<li>${formatInline(line.replace(/^\d+\.\s+/, ""))}</li>`);
+          } else {
+            closeLists();
+            out.push(`<p>${formatInline(line)}</p>`);
+          }
+        }
+        if (inPre) out.push(`<pre><code>${escapeHtml(preLines.join("\n"))}</code></pre>`);
+        closeLists();
+        return out.join("\n");
+      }
+
+      // ---------------------------------------------------------------------------
+      // Application State & DOM Refs
+      // ---------------------------------------------------------------------------
+      const bridge = createHostBridge();
+      const state = {
+        settings: {
+          provider: "agy",
+          agyModel: "gemini-pro-orchestrator",
+          claudeModel: "",
+          geminiModel: "gemini-4-hydrogen",
+          anthropicModel: "claude-sonnet-4-20250514",
+          openaiModel: "gpt-4o-mini",
+          openaiBaseUrl: "https://api.openai.com/v1",
+          hasGeminiApiKey: false,
+          hasAnthropicApiKey: false,
+          hasOpenaiApiKey: false,
+          defaultTarget: "antigravity",
+          defaultMode: "balanced",
+          autoRewrite: false,
+          autoRewriteDelayMs: 1200,
+          includeWorkspaceContext: true,
+          enableSkillRouting: true,
+          openInFloatingWindow: true,
+          hookAutoAll: true,
+        },
+        providers: [],
+        history: [],
+        sessionId: "default",
+        session: { turn_count: 0, loaded_skills: [], loaded_domains: [] },
+        vault: { ready: false, skill_count: 0, repo_count: 0 },
+        recommendations: [],
+        growthReason: "",
+        target: "antigravity",
+        mode: "balanced",
+        view: "readable",
+        workspaceContext: "",
+        contextLabel: "",
+        contextDetached: false,
+        lastOriginal: "",
+        rewrittenText: "",
+        summary: "",
+        improvements: [],
+        metaLabel: "",
+        busy: false,
+        autoTimer: null,
+        clearKeyFlags: { gemini: false, anthropic: false, openai: false },
+      };
+
+      const $ = (id) => document.getElementById(id);
+
+      function showBanner(text, kind) {
+        const b = $("banner");
+        b.className = `banner show ${kind === "err" ? "err" : "ok"}`;
+        $("bannerText").textContent = text;
+        if (kind !== "err") {
+          setTimeout(() => {
+            if ($("bannerText").textContent === text) b.classList.remove("show");
+          }, 4000);
+        }
+      }
+
+      function hideBanner() {
+        $("banner").classList.remove("show");
+      }
+
+      function activeModelName() {
+        const s = state.settings;
+        if (s.provider === "agy") return s.agyModel || "gemini-pro-orchestrator";
+        if (s.provider === "claude_cli") return s.claudeModel || "claude-default";
+        if (s.provider === "gemini_api") return s.geminiModel || "gemini-4-hydrogen";
+        if (s.provider === "anthropic_api") return s.anthropicModel || "claude-sonnet";
+        if (s.provider === "openai_compat") return s.openaiModel || "gpt-4o-mini";
+        return "local-template";
+      }
+
+      function renderHeaderAndControls() {
+        $("providerPill").textContent = `${state.settings.provider} · ${activeModelName()}`;
+        document.querySelectorAll("[data-target]").forEach((btn) => {
+          btn.classList.toggle("active", btn.dataset.target === state.target);
+        });
+        document.querySelectorAll("[data-mode]").forEach((btn) => {
+          btn.classList.toggle("active", btn.dataset.mode === state.mode);
+        });
+        $("autoToggleBtn").classList.toggle("active", !!state.settings.autoRewrite);
+
+        // Context chip
+        const hasCtx = Boolean(state.workspaceContext && state.settings.includeWorkspaceContext);
+        $("ctxChip").classList.toggle("hidden", !hasCtx || state.contextDetached);
+        $("restoreCtxBtn").classList.toggle("hidden", !hasCtx || !state.contextDetached);
+        if (hasCtx) {
+          $("ctxChipText").textContent = state.contextLabel || "Active workspace file";
+        }
+
+        // Host capabilities gating
+        const canMsg = bridge.kind === "vscode" || Boolean(bridge.capabilities && bridge.capabilities.message);
+        const canCtx = Boolean(bridge.capabilities && bridge.capabilities.updateModelContext);
+        const canClaude = bridge.kind === "vscode";
+        const isVsCode = bridge.kind === "vscode";
+        $("popOutBtn").classList.toggle("hidden", !isVsCode);
+        $("openInWindowRow").classList.toggle("hidden", !isVsCode);
+        $("sendAgyBtn").classList.toggle("hidden", !canMsg);
+        $("sendAgyNewBtn").classList.toggle("hidden", !canMsg);
+        $("attachCtxBtn").classList.toggle("hidden", !canCtx);
+        $("sendClaudeBtn").classList.toggle("hidden", !canClaude && state.target !== "claude_code");
+        if (bridge.kind === "mcp-app") {
+          $("sendClaudeBtn").textContent = "Copy for Claude Code";
+        } else {
+          $("sendClaudeBtn").textContent = "Send to Claude Code";
+        }
+        renderSessionBar();
+      }
+
+      function renderSessionBar() {
+        const sess = state.session || { turn_count: 0, loaded_skills: [] };
+        const turn = Number(sess.turn_count || 0);
+        const loaded = Array.isArray(sess.loaded_skills) ? sess.loaded_skills : [];
+        const routingOn = state.settings.enableSkillRouting !== false;
+
+        if (!routingOn) {
+          $("sessionSummary").textContent = "Skill Routing · Off";
+        } else if (turn === 0) {
+          $("sessionSummary").textContent = "Session · Turn 1 (New — auto-assumes skills)";
+        } else {
+          const skCount = loaded.length ? ` · ${loaded.length} skill${loaded.length === 1 ? "" : "s"} active` : "";
+          $("sessionSummary").textContent = `Session · Turn ${turn}${skCount}`;
+        }
+
+        const v = state.vault || {};
+        $("vaultMiniBadge").textContent = v.ready
+          ? `Vault: ${v.skill_count} skills`
+          : "Vault: not synced";
+
+        const chipsRow = $("activeSkillsRow");
+        chipsRow.innerHTML = "";
+        chipsRow.classList.toggle("hidden", loaded.length === 0);
+
+        const jRow = $("lastJudgmentRow");
+        if (jRow) {
+          jRow.innerHTML = "";
+          const j = state.lastJudgment || {};
+          const loads = Array.isArray(j.load_skills) ? j.load_skills : [];
+          const unloads = Array.isArray(j.unload_skills) ? j.unload_skills : [];
+          for (const s of loads) {
+            const chip = document.createElement("span");
+            chip.className = "imp-tag";
+            chip.textContent = `+ Load ${s.name}`;
+            chip.title = s.path || s.domain || "";
+            jRow.appendChild(chip);
+          }
+          for (const u of unloads) {
+            const chip = document.createElement("span");
+            chip.className = "imp-tag";
+            chip.style.opacity = "0.75";
+            chip.textContent = `− Unload ${u.name}`;
+            chip.title = u.unload_reason || "no longer needed";
+            jRow.appendChild(chip);
+          }
+          jRow.classList.toggle("hidden", loads.length === 0 && unloads.length === 0);
+        }
+        for (const sk of loaded) {
+          const chip = document.createElement("span");
+          chip.className = "skill-chip";
+          chip.title = sk.path || sk.description || "";
+
+          const icon = document.createElement("span");
+          icon.textContent = "⚡";
+          const label = document.createElement("span");
+          label.textContent = sk.name || sk.id;
+          const dom = document.createElement("span");
+          dom.className = "skill-chip-dom";
+          dom.textContent = sk.domain || "skill";
+          const rmBtn = document.createElement("button");
+          rmBtn.className = "ctx-x";
+          rmBtn.type = "button";
+          rmBtn.title = "Remove skill from session";
+          rmBtn.textContent = "×";
+          rmBtn.onclick = () => removeSessionSkill(sk);
+
+          chip.append(icon, label, dom, rmBtn);
+          chipsRow.appendChild(chip);
+        }
+
+        const recs = Array.isArray(state.recommendations) ? state.recommendations : [];
+        const recBanner = $("recBanner");
+        recBanner.classList.toggle("hidden", recs.length === 0);
+        if (recs.length > 0) {
+          $("recTitle").textContent = state.growthReason
+            ? `Session complexity grew (${state.growthReason}) — recommended skills:`
+            : "Session complexity grew — recommended skills:";
+          const btns = $("recButtons");
+          btns.innerHTML = "";
+          for (const sk of recs) {
+            const b = document.createElement("button");
+            b.className = "rec-btn";
+            b.type = "button";
+            b.title = sk.description || sk.path || "";
+            b.textContent = `+ Load ${sk.name} (${sk.domain})`;
+            b.onclick = () => acceptRecommendedSkill(sk);
+            btns.appendChild(b);
+          }
+        }
+      }
+
+      function upsertSkillInRewritten(skill) {
+        if (!state.rewrittenText || !skill || !skill.path) return;
+        if (state.rewrittenText.includes(skill.path)) return;
+        const bullet = `- **${skill.name}** (\`${skill.domain}\`): \`${skill.path}\``;
+        const secRe = /(##\s+Skills\s+to\s+Load[^\n]*\n(?:[^\n#][^\n]*\n?)*)/i;
+        if (secRe.test(state.rewrittenText)) {
+          state.rewrittenText = state.rewrittenText.replace(secRe, (m) => m.replace(/\n+$/, "") + "\n" + bullet + "\n");
+        } else {
+          const block = `## Skills to Load\nRead these matching local skills on demand before starting execution:\n${bullet}`;
+          const goalRe = /(^##\s+Goal\b[\s\S]*?)(?=\n##\s+|$)/im;
+          if (goalRe.test(state.rewrittenText)) {
+            state.rewrittenText = state.rewrittenText.replace(goalRe, (m) => m.trimEnd() + "\n\n" + block);
+          } else {
+            state.rewrittenText = block + "\n\n" + state.rewrittenText;
+          }
+        }
+        renderOutput();
+      }
+
+      function removeSkillFromRewritten(skill) {
+        if (!state.rewrittenText || !skill || !skill.path) return;
+        const lines = state.rewrittenText.split("\n").filter((ln) => !ln.includes(skill.path));
+        let nextText = lines.join("\n");
+        nextText = nextText.replace(/##\s+Skills\s+to\s+Load\s*\n(?:Read these matching local skills[^\n]*\n)?(?=\n*##\s+|\s*$)/i, "");
+        state.rewrittenText = nextText.replace(/\n{3,}/g, "\n\n").trim();
+        renderOutput();
+      }
+
+      async function acceptRecommendedSkill(skill) {
+        try {
+          const res = await bridge.request("loadSkill", { session_id: state.sessionId, skill });
+          if (res && res.session) state.session = res.session;
+        } catch (_) {
+          const loaded = state.session.loaded_skills || [];
+          if (!loaded.some((x) => x.id === skill.id)) loaded.push(skill);
+          state.session.loaded_skills = loaded;
+        }
+        state.recommendations = (state.recommendations || []).filter((r) => r.id !== skill.id);
+        upsertSkillInRewritten(skill);
+        renderSessionBar();
+        showBanner(`Loaded skill "${skill.name}" into session.`, "ok");
+      }
+
+      async function removeSessionSkill(skill) {
+        try {
+          const res = await bridge.request("removeSkill", { session_id: state.sessionId, skill_id: skill.id });
+          if (res && res.session) state.session = res.session;
+        } catch (_) {
+          state.session.loaded_skills = (state.session.loaded_skills || []).filter((x) => x.id !== skill.id);
+        }
+        removeSkillFromRewritten(skill);
+        renderSessionBar();
+      }
+
+      function renderDraftStats() {
+        const val = $("draftInput").value || "";
+        const words = val.trim() ? val.trim().split(/\s+/).length : 0;
+        $("draftStats").textContent = `${val.length} chars · ${words} words · Ctrl+Enter`;
+      }
+
+      function renderOutput() {
+        const hasOut = Boolean(state.rewrittenText && state.rewrittenText.trim());
+        $("outputEmpty").classList.toggle("hidden", hasOut);
+        $("outputBody").classList.toggle("hidden", !hasOut);
+        if (!hasOut) return;
+
+        $("summaryText").textContent = state.summary || "Structured for AI execution and easy human review.";
+        $("outputMeta").textContent = state.metaLabel ? `· ${state.metaLabel}` : "";
+
+        const impWrap = $("impTags");
+        impWrap.innerHTML = "";
+        for (const tag of state.improvements || []) {
+          const span = document.createElement("span");
+          span.className = "imp-tag";
+          span.textContent = `✓ ${tag}`;
+          impWrap.appendChild(span);
+        }
+
+        document.querySelectorAll("[data-view]").forEach((btn) => {
+          btn.classList.toggle("active", btn.dataset.view === state.view);
+        });
+
+        $("readableView").classList.toggle("hidden", state.view !== "readable");
+        $("editView").classList.toggle("hidden", state.view !== "edit");
+        $("compareView").classList.toggle("hidden", state.view !== "compare");
+
+        $("readableView").innerHTML = renderMarkdown(state.rewrittenText);
+        if ($("editView").value !== state.rewrittenText) {
+          $("editView").value = state.rewrittenText;
+        }
+        $("compareOriginal").textContent = state.lastOriginal || $("draftInput").value;
+        $("compareRewritten").textContent = state.rewrittenText;
+      }
+
+      function setBusy(isBusy, label) {
+        state.busy = isBusy;
+        $("draftCard").classList.toggle("rewriting", isBusy);
+        $("rewriteBtn").disabled = isBusy;
+        document.querySelectorAll(".refine-btn").forEach((b) => { b.disabled = isBusy; });
+        if (isBusy) {
+          $("rewriteBtnIcon").innerHTML = '<span class="spinner"></span>';
+          $("rewriteBtnLabel").textContent = label || "Rewriting...";
+        } else {
+          $("rewriteBtnIcon").textContent = "✨";
+          $("rewriteBtnLabel").textContent = "Re-Prompt";
+        }
+      }
+
+      function applyRewriteResult(res) {
+        if (!res || !res.rewritten_prompt) return;
+        state.lastOriginal = res.original || $("draftInput").value;
+        state.rewrittenText = res.rewritten_prompt;
+        state.summary = res.summary || "";
+        state.improvements = res.improvements || [];
+        const ms = res.duration_ms ? ` (${(res.duration_ms / 1000).toFixed(1)}s)` : "";
+        state.metaLabel = `${res.provider || ""}${res.model ? " · " + res.model : ""}${ms}`;
+        if (Array.isArray(res.history)) {
+          state.history = res.history;
+        }
+        if (res.session) {
+          state.session = res.session;
+        }
+        state.lastJudgment = res.skill_judgment || null;
+        const sr = res.skill_routing || {};
+        if (sr.action === "recommend" && Array.isArray(sr.recommended_skills) && sr.recommended_skills.length) {
+          state.recommendations = sr.recommended_skills;
+          state.growthReason = sr.growth_reason || "";
+        } else if (sr.action === "assume") {
+          state.recommendations = [];
+          state.growthReason = "";
+        }
+        renderSessionBar();
+        renderOutput();
+      }
+
+      function hydrateState(data) {
+        if (!data || typeof data !== "object") return;
+        if (data.settings) {
+          Object.assign(state.settings, data.settings);
+          if (!state._userPickedTarget && data.settings.defaultTarget) {
+            state.target = data.settings.defaultTarget;
+          }
+          if (!state._userPickedMode && data.settings.defaultMode) {
+            state.mode = data.settings.defaultMode;
+          }
+        }
+        if (Array.isArray(data.providers)) state.providers = data.providers;
+        if (Array.isArray(data.history)) state.history = data.history;
+        if (data.session) state.session = data.session;
+        if (data.vault) state.vault = data.vault;
+        if (typeof data.untrustedWorkspace === "boolean") {
+          state.untrustedWorkspace = data.untrustedWorkspace;
+          const lockMsg = "Workspace is untrusted — trust the folder to enable Vault Sync and Orchestrator execution.";
+          if ($("syncVaultBtn")) {
+            $("syncVaultBtn").disabled = state.untrustedWorkspace;
+            if (state.untrustedWorkspace) $("syncVaultBtn").title = lockMsg;
+          }
+          if ($("orchRunBtn")) {
+            $("orchRunBtn").disabled = state.untrustedWorkspace;
+            if (state.untrustedWorkspace) $("orchRunBtn").title = lockMsg;
+          }
+          if (state.untrustedWorkspace && !$("bannerText").textContent) {
+            showBanner(lockMsg, "err");
+          }
+        }
+        if (data.orchestrator) renderOrchestratorStatus(data.orchestrator);
+        if (data.activeTab === "orchestrator") switchMainTab("orchestrator");
+        if (typeof data.draft === "string" && data.draft && !$("draftInput").value) {
+          $("draftInput").value = data.draft;
+          renderDraftStats();
+        }
+        if (typeof data.workspaceContext === "string") {
+          state.workspaceContext = data.workspaceContext;
+          state.contextLabel = data.contextLabel || "";
+        }
+        if (data.rewritten && data.rewritten.rewritten_prompt) {
+          applyRewriteResult(data.rewritten);
+        }
+        if (data.rewriteError) {
+          showBanner(data.rewriteError, "err");
+        }
+        renderHeaderAndControls();
+      }
+
+      // ---------------------------------------------------------------------------
+      // Actions
+      // ---------------------------------------------------------------------------
+      async function runRewrite(refinement) {
+        const prompt = ($("draftInput").value || "").trim();
+        if (!prompt) {
+          if (!refinement) showBanner("Type a rough prompt first.", "err");
+          return;
+        }
+        hideBanner();
+        setBusy(true, refinement ? "Refining..." : "Re-Prompting...");
+        const useCtx = state.settings.includeWorkspaceContext && !state.contextDetached;
+        try {
+          const res = await bridge.request("rewrite", {
+            prompt,
+            target: state.target,
+            mode: state.mode,
+            workspace_context: useCtx ? state.workspaceContext : "",
+            refinement: refinement || "",
+            previous_rewritten: refinement ? state.rewrittenText : "",
+            session_id: state.sessionId,
+          });
+          applyRewriteResult(res);
+        } catch (err) {
+          showBanner(err.message || "Failed to rewrite prompt.", "err");
+        } finally {
+          setBusy(false);
+        }
+      }
+
+      async function copyText(text) {
+        if (!text) return false;
+        try {
+          if (navigator.clipboard && navigator.clipboard.writeText) {
+            await navigator.clipboard.writeText(text);
+            return true;
+          }
+        } catch (_) { }
+        try {
+          const ta = document.createElement("textarea");
+          ta.value = text;
+          ta.style.position = "fixed";
+          ta.style.opacity = "0";
+          document.body.appendChild(ta);
+          ta.select();
+          const ok = document.execCommand("copy");
+          document.body.removeChild(ta);
+          if (ok) return true;
+        } catch (_) { }
+        if (bridge.kind === "vscode") {
+          await bridge.request("copyText", { text });
+          return true;
+        }
+        return false;
+      }
+
+      // ---------------------------------------------------------------------------
+      // Settings Drawer
+      // ---------------------------------------------------------------------------
+      function syncProviderFieldsVisibility() {
+        const p = $("setProvider").value;
+        $("agyModelWrap").classList.toggle("hidden", p !== "agy");
+        $("claudeModelWrap").classList.toggle("hidden", p !== "claude_cli");
+        $("geminiApiWrap").classList.toggle("hidden", p !== "gemini_api");
+        $("anthropicApiWrap").classList.toggle("hidden", p !== "anthropic_api");
+        $("openaiWrap").classList.toggle("hidden", p !== "openai_compat");
+
+        const info = (state.providers || []).find((x) => x.id === p);
+        $("providerHint").textContent = info ? info.detail : "";
+      }
+
+      function openSettings() {
+        const s = state.settings;
+        state.clearKeyFlags = { gemini: false, anthropic: false, openai: false };
+        $("setProvider").value = s.provider || "agy";
+
+        // Ensure current agyModel exists in select options
+        const agySel = $("setAgyModel");
+        if (s.agyModel && !Array.from(agySel.options).some((o) => o.value === s.agyModel)) {
+          const opt = document.createElement("option");
+          opt.value = s.agyModel;
+          opt.textContent = s.agyModel;
+          agySel.appendChild(opt);
+        }
+        agySel.value = s.agyModel || "gemini-pro-orchestrator";
+
+        $("setClaudeModel").value = s.claudeModel || "";
+        $("setGeminiModel").value = s.geminiModel || "gemini-4-hydrogen";
+        $("setAnthropicModel").value = s.anthropicModel || "claude-sonnet-4-20250514";
+        $("setOpenaiUrl").value = s.openaiBaseUrl || "https://api.openai.com/v1";
+        $("setOpenaiModel").value = s.openaiModel || "gpt-4o-mini";
+
+        $("setGeminiKey").value = "";
+        $("setAnthropicKey").value = "";
+        $("setOpenaiKey").value = "";
+        $("geminiKeyStatus").textContent = s.hasGeminiApiKey ? "(Saved)" : "(Not set)";
+        $("anthropicKeyStatus").textContent = s.hasAnthropicApiKey ? "(Saved)" : "(Not set)";
+        $("openaiKeyStatus").textContent = s.hasOpenaiApiKey ? "(Saved)" : "(Optional / Not set)";
+
+        $("setDefaultTarget").value = s.defaultTarget || "antigravity";
+        $("setDefaultMode").value = s.defaultMode || "balanced";
+        $("setAutoRewrite").checked = !!s.autoRewrite;
+        $("setDelay").value = String(s.autoRewriteDelayMs || 1200);
+        $("setIncludeCtx").checked = s.includeWorkspaceContext !== false;
+        $("setEnableSkillRouting").checked = s.enableSkillRouting !== false;
+        $("setOpenInWindow").checked = s.openInFloatingWindow !== false;
+        $("setHookAutoAll").checked = !!s.hookAutoAll;
+        const v = state.vault || {};
+        $("vaultStatusText").textContent = v.ready
+          ? `Vault: ${v.skill_count} skills · ${v.cloned_repo_count}/${v.repo_count} repos`
+          : "Vault: not synced yet";
+
+        syncProviderFieldsVisibility();
+        $("settingsDrawer").classList.add("open");
+      }
+
+      async function saveSettingsFromDrawer() {
+        const payload = {
+          provider: $("setProvider").value,
+          agyModel: $("setAgyModel").value,
+          claudeModel: $("setClaudeModel").value.trim(),
+          geminiModel: $("setGeminiModel").value.trim(),
+          anthropicModel: $("setAnthropicModel").value.trim(),
+          openaiBaseUrl: $("setOpenaiUrl").value.trim(),
+          openaiModel: $("setOpenaiModel").value.trim(),
+          defaultTarget: $("setDefaultTarget").value,
+          defaultMode: $("setDefaultMode").value,
+          autoRewrite: $("setAutoRewrite").checked,
+          autoRewriteDelayMs: Number($("setDelay").value) || 1200,
+          includeWorkspaceContext: $("setIncludeCtx").checked,
+          enableSkillRouting: $("setEnableSkillRouting").checked,
+          openInFloatingWindow: $("setOpenInWindow").checked,
+          hookAutoAll: $("setHookAutoAll").checked,
+        };
+
+        const gKey = $("setGeminiKey").value.trim();
+        const aKey = $("setAnthropicKey").value.trim();
+        const oKey = $("setOpenaiKey").value.trim();
+        if (gKey) payload.geminiApiKey = gKey;
+        else if (state.clearKeyFlags.gemini) payload.clearGeminiApiKey = true;
+        if (aKey) payload.anthropicApiKey = aKey;
+        else if (state.clearKeyFlags.anthropic) payload.clearAnthropicApiKey = true;
+        if (oKey) payload.openaiApiKey = oKey;
+        else if (state.clearKeyFlags.openai) payload.clearOpenaiApiKey = true;
+
+        try {
+          const res = await bridge.request("saveSettings", payload);
+          hydrateState(res);
+          $("settingsDrawer").classList.remove("open");
+          showBanner("Settings saved.", "ok");
+        } catch (err) {
+          showBanner(err.message || "Failed saving settings.", "err");
+        }
+      }
+
+      // ---------------------------------------------------------------------------
+      // History Drawer
+      // ---------------------------------------------------------------------------
+      function renderHistoryList() {
+        const query = ($("historySearch").value || "").trim().toLowerCase();
+        const list = $("historyList");
+        list.innerHTML = "";
+        const items = (state.history || []).filter((item) => {
+          if (!query) return true;
+          return (
+            (item.original || "").toLowerCase().includes(query) ||
+            (item.rewritten || "").toLowerCase().includes(query)
+          );
+        });
+
+        if (!items.length) {
+          const p = document.createElement("p");
+          p.className = "muted";
+          p.textContent = query ? "No matching prompts." : "No prompt rewrites recorded yet.";
+          list.appendChild(p);
+          return;
+        }
+
+        for (const item of items) {
+          const card = document.createElement("div");
+          card.className = "hist-item";
+
+          const meta = document.createElement("div");
+          meta.className = "hist-meta";
+          const when = item.timestamp ? new Date(item.timestamp).toLocaleString() : "";
+          meta.innerHTML = `<span>${escapeHtml(item.target || "")} · ${escapeHtml(item.mode || "")}</span><span>${escapeHtml(when)}</span>`;
+
+          const orig = document.createElement("div");
+          orig.className = "hist-orig";
+          orig.textContent = item.original || "";
+
+          const row = document.createElement("div");
+          row.className = "btn-row";
+
+          const restoreBtn = document.createElement("button");
+          restoreBtn.className = "btn";
+          restoreBtn.textContent = "Restore";
+          restoreBtn.onclick = () => {
+            $("draftInput").value = item.original || "";
+            renderDraftStats();
+            applyRewriteResult({
+              original: item.original,
+              rewritten_prompt: item.rewritten,
+              summary: item.summary,
+              improvements: item.improvements,
+              provider: item.provider,
+              model: item.model,
+              duration_ms: item.duration_ms,
+            });
+            $("historyDrawer").classList.remove("open");
+          };
+
+          const copyHistBtn = document.createElement("button");
+          copyHistBtn.className = "btn";
+          copyHistBtn.textContent = "Copy";
+          copyHistBtn.onclick = async () => {
+            await copyText(item.rewritten || "");
+            showBanner("Copied prompt from history.", "ok");
+          };
+
+          const delBtn = document.createElement("button");
+          delBtn.className = "btn btn-ghost";
+          delBtn.textContent = "Delete";
+          delBtn.onclick = async () => {
+            const res = await bridge.request("deleteHistory", { id: item.id });
+            if (res && Array.isArray(res.history)) state.history = res.history;
+            renderHistoryList();
+          };
+
+          row.append(restoreBtn, copyHistBtn, delBtn);
+          card.append(meta, orig, row);
+          list.appendChild(card);
+        }
+      }
+
+      // ---------------------------------------------------------------------------
+      // Event Wiring
+      // ---------------------------------------------------------------------------
+      document.querySelectorAll("[data-target]").forEach((btn) => {
+        btn.addEventListener("click", () => {
+          state._userPickedTarget = true;
+          state.target = btn.dataset.target;
+          renderHeaderAndControls();
+        });
+      });
+
+      document.querySelectorAll("[data-mode]").forEach((btn) => {
+        btn.addEventListener("click", () => {
+          state._userPickedMode = true;
+          state.mode = btn.dataset.mode;
+          renderHeaderAndControls();
+        });
+      });
+
+      document.querySelectorAll("[data-view]").forEach((btn) => {
+        btn.addEventListener("click", () => {
+          state.view = btn.dataset.view;
+          renderOutput();
+        });
+      });
+
+      document.querySelectorAll("[data-refine]").forEach((btn) => {
+        btn.addEventListener("click", () => runRewrite(btn.dataset.refine));
+      });
+
+      $("editView").addEventListener("input", () => {
+        state.rewrittenText = $("editView").value;
+        $("readableView").innerHTML = renderMarkdown(state.rewrittenText);
+        $("compareRewritten").textContent = state.rewrittenText;
+      });
+
+      $("draftInput").addEventListener("input", () => {
+        renderDraftStats();
+        if (state.autoTimer) clearTimeout(state.autoTimer);
+        if (state.settings.autoRewrite && $("draftInput").value.trim().length >= 8) {
+          state.autoTimer = setTimeout(() => {
+            if (!state.busy) runRewrite();
+          }, state.settings.autoRewriteDelayMs || 1200);
+        }
+      });
+
+      $("draftInput").addEventListener("keydown", (ev) => {
+        if ((ev.ctrlKey || ev.metaKey) && ev.key === "Enter") {
+          ev.preventDefault();
+          if (state.autoTimer) clearTimeout(state.autoTimer);
+          runRewrite();
+        } else if (ev.key === "Escape") {
+          if ($("settingsDrawer").classList.contains("open")) {
+            $("settingsDrawer").classList.remove("open");
+          } else if ($("historyDrawer").classList.contains("open")) {
+            $("historyDrawer").classList.remove("open");
+          } else if ($("draftInput").value) {
+            $("draftInput").value = "";
+            renderDraftStats();
+          }
+        }
+      });
+
+      $("rewriteBtn").addEventListener("click", () => runRewrite());
+
+      $("clearDraftBtn").addEventListener("click", () => {
+        $("draftInput").value = "";
+        renderDraftStats();
+        $("draftInput").focus();
+      });
+
+      $("ctxToggleBtn").addEventListener("click", () => {
+        state.contextDetached = true;
+        renderHeaderAndControls();
+      });
+      $("restoreCtxBtn").addEventListener("click", () => {
+        state.contextDetached = false;
+        renderHeaderAndControls();
+      });
+
+      $("autoToggleBtn").addEventListener("click", async () => {
+        const next = !state.settings.autoRewrite;
+        state.settings.autoRewrite = next;
+        renderHeaderAndControls();
+        try {
+          await bridge.request("saveSettings", { autoRewrite: next });
+        } catch (_) { }
+      });
+
+      $("copyBtn").addEventListener("click", async () => {
+        const ok = await copyText(state.rewrittenText);
+        if (ok) {
+          const old = $("copyBtn").textContent;
+          $("copyBtn").textContent = "Copied!";
+          setTimeout(() => { $("copyBtn").textContent = old; }, 1600);
+        }
+      });
+
+      $("sendAgyBtn").addEventListener("click", async () => {
+        if (!state.rewrittenText) return;
+        try {
+          const res = await bridge.request("sendToAntigravity", { text: state.rewrittenText });
+          showBanner((res && res.message) || "Sent prompt to current Antigravity session.", "ok");
+        } catch (err) {
+          await copyText(state.rewrittenText);
+          showBanner(`Copied to clipboard (${err.message}). Paste in Antigravity chat.`, "ok");
+        }
+      });
+
+      $("sendAgyNewBtn").addEventListener("click", async () => {
+        if (!state.rewrittenText) return;
+        try {
+          const res = await bridge.request("sendToAntigravityNewSession", { text: state.rewrittenText });
+          showBanner((res && res.message) || "Started a new Antigravity session with your prompt.", "ok");
+        } catch (err) {
+          await copyText(state.rewrittenText);
+          showBanner(`Copied to clipboard (${err.message}). Open a new session and paste.`, "ok");
+        }
+      });
+
+      $("popOutBtn").addEventListener("click", async () => {
+        try {
+          await bridge.request("popOutWindow", {});
+        } catch (err) {
+          showBanner(err.message || "Could not open separate window.", "err");
+        }
+      });
+
+      $("sendClaudeBtn").addEventListener("click", async () => {
+        if (!state.rewrittenText) return;
+        if (bridge.kind === "mcp-app") {
+          await copyText(state.rewrittenText);
+          showBanner("Copied structured prompt — paste directly into Claude Code.", "ok");
+          return;
+        }
+        try {
+          const res = await bridge.request("sendToClaudeCode", { text: state.rewrittenText });
+          showBanner((res && res.message) || "Focused Claude Code with prompt copied.", "ok");
+        } catch (err) {
+          await copyText(state.rewrittenText);
+          showBanner(`Copied to clipboard (${err.message}). Paste into Claude Code.`, "ok");
+        }
+      });
+
+      $("attachCtxBtn").addEventListener("click", async () => {
+        if (!state.rewrittenText) return;
+        try {
+          await bridge.request("attachContext", { text: state.rewrittenText });
+          showBanner("Attached rewritten prompt as context pill on your next chat message.", "ok");
+        } catch (err) {
+          showBanner(err.message || "Could not attach context.", "err");
+        }
+      });
+
+      $("providerPill").addEventListener("click", openSettings);
+      $("settingsBtn").addEventListener("click", openSettings);
+      $("closeSettingsBtn").addEventListener("click", () => $("settingsDrawer").classList.remove("open"));
+      $("cancelSettingsBtn").addEventListener("click", () => $("settingsDrawer").classList.remove("open"));
+      $("saveSettingsBtn").addEventListener("click", saveSettingsFromDrawer);
+      $("setProvider").addEventListener("change", syncProviderFieldsVisibility);
+
+      $("clearGeminiKeyBtn").addEventListener("click", () => {
+        state.clearKeyFlags.gemini = true;
+        $("setGeminiKey").value = "";
+        $("geminiKeyStatus").textContent = "(Will clear on save)";
+      });
+      $("clearAnthropicKeyBtn").addEventListener("click", () => {
+        state.clearKeyFlags.anthropic = true;
+        $("setAnthropicKey").value = "";
+        $("anthropicKeyStatus").textContent = "(Will clear on save)";
+      });
+      $("clearOpenaiKeyBtn").addEventListener("click", () => {
+        state.clearKeyFlags.openai = true;
+        $("setOpenaiKey").value = "";
+        $("openaiKeyStatus").textContent = "(Will clear on save)";
+      });
+
+      $("refreshModelsBtn").addEventListener("click", async () => {
+        $("refreshModelsBtn").disabled = true;
+        $("refreshModelsBtn").textContent = "...";
+        try {
+          const res = await bridge.request("listModels", {});
+          const models = (res && res.models) || [];
+          if (models.length) {
+            const sel = $("setAgyModel");
+            const cur = sel.value;
+            sel.innerHTML = "";
+            for (const m of models) {
+              const opt = document.createElement("option");
+              opt.value = m.id;
+              opt.textContent = m.label && m.label !== m.id ? `${m.label} (${m.id})` : m.id;
+              sel.appendChild(opt);
+            }
+            if (Array.from(sel.options).some((o) => o.value === cur)) sel.value = cur;
+            showBanner(`Loaded ${models.length} Antigravity models.`, "ok");
+          } else {
+            showBanner("No models returned from agy CLI.", "err");
+          }
+        } catch (err) {
+          showBanner(err.message || "Failed refreshing models.", "err");
+        } finally {
+          $("refreshModelsBtn").disabled = false;
+          $("refreshModelsBtn").textContent = "Refresh";
+        }
+      });
+
+      $("historyBtn").addEventListener("click", () => {
+        renderHistoryList();
+        $("historyDrawer").classList.add("open");
+      });
+      $("closeHistoryBtn").addEventListener("click", () => $("historyDrawer").classList.remove("open"));
+      $("historySearch").addEventListener("input", renderHistoryList);
+      $("clearHistoryBtn").addEventListener("click", async () => {
+        const res = await bridge.request("clearHistory", {});
+        if (res && Array.isArray(res.history)) state.history = res.history;
+        renderHistoryList();
+      });
+
+      $("bannerClose").addEventListener("click", hideBanner);
+
+      $("newSessionBtn").addEventListener("click", async () => {
+        try {
+          const res = await bridge.request("newSession", { session_id: state.sessionId });
+          if (res && res.session) state.session = res.session;
+          else state.session = { turn_count: 0, loaded_skills: [], loaded_domains: [] };
+        } catch (_) {
+          state.session = { turn_count: 0, loaded_skills: [], loaded_domains: [] };
+        }
+        state.recommendations = [];
+        state.growthReason = "";
+        renderSessionBar();
+        showBanner("Started fresh session (next prompt will auto-assume matching skills).", "ok");
+      });
+
+      $("dismissRecBtn").addEventListener("click", () => {
+        state.recommendations = [];
+        state.growthReason = "";
+        renderSessionBar();
+      });
+
+      $("syncVaultBtn").addEventListener("click", async () => {
+        const btn = $("syncVaultBtn");
+        btn.disabled = true;
+        const oldLabel = btn.textContent;
+        btn.textContent = "Syncing...";
+        try {
+          const res = await bridge.request("syncVault", {});
+          if (res && res.vault) state.vault = res.vault;
+          const v = state.vault || {};
+          $("vaultStatusText").textContent = v.ready
+            ? `Vault: ${v.skill_count} skills · ${v.cloned_repo_count}/${v.repo_count} repos`
+            : "Vault sync completed.";
+          renderSessionBar();
+          showBanner(`Skill vault synced (${v.skill_count || 0} skills).`, "ok");
+        } catch (err) {
+          showBanner(err.message || "Vault sync failed.", "err");
+        } finally {
+          btn.disabled = false;
+          btn.textContent = oldLabel;
+        }
+      });
+
+      // Close drawers when clicking backdrop
+      ["settingsDrawer", "historyDrawer"].forEach((id) => {
+        $(id).addEventListener("click", (ev) => {
+          if (ev.target === $(id)) $(id).classList.remove("open");
+        });
+      });
+
+      // ---------------------------------------------------------------------------
+      // Gemini + Claude Router + Skills Library View Logic
+      // ---------------------------------------------------------------------------
+      let cachedVault = { items: [], domains: [], total: 0, repos: 0, sync: null };
+
+      function renderSkillsView(lib) {
+        if (lib && typeof lib === "object") cachedVault = lib;
+        const v = cachedVault || {};
+        $("skillsSummaryMeta").textContent = `${v.total || 0} skills · ${v.repos || 0} libraries${v.sync && v.sync.lastAt ? " · synced " + new Date(v.sync.lastAt).toLocaleDateString() : ""}`;
+        const domSel = $("skillsDomainFilter");
+        if (domSel && Array.isArray(v.domains) && v.domains.length) {
+          const prev = domSel.value;
+          domSel.innerHTML = '<option value="">All domains</option>';
+          for (const d of v.domains) {
+            const opt = document.createElement("option");
+            opt.value = typeof d === "string" ? d : d.domain;
+            opt.textContent = typeof d === "string" ? d : `${d.domain} (${d.count})`;
+            domSel.appendChild(opt);
+          }
+          domSel.value = prev;
+        }
+        const q = ($("skillsFilterInput").value || "").trim().toLowerCase();
+        const dom = domSel ? domSel.value : "";
+        const list = $("skillsCardsList");
+        list.innerHTML = "";
+        const rows = (v.items || []).filter((s) => {
+          if (dom && s.domain !== dom) return false;
+          if (!q) return true;
+          return (`${s.name} ${s.domain} ${s.repo} ${s.description}`).toLowerCase().includes(q);
+        });
+        if (!rows.length) {
+          const empty = document.createElement("p");
+          empty.className = "muted";
+          empty.textContent = "No matching skills. Click Sync skills to refresh.";
+          list.appendChild(empty);
+          return;
+        }
+        for (const s of rows.slice(0, 60)) {
+          const card = document.createElement("div");
+          card.className = "orch-card";
+          card.innerHTML = `<div class="orch-card-head"><span>${escapeHtml(s.name || s.id)}</span><span class="badge-ready">${s.trending ? "Trending" : escapeHtml(s.domain || "skill")}</span></div><div class="muted">${escapeHtml(s.repo || "")}${s.stars ? " · " + s.stars + "★" : ""}</div><div class="muted">${escapeHtml(s.description || "")}</div>`;
+          const btn = document.createElement("button");
+          btn.className = "btn";
+          btn.type = "button";
+          btn.textContent = "+ Pin Skill";
+          btn.onclick = () => {
+            const tok = `+skill:${s.name || s.id}`;
+            const di = $("draftInput");
+            if (di && !di.value.includes(tok)) di.value = di.value.trim() ? `${tok} ${di.value.trim()}` : `${tok} `;
+            switchMainTab("reprompt");
+            if (di) di.focus();
+          };
+          card.appendChild(btn);
+          list.appendChild(card);
+        }
+      }
+
+      function switchMainTab(tab) {
+        const mode = ["reprompt", "orchestrator", "skills"].includes(tab) ? tab : "reprompt";
+        $("tabRepromptBtn").classList.toggle("active", mode === "reprompt");
+        $("tabOrchBtn").classList.toggle("active", mode === "orchestrator");
+        $("tabSkillsBtn").classList.toggle("active", mode === "skills");
+        $("repromptView").classList.toggle("hidden", mode !== "reprompt");
+        $("orchestratorView").classList.toggle("hidden", mode !== "orchestrator");
+        $("skillsView").classList.toggle("hidden", mode !== "skills");
+        if (mode === "orchestrator") {
+          bridge.request("orchestratorStatus", {}).then(renderOrchestratorStatus).catch(() => { });
+        } else if (mode === "skills") {
+          bridge.request("vaultList", {}).then(renderSkillsView).catch(() => { });
+        }
+      }
+
+      if ($("skillsFilterInput")) $("skillsFilterInput").addEventListener("input", () => renderSkillsView());
+      if ($("skillsDomainFilter")) $("skillsDomainFilter").addEventListener("change", () => renderSkillsView());
+      if ($("skillsSyncNowBtn")) {
+        $("skillsSyncNowBtn").addEventListener("click", async () => {
+          const btn = $("skillsSyncNowBtn");
+          btn.disabled = true;
+          btn.textContent = "Syncing...";
+          try {
+            const res = await bridge.request("vaultDiscoverTrending", {});
+            if (res && res.vault) renderSkillsView(res.vault);
+            else {
+              const lib = await bridge.request("vaultList", {});
+              renderSkillsView(lib);
+            }
+            showBanner("Trending GitHub skills synced.", "ok");
+          } catch (err) {
+            showBanner(err.message || "Skill sync failed.", "err");
+          } finally {
+            btn.disabled = false;
+            btn.textContent = "Sync skills";
+          }
+        });
+      }
+
+      function renderOrchestratorStatus(st) {
+        if (!st || !st.integrations || !st.usage) return;
+        $("orchSavingsBadge").textContent = st.claude_savings_usd > 0
+          ? `Claude savings today: $${Number(st.claude_savings_usd).toFixed(4)}`
+          : "";
+        $("orchOverallBadge").textContent = `Status: ${st.overall_status}`;
+
+        for (const [key, prefix] of [["gemini", "orchGemini"], ["claude", "orchClaude"]]) {
+          const info = st.integrations[key] || {};
+          const u = st.usage[key] || {};
+          const badge = $(`${prefix}Badge`);
+          if (u.in_cooldown) {
+            badge.className = "badge-warn";
+            badge.textContent = `Cooldown ${u.cooldown_remaining_s || 0}s`;
+          } else if (info.available) {
+            badge.className = "badge-ready";
+            badge.textContent = `Ready · ${info.primary_channel || key}`;
+          } else {
+            badge.className = "badge-warn";
+            badge.textContent = "Needs Setup";
+          }
+          $(`${prefix}Hint`).textContent = info.setup_hint || "";
+          $(`${prefix}Spend`).textContent = `Spend: $${Number(u.spend_usd || 0).toFixed(4)} / $${Number(u.daily_budget_usd || 10).toFixed(2)}`;
+          const pct = Math.min(100, Math.round(Number(u.utilization || 0) * 100));
+          const bar = $(`${prefix}Bar`);
+          bar.style.width = `${pct}%`;
+          bar.classList.toggle("warn", pct >= 70);
+          $(`${prefix}Tokens`).textContent = `Tokens: ${Number(u.tokens_used || 0).toLocaleString()} / ${Number(u.daily_token_limit || 0).toLocaleString()} · RPM: ${u.rpm_used || 0}/${u.rpm_limit || 0}`;
+        }
+
+        if (st.config) {
+          if (st.config.gemini) $("orchGemBudget").value = st.config.gemini.dailyBudgetUsd ?? 10;
+          if (st.config.claude) $("orchClaBudget").value = st.config.claude.dailyBudgetUsd ?? 10;
+          if (st.config.claudePreserveThreshold !== undefined) {
+            $("orchPreserveThresh").value = st.config.claudePreserveThreshold;
+          }
+        }
+      }
+
+      function renderOrchestratorResult(res, isPreview) {
+        if (!res) return;
+        $("orchResultCard").classList.remove("hidden");
+        $("orchResultTitle").textContent = isPreview ? "Route Preview (Dry Run)" : "Orchestrated Result";
+        const p = res.provider || "unavailable";
+        const m = res.model || "";
+        $("orchResultBadge").textContent = `${p}${m ? " · " + m : ""}`;
+        $("orchResultReason").textContent = res.reason_summary || res.error || "";
+        const tok = res.tokens ? res.tokens.total : (res.estimated_tokens || 0);
+        const sav = Number(res.claude_savings_usd || 0).toFixed(4);
+        $("orchResultMetrics").textContent = `~${Number(tok).toLocaleString()} tok · Claude savings: $${sav}`;
+
+        const orchSkillRow = $("orchSkillRow");
+        if (orchSkillRow) {
+          orchSkillRow.innerHTML = "";
+          const j = res.skill_judgment || {};
+          const loads = Array.isArray(j.load_skills) ? j.load_skills : [];
+          const unloads = Array.isArray(j.unload_skills) ? j.unload_skills : [];
+          for (const s of loads) {
+            const chip = document.createElement("span");
+            chip.className = "imp-tag";
+            chip.textContent = `+ Load ${s.name}`;
+            chip.title = s.path || s.domain || "";
+            orchSkillRow.appendChild(chip);
+          }
+          for (const u of unloads) {
+            const chip = document.createElement("span");
+            chip.className = "imp-tag";
+            chip.style.opacity = "0.75";
+            chip.textContent = `− Unload ${u.name}`;
+            chip.title = u.unload_reason || "no longer needed";
+            orchSkillRow.appendChild(chip);
+          }
+          orchSkillRow.classList.toggle("hidden", loads.length === 0 && unloads.length === 0);
+        }
+
+        const traceEl = $("orchTraceList");
+        traceEl.innerHTML = "";
+        if (Array.isArray(res.trace) && res.trace.length) {
+          for (const step of res.trace) {
+            const row = document.createElement("div");
+            row.className = "trace-item";
+            row.innerHTML = `<span><strong>${escapeHtml(step.step)}</strong> (${escapeHtml(step.role || "")}) → ${escapeHtml(step.provider)} · ${escapeHtml(step.model || "")}</span><span class="muted">${escapeHtml(step.reason_code || "")}</span>`;
+            traceEl.appendChild(row);
+          }
+        }
+
+        const outPane = $("orchOutputPane");
+        if (!isPreview && res.output) {
+          outPane.classList.remove("hidden");
+          outPane.innerHTML = renderMarkdown(res.output);
+        } else {
+          outPane.classList.add("hidden");
+          outPane.innerHTML = "";
+        }
+        if (res.status) renderOrchestratorStatus(res.status);
+      }
+
+      document.querySelectorAll("[data-main-tab]").forEach((btn) => {
+        btn.addEventListener("click", () => switchMainTab(btn.dataset.mainTab));
+      });
+
+      $("orchPreviewBtn").addEventListener("click", async () => {
+        const task = ($("orchTaskInput").value || "").trim();
+        if (!task) { showBanner("Enter a task to preview routing.", "err"); return; }
+        hideBanner();
+        try {
+          const res = await bridge.request("orchestratorPreview", {
+            task,
+            context: $("orchContextInput").value || "",
+            role: $("orchRole").value,
+            override_provider: $("orchOverride").value || null,
+          });
+          renderOrchestratorResult(res, true);
+        } catch (err) {
+          showBanner(err.message || "Preview failed.", "err");
+        }
+      });
+
+      $("orchRunBtn").addEventListener("click", async () => {
+        const task = ($("orchTaskInput").value || "").trim();
+        if (!task) { showBanner("Enter a task to run.", "err"); return; }
+        hideBanner();
+        const btn = $("orchRunBtn");
+        btn.disabled = true;
+        const old = btn.textContent;
+        btn.textContent = "Running...";
+        try {
+          const res = await bridge.request("orchestratorRun", {
+            task,
+            context: $("orchContextInput").value || "",
+            role: $("orchRole").value,
+            override_provider: $("orchOverride").value || null,
+          });
+          renderOrchestratorResult(res, false);
+        } catch (err) {
+          showBanner(err.message || "Orchestration failed.", "err");
+        } finally {
+          btn.disabled = false;
+          btn.textContent = old;
+        }
+      });
+
+      $("orchSaveCfgBtn").addEventListener("click", async () => {
+        try {
+          const st = await bridge.request("orchestratorSaveConfig", {
+            gemini: { dailyBudgetUsd: Number($("orchGemBudget").value) || 10 },
+            claude: { dailyBudgetUsd: Number($("orchClaBudget").value) || 10 },
+            claudePreserveThreshold: Number($("orchPreserveThresh").value) || 0.7,
+          });
+          renderOrchestratorStatus(st);
+          showBanner("Orchestrator budget & pacing config saved.", "ok");
+        } catch (err) {
+          showBanner(err.message || "Failed saving pacing config.", "err");
+        }
+      });
+
+      $("orchResetBtn").addEventListener("click", async () => {
+        try {
+          const st = await bridge.request("orchestratorResetUsage", {});
+          renderOrchestratorStatus(st);
+          showBanner("Reset daily Gemini + Claude counters.", "ok");
+        } catch (err) {
+          showBanner(err.message || "Failed resetting counters.", "err");
+        }
+      });
+
+      // Host events (from VS Code Extension Host or MCP App Host)
+      bridge.onEvent((event, data) => {
+        if (event === "switchTab") {
+          if (data && data.orchestrator) renderOrchestratorStatus(data.orchestrator);
+          if (data && data.tab) switchMainTab(data.tab);
+        } else if (event === "stateUpdate") {
+          hydrateState(data);
+        } else if (event === "contextUpdate") {
+          state.workspaceContext = (data && data.workspaceContext) || "";
+          state.contextLabel = (data && data.contextLabel) || "";
+          state.contextDetached = false;
+          renderHeaderAndControls();
+        } else if (event === "prefillDraft") {
+          if (data && typeof data.draft === "string") {
+            $("draftInput").value = data.draft;
+            renderDraftStats();
+          }
+          if (data && data.target) state.target = data.target;
+          if (data && data.mode) state.mode = data.mode;
+          renderHeaderAndControls();
+          $("draftInput").focus();
+        } else if (event === "focusDraft") {
+          $("draftInput").focus();
+        } else if (event === "toolInput") {
+          const args = (data && data.arguments) || {};
+          if (typeof args.draft === "string" && args.draft) {
+            $("draftInput").value = args.draft;
+            renderDraftStats();
+          }
+          if (typeof args.prompt === "string" && args.prompt) {
+            $("draftInput").value = args.prompt;
+            renderDraftStats();
+            setBusy(true, "Re-Prompting...");
+          }
+          if (args.target) state.target = args.target;
+          if (args.mode) state.mode = args.mode;
+          renderHeaderAndControls();
+        } else if (event === "toolResult") {
+          setBusy(false);
+          if (data && data.structuredContent) {
+            if (data.structuredContent.rewritten_prompt) {
+              applyRewriteResult(data.structuredContent);
+            } else {
+              hydrateState(data.structuredContent);
+            }
+          }
+        } else if (event === "toolCancelled") {
+          setBusy(false);
+        }
+      });
+
+      // Auto-resize observer for inline MCP App frames
+      if (typeof ResizeObserver === "function") {
+        const ro = new ResizeObserver(() => {
+          const root = $("appRoot");
+          if (root) bridge.notifySize(root.scrollWidth, root.scrollHeight + 12);
+        });
+        ro.observe($("appRoot"));
+      }
+
+      // Bootstrap
+      (async function init() {
+        renderHeaderAndControls();
+        renderDraftStats();
+        try {
+          await bridge.connect();
+          renderHeaderAndControls();
+          const initial = await bridge.request("getState", {});
+          hydrateState(initial);
+        } catch (err) {
+          // Initial MCP App render may rely on ontoolresult before tools/call finishes
+          console.warn("Re-Prompt init warning:", err);
+        }
+      })();
+    })();
+  </script>
+</body>
+
+</html>

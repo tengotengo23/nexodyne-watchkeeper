@@ -5,6 +5,7 @@ let n = 0; const t = (name, fn) => { fn(); n++; console.log('ok', name); };
 const guard = ti => run('wk-guard.mjs', { tool_name: ti.command ? 'Bash' : 'Read', tool_input: ti });
 t('planted private file is blocked', () => assert.equal(guard({ file_path: '/x/proj/.env' }).status, 2));
 t('key dir blocked', () => assert.equal(guard({ file_path: '/Users/a/Developer/keys/azure.txt' }).status, 2));
+t('files nested deeper in key and ssh folders blocked too', () => { assert.equal(guard({ file_path: '/Users/a/Developer/keys/sub/azure.txt' }).status, 2); assert.equal(guard({ file_path: '/Users/a/.ssh/keys.d/id' }).status, 2); });
 t('shell cat of .env blocked', () => assert.equal(guard({ command: 'cat .env' }).status, 2));
 t('normal read allowed', () => assert.equal(guard({ file_path: '/x/proj/src/app.js' }).status, 0));
 t('hard reset blocked', () => assert.equal(guard({ command: 'git reset --hard HEAD~1' }).status, 2));
@@ -30,15 +31,24 @@ t('project .wk/ ignores itself: the first log writes .wk/.gitignore ("*"); one t
 t('non-claim passes', () => { say('Here is the plan.'); assert.equal(gate().stdout, ''); });
 t('start hook silent without worklog', () => assert.equal(run('wk-start.mjs', {}).stdout, ''));
 t('start hook capped', () => { fs.mkdirSync(path.join(tmp, 'worklog'), { recursive: true }); fs.writeFileSync(path.join(tmp, 'worklog/STATE.md'), '## Now\n' + 'x'.repeat(900) + '\n'.repeat(1) + '- b\n'.repeat(20)); const o = run('wk-start.mjs', {}, [], { WK_START_BYTES: '500' }).stdout; assert.ok(o.length <= 502 && o.includes('Now')); });
+t('start hook mentions graphify only when graphify-out/graph.json exists', () => {
+  const gp = fs.mkdtempSync(path.join(os.tmpdir(), 'wk-gph-'));
+  assert.equal(run('wk-start.mjs', {}, [], { CLAUDE_PROJECT_DIR: gp }).stdout, '');
+  fs.mkdirSync(path.join(gp, 'graphify-out'), { recursive: true });
+  fs.writeFileSync(path.join(gp, 'graphify-out/graph.json'), '{}');
+  assert.match(run('wk-start.mjs', {}, [], { CLAUDE_PROJECT_DIR: gp }).stdout, /== GRAPHIFY ==/);
+  fs.rmSync(path.join(gp, 'graphify-out'), { recursive: true, force: true });
+  assert.equal(run('wk-start.mjs', {}, [], { CLAUDE_PROJECT_DIR: gp }).stdout, '');
+});
 t('optimise dry run diff, apply backs up; the default model goes in env.ANTHROPIC_MODEL and the model key stays as it was (P2-250)', () => {
   const f = path.join(tmp, 's.json'), opt = (...a) => spawnSync('node', [path.join(B, 'wk-optimise.mjs'), '--file', f, ...a], { encoding: 'utf8' });
   fs.writeFileSync(f, '{"autoCompactWindow":1000000,"model":"claude-fable-5-2"}');
   const dry = opt(); assert.match(dry.stdout, /env\.ANTHROPIC_MODEL/); assert.ok(!/^model:/m.test(dry.stdout), 'the tool no longer proposes the model key');
-  assert.match(dry.stdout, /New sessions start on Sonnet\. \/model picks a stronger model for one session\. To undo, remove env\.ANTHROPIC_MODEL\./);
+  assert.match(dry.stdout, /New sessions start on Opus 5\.5 at xhigh effort\. \/model picks another model for one session\. To undo, remove env\.ANTHROPIC_MODEL\./);
   assert.equal(JSON.parse(fs.readFileSync(f)).env, undefined, 'a dry run changes nothing');
   const r = opt('--apply'); assert.match(r.stdout, /applied/);
   const s = JSON.parse(fs.readFileSync(f));
-  assert.equal(s.model, 'claude-fable-5-2'); assert.equal(s.env.ANTHROPIC_MODEL, 'sonnet'); assert.equal(s.modelSettings['claude-fable-5-2'].effortLevel, 'high');
+  assert.equal(s.model, 'claude-fable-5-2'); assert.equal(s.env.ANTHROPIC_MODEL, 'opus'); assert.equal(s.modelSettings['claude-opus-5-5'].effortLevel, 'xhigh'); assert.equal(s.modelSettings['claude-fable-5-2'].effortLevel, 'high');
   assert.equal(s.env.CLAUDE_AUTOCOMPACT_PCT_OVERRIDE, '65'); assert.ok(fs.readdirSync(tmp).some(x => x.startsWith('s.json.wk-backup-')), 'the backup exists');
   assert.match(opt().stdout, /settings already at the baseline/);
 });

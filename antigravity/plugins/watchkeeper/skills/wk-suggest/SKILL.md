@@ -5,6 +5,9 @@ description: >-
   Use it instead of asking the owner in chat whenever you need their decision, or want to propose something they should approve.
 ---
 
+Part of the /wk family (`/wk`, `/wk status`, `/wk graph`, `/wk sync`, `/wk stop`, `/wk go`, `/wk task`, `/wk take-task`). This is an alias.
+
+
 # Post a suggestion for the owner
 
 The owner is often not watching the chat. They see suggestions in the W panel (and later on their phone) under "Waiting for you", and answer with one press: OK, Not now, or No. So whenever you need their decision, post a suggestion instead of asking in chat, then carry on with everything that does not depend on it.

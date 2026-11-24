@@ -1,0 +1,16 @@
+{
+  "name": "re-prompt",
+  "displayName": "Re-Prompt + Duo Orchestrator",
+  "version": "1.3.0",
+  "description": "Single-install overlay prompt composer, approved-source Gemini + Claude skill vault with automatic Load/Keep/Unload judging, and quota/spend-aware orchestrator.",
+  "logo": "assets/logo.svg",
+  "author": {
+    "name": "Tengo"
+  },
+  "repository": "https://github.com/tengo/re-prompt",
+  "suggestedPrompts": [
+    "Check Gemini and Claude orchestrator quota and integration status",
+    "Run a token-heavy summary or multi-step workflow via the Gemini + Claude orchestrator",
+    "Open the Re-Prompt overlay composer"
+  ]
+}

@@ -10,7 +10,12 @@
 import fs from 'node:fs'; import path from 'node:path'; import os from 'node:os';
 import { loadConfig, meterFile, meterFromEvents, paceReading, paceLine, writeAtomic, nowMs, StewardError, mainModel } from './steward-lib.mjs';
 import { readJSON } from './lib.mjs';
-const L = process.env.WK_LEDGER || path.join(os.homedir(), '.wk/ledger.jsonl'); const [cmd, a, b] = process.argv.slice(2);
+if (process.argv.slice(2).includes('--help') || process.argv.slice(2).includes('-h')) {
+  console.log('usage: wk-ledger add <item> [p80] | context <transcript> | summary [days] | pace [--event <file>|-] [--json] | spike');
+  process.exit(0);
+}
+const wkHome = () => path.resolve(process.env.WK_HOME || path.join(os.homedir(), '.wk'));
+const L = process.env.WK_LEDGER || path.join(wkHome(), 'ledger.jsonl'); const [cmd, a, b] = process.argv.slice(2);
 const q = (xs, p) => xs.length ? xs.slice().sort((x, y) => x - y)[Math.min(xs.length - 1, Math.floor(p * xs.length))] : 0;
 function eventsFrom(text) {
   const out = []; for (const l of String(text).split('\n')) { if (!l.trim()) continue; try { const j = JSON.parse(l); if (j && typeof j === 'object') out.push(j); } catch {} }
@@ -41,6 +46,7 @@ if (cmd === 'add') {
   if (row.p80_estimate && row.cost_usd > 2 * row.p80_estimate) { console.error(`STOP: ${a} cost ${row.cost_usd} > 2x its p80 estimate ${row.p80_estimate}`); process.exit(3); }
   console.log(JSON.stringify(row));
 } else if (cmd === 'context') {
+  if (!a) { console.error('usage: wk-ledger context <transcript.jsonl>'); process.exit(2); }
   const ctx = []; for (const l of fs.readFileSync(a, 'utf8').split('\n')) { try { const u = JSON.parse(l).message?.usage; if (u) ctx.push((u.input_tokens || 0) + (u.cache_read_input_tokens || 0) + (u.cache_creation_input_tokens || 0)); } catch {} }
   const tot = ctx.reduce((x, y) => x + y, 0), over = ctx.filter(c => c > 200000).reduce((x, y) => x + y, 0);
   console.log(JSON.stringify({ calls: ctx.length, median: q(ctx, .5), p90: q(ctx, .9), max: Math.max(0, ...ctx), share_over_200k: tot ? +(over / tot).toFixed(2) : 0, verdict: tot && over / tot > .3 ? 'WARN: compaction fires too late; run wk-optimise' : 'ok' }));

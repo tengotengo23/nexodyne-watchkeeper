@@ -1,0 +1,11 @@
+{
+  "name": "re-prompt",
+  "version": "1.3.0",
+  "description": "Overlay prompt composer and unified Gemini + Claude quota/spend-aware orchestrator.",
+  "author": {
+    "name": "Tengo"
+  },
+  "repository": "https://github.com/tengo/re-prompt",
+  "license": "MIT",
+  "keywords": ["prompt", "prompt-engineering", "re-prompt", "claude-code", "antigravity"]
+}

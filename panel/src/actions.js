@@ -88,7 +88,7 @@ async function installAsk(paths) {
 const script = (paths, name) => path.join(paths.pluginPath, 'bin', name);
 const hasScript = (paths, name) => { try { return fs.statSync(script(paths, name)).isFile(); } catch { return false; } };
 // The scripts' own settings pass through when set (the claude binary, the job limits); nothing else of this process's environment does.
-const PASS = ['WK_CLAUDE_BIN', 'WK_JOB_FREE_MB', 'WK_JOB_PACE_PCT', 'WK_JOB_WALL_MS', 'WK_JOB_KILL_MS', 'WK_SSH_KEYGEN', 'WK_LAUNCHCTL'];
+const PASS = ['WK_CLAUDE_BIN', 'WK_AGY_BIN', 'WK_CARBON_FALLBACK', 'WK_JOB_FREE_MB', 'WK_JOB_PACE_PCT', 'WK_JOB_WALL_MS', 'WK_JOB_KILL_MS', 'WK_SSH_KEYGEN', 'WK_LAUNCHCTL', 'REPROMPT_SKILL_VAULT_DIR'];
 function runScript(paths, name, args, { timeoutMs = 20000 } = {}) {
   if (!hasScript(paths, name)) return Promise.resolve({ ok: false, out: '', err: `the plugin has no bin/${name} yet` });
   const pass = {}; for (const k of PASS) if (typeof process.env[k] === 'string' && process.env[k]) pass[k] = process.env[k];
@@ -119,4 +119,19 @@ async function phoneControl(paths, on) {
   return res(r.ok, said(r, r.ok ? 'Done.' : 'That did not work.'), { where: 'phone' });
 }
 
-module.exports = { MONEY_NOTE, question, suggestion, send, task, stopSwitch, installAsk, jobStart, jobReply, jobStop, phoneKey, phoneControl };
+async function skillsSync(paths) {
+  const r = await runScript(paths, 'wk-skill-sync.mjs', ['run', '--force', '--no-clone'], { timeoutMs: 45000 });
+  return res(r.ok, said(r, r.ok ? 'Skills synced.' : 'Skill sync did not work.'), { where: 'skills' });
+}
+
+// P2-272 (B): the owner's OK or No for one staged skill source (the slug is checked by data.validateMessage).
+async function skillDecide(paths, verb, slug) {
+  if (typeof slug !== 'string' || !D.SOURCE_REF.test(slug)) return res(false, 'Unknown skill source.', { where: 'skills' });
+  const r = await runScript(paths, 'wk-skill-sync.mjs', [verb, slug], { timeoutMs: 120000 });
+  const ok = verb === 'approve' ? 'Approved. Its skills are indexed.' : 'Rejected. Discovery will not add it again.';
+  return res(r.ok, said(r, r.ok ? ok : (verb === 'approve' ? 'Approve did not work.' : 'Reject did not work.')), { where: 'skills' });
+}
+const skillApprove = (paths, slug) => skillDecide(paths, 'approve', slug);
+const skillReject = (paths, slug) => skillDecide(paths, 'reject', slug);
+
+module.exports = { MONEY_NOTE, question, suggestion, send, task, stopSwitch, installAsk, jobStart, jobReply, jobStop, phoneKey, phoneControl, skillsSync, skillApprove, skillReject };

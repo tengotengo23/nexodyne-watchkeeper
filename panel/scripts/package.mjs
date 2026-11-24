@@ -9,7 +9,9 @@ const root = path.join(path.dirname(fileURLToPath(import.meta.url)), '..');
 const dist = process.env.WK_VSIX_DIR ? path.resolve(process.env.WK_VSIX_DIR) : path.join(root, '..', 'dist');   // WK_VSIX_DIR: a trial build elsewhere
 const pkg = JSON.parse(fs.readFileSync(path.join(root, 'package.json'), 'utf8'));
 // Every file the extension loads: test/extension.test.js checks that each relative require() is in this list.
-const FILES = ['package.json', 'README.md', 'LICENSE.txt', 'extension.js', 'src/data.js', 'src/render.js', 'src/actions.js', 'src/legal-words.js', 'media/main.css', 'media/main.js', 'media/w.svg', 'media/icon.png'];
+const FILES = ['package.json', 'README.md', 'LICENSE.txt', 'extension.js', 'src/data.js', 'src/render.js', 'src/actions.js', 'src/legal-words.js', 'src/graphify-layer.js', 'src/skill-gate.js', 'src/learning-bridge.js', 'src/watchdog-bridge.js', 'src/chat-sessions.js', 'src/prompt-prefix.js', 'src/channel.js', 'src/task-handover.js', 'src/reprompt-controller.js', 'src/reprompt-engine.js', 'src/reprompt-orchestrator.js', 'src/dag-runner.js', 'media/main.css', 'media/main.js', 'media/w.svg', 'media/icon.png', 'media/reprompt_app.html', 'media/reprompt-icon.svg', 'media/reprompt-icon.png'];
+// One Re-Prompt app page: remake the copies from reprompt/ui before packing.
+execFileSync(process.execPath, [path.join(root, '..', 'bin', 'wk-sync-app-page.mjs')], { stdio: 'inherit' });
 const x = s => String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 
 const stage = fs.mkdtempSync(path.join(os.tmpdir(), 'wk-vsix-'));
@@ -22,7 +24,7 @@ for (const f of FILES) {
 // README.md is the store listing (Open VSX shows it); LICENSE.txt is the MIT licence.
 
 const exts = [...new Set(FILES.map(f => path.extname(f).slice(1)))];
-const TYPES = { json: 'application/json', js: 'application/javascript', css: 'text/css', svg: 'image/svg+xml', png: 'image/png', md: 'text/markdown', txt: 'text/plain' };
+const TYPES = { json: 'application/json', js: 'application/javascript', css: 'text/css', svg: 'image/svg+xml', png: 'image/png', md: 'text/markdown', txt: 'text/plain', html: 'text/html' };
 fs.writeFileSync(path.join(stage, '[Content_Types].xml'), `<?xml version="1.0" encoding="utf-8"?>
 <Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension=".vsixmanifest" ContentType="text/xml"/>${exts.map(e => `<Default Extension=".${e}" ContentType="${TYPES[e]}"/>`).join('')}</Types>
 `);

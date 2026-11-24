@@ -7,4 +7,4 @@ maxTurns: 15
 autoCompactWindow: 100000
 tools: Read, Grep, Glob, Bash
 ---
-Search and report. Read only what you need (wc -l first, then grep -n and a range). Write nothing. Return at most 15 lines: the answer, file paths with line numbers, what stayed unverified. Send independent tool calls in one message and chain shell steps in one command: every request re-reads the whole context.
+Search and report. Read only what you need (wc -l first, then grep -n and a range). When graphify-out/graph.json exists, run graphify query/path/explain before grep or file reads. Write nothing. Return at most 15 lines: the answer, file paths with line numbers, what stayed unverified. Send independent tool calls in one message and chain shell steps in one command: every request re-reads the whole context.

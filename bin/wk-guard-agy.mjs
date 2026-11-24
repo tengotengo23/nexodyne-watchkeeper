@@ -12,7 +12,8 @@
 //   allow: Antigravity runs the call without asking you. ask: Antigravity asks you first; an unattended run (the hourly
 //   automation) then refuses the call.
 //   This machine's decision is in ~/.wk/antigravity-hook.json (written by wk-antigravity install; "allow" only under the
-//   Turbo preset, eager commands and Turbo browser scripts). Your own chats get it for every tool (no file: "ask").
+//   Turbo preset, eager commands and Turbo browser scripts). Your own chats get it for every tool (no file, as in the
+//   self-contained marketplace plugin: the same three settings are read at each call, so allow only under Turbo).
 //   In Watchkeeper's conversations the 8 tools below get it (no file: config/gemini.json hook_pass_decision, else "ask"),
 //   and every other tool gets "ask": Watchkeeper cannot know what your own Antigravity rules say for it.
 // Antigravity ignores a hook that exits non-zero, so this always exits 0 and fails closed by printing deny.
@@ -20,14 +21,17 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
+import { fileURLToPath } from 'node:url';
 import { gates, glob2re } from './lib.mjs';
+import { detectPass } from './antigravity-lib.mjs';
 
-const BIN = path.dirname(new URL(import.meta.url).pathname);
+const HERE_FILE = fileURLToPath(import.meta.url);
+const BIN = path.dirname(HERE_FILE);
 const say = o => { process.stdout.write(JSON.stringify(o) + '\n'); };
 const deny = reason => say({ decision: 'deny', reason: String(reason).trim().slice(0, 1000) || 'Watchkeeper refused this call.' });
 const GIT_PUSH = /\bgit\b[^;&|\n]*\spush\b/;
 const pick = (o, keys) => { for (const k of keys) if (typeof o[k] === 'string' && o[k]) return o[k]; return undefined; };
-export const KNOWN = ['run_command', 'view_file', 'write_to_file', 'replace_file_content', 'multi_replace_file_content', 'list_dir', 'grep_search', 'find_by_name'];
+export const KNOWN = ['run_command', 'view_file', 'read_file', 'write_to_file', 'write_file', 'replace_file_content', 'edit_file', 'multi_replace_file_content', 'list_dir', 'grep_search', 'find_by_name'];
 // path arguments of Antigravity's tools (hooks docs and agy-facts), plus the usual spellings
 const PATH_KEYS = ['AbsolutePath', 'TargetFile', 'FilePath', 'DirectoryPath', 'SearchPath', 'SearchDirectory', 'Directory', 'File', 'Path', 'Uri', 'Source', 'Destination', 'SourcePath', 'DestinationPath', 'file_path', 'path', 'notebook_path', 'uri'];
 const pathsIn = args => {
@@ -57,9 +61,12 @@ export function toGuard(ev) {
       const cmd = pick(args, ['CommandLine', 'commandLine', 'Command', 'command', 'cmd']);
       return t('Bash', { command: cmd !== undefined ? cmd : JSON.stringify(args) });   // unknown shape: the whole args are checked
     }
-    case 'view_file': return t('Read', { file_path: file || '' });
-    case 'write_to_file': return t('Write', { file_path: file || '', content: pick(args, ['CodeContent', 'content']) || '' });
-    case 'replace_file_content': return t('Edit', { file_path: file || '', new_string: pick(args, ['ReplacementContent', 'new_string']) || '' });
+    case 'view_file':
+    case 'read_file': return t('Read', { file_path: file || '' });
+    case 'write_to_file':
+    case 'write_file': return t('Write', { file_path: file || '', content: pick(args, ['CodeContent', 'Content', 'content']) || '' });
+    case 'replace_file_content':
+    case 'edit_file': return t('Edit', { file_path: file || '', new_string: pick(args, ['ReplacementContent', 'Replacement', 'new_string']) || '' });
     case 'multi_replace_file_content': {
       const chunks = Array.isArray(args.ReplacementChunks) ? args.ReplacementChunks : [];
       return t('MultiEdit', { file_path: file || '', edits: chunks.map(c => ({ new_string: c && typeof c === 'object' ? String(c.ReplacementContent ?? '') : String(c) })) });
@@ -97,12 +104,26 @@ const realish = p => {
 };
 const under = (p, dir) => p === dir || p.startsWith(dir + path.sep);
 export function dataWrite(name, args, cwd) {
-  if (!(['write_to_file', 'replace_file_content', 'multi_replace_file_content'].includes(name) || (!KNOWN.includes(name) && WRITE_TOOL.test(name)))) return null;
+  if (!(['write_to_file', 'write_file', 'replace_file_content', 'edit_file', 'multi_replace_file_content'].includes(name) || (!KNOWN.includes(name) && WRITE_TOOL.test(name)))) return null;
   const home = realish(wkHome()), trees = path.join(home, 'worktrees');
   const treesOk = realish(trees) === trees;   // worktrees/ itself a link: no exception at all
   for (const raw of pathsIn(args)) {
     const p = realish(path.resolve(cwd || os.homedir(), raw.replace(/^~(?=\/|$)/, os.homedir())));
     if (under(p, home) && !(treesOk && p !== trees && under(p, trees))) return p;
+  }
+  return null;
+}
+
+// P2-272 (B): the skill vault (~/.gemini/skill-vault) is read-only to Gemini's file tools as well; the exposed skills
+// (~/.wk/skills-exposed) already sit inside the data folder above. Reads there go on to wk-guard, which allows them in
+// the lane after resolving links.
+const skillVault = () => path.resolve(process.env.REPROMPT_SKILL_VAULT_DIR || path.join(os.homedir(), '.gemini', 'skill-vault'));
+export function skillWrite(name, args, cwd) {
+  if (!(['write_to_file', 'write_file', 'replace_file_content', 'edit_file', 'multi_replace_file_content'].includes(name) || (!KNOWN.includes(name) && WRITE_TOOL.test(name)))) return null;
+  const vault = realish(skillVault());
+  for (const raw of pathsIn(args)) {
+    const p = realish(path.resolve(cwd || os.homedir(), raw.replace(/^~(?=\/|$)/, os.homedir())));
+    if (under(p, vault)) return p;
   }
   return null;
 }
@@ -156,12 +177,14 @@ export function main(raw) {
         guarded = true;
       }
     }
-    if (!guarded) return say({ decision: machinePass() || 'ask' });   // your own chat: no Watchkeeper rule at all
+    if (!guarded) return say({ decision: machinePass() || detectPass().pass });   // your own chat: no Watchkeeper rule at all
   }
   if (!g.tool_name) return deny('Watchkeeper got a tool call without a name, so it refused it.');
   const call = callOf(ev);
   const hit = dataWrite(call.name, call.args, g.cwd);
   if (hit) return deny(`watchkeeper blocked (gemini): ${hit} is in Watchkeeper's data folder. Only Watchkeeper's own commands write there; work in your worktree.`);
+  const sk = skillWrite(call.name, call.args, g.cwd);
+  if (sk) return deny(`watchkeeper blocked (gemini): ${sk} is in the skill vault; skill folders are read-only.`);
   // wk-guard checks two paths (file_path, path); a tool with more path arguments has the rest checked here
   const extra = KNOWN.includes(call.name) ? [] : pathsIn(call.args).slice(2);
   if (extra.length) {
@@ -170,7 +193,9 @@ export function main(raw) {
     if (bad) return deny(`watchkeeper blocked (path): ${bad} is excluded by gates.json; ask the owner for a gate.`);
   }
   // blocked.log goes to the workspace's .wk/ (as with Claude), else ~/.wk/
-  const proj = (Array.isArray(ev.workspacePaths) && typeof ev.workspacePaths[0] === 'string' && path.isAbsolute(ev.workspacePaths[0])) ? ev.workspacePaths[0] : os.homedir();
+  const proj = (Array.isArray(ev.workspacePaths) && typeof ev.workspacePaths[0] === 'string' && path.isAbsolute(ev.workspacePaths[0]))
+    ? ev.workspacePaths[0]
+    : (typeof g.cwd === 'string' && path.isAbsolute(g.cwd) ? g.cwd : os.homedir());
   const r = spawnSync(process.execPath, [path.join(BIN, 'wk-guard.mjs')], { input: JSON.stringify(g), encoding: 'utf8', timeout: 8000,   // well inside the hook's 30 s, so a slow guard is a deny, never a skipped hook
     env: { ...process.env, CLAUDE_PROJECT_DIR: proj, CLAUDE_PLUGIN_ROOT: path.resolve(BIN, '..') } });
   if (r.status === 0) {
@@ -182,7 +207,7 @@ export function main(raw) {
   return deny(why);
 }
 
-const isMain = process.argv[1] && fs.realpathSync(process.argv[1]) === fs.realpathSync(new URL(import.meta.url).pathname);
+const isMain = process.argv[1] && fs.realpathSync(process.argv[1]) === fs.realpathSync(HERE_FILE);
 if (isMain) {
   try { main(fs.readFileSync(0, 'utf8')); } catch (e) { deny(`Watchkeeper's hook failed (${e.message}), so it refused the call.`); }
   process.exitCode = 0;

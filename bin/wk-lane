@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 // Launch the unattended lane: clean environment (no personal rows, no login), prompt scanned before any model call.
 // usage: wk-lane [--check-env] --roots DIR[:DIR] -- <prompt file>   (WK_CLAUDE overrides the claude binary, for tests)
-import fs from 'node:fs'; import { spawnSync } from 'node:child_process';
+import fs from 'node:fs'; import { spawn } from 'node:child_process';
 import { scanPII, pinState, PIN_MSG } from './lib.mjs';
 const a = process.argv.slice(2), has = f => a.includes(f), val = f => a[a.indexOf(f) + 1];
 const KEEP = ['PATH', 'HOME', 'LANG', 'TMPDIR', 'ANTHROPIC_API_KEY', 'CLAUDE_PLUGIN_ROOT', 'CLAUDE_PROJECT_DIR'];
@@ -17,5 +17,13 @@ if (has('--check-env')) { console.log(JSON.stringify(Object.keys(env).sort())); 
 const pf = a[a.indexOf('--') + 1]; if (!pf) { console.error('usage: wk-lane --roots DIRS -- promptfile'); process.exit(64); }
 const prompt = fs.readFileSync(pf, 'utf8'); const hits = scanPII(prompt);
 if (hits.length) { console.error(`wk-lane: prompt holds private data (${hits.join(', ')}); not sent.`); process.exit(2); }
-const r = spawnSync(process.env.WK_CLAUDE || 'claude', ['-p', prompt, '--output-format', 'json'], { env, encoding: 'utf8', stdio: ['ignore', 'inherit', 'inherit'] });
-process.exit(r.status ?? 1);
+// P2-272: explicit wall-clock limit (WK_LANE_TIMEOUT_MS, default 60 min). The lane runs in its own process group so a
+// timeout or a stop signal ends the whole tree (no orphaned grandchildren); exit 124 on timeout.
+const LIMIT_MS = Math.max(1000, Number(process.env.WK_LANE_TIMEOUT_MS) || 60 * 60 * 1000);
+const child = spawn(process.env.WK_CLAUDE || 'claude', ['-p', prompt, '--output-format', 'json'], { env, stdio: ['ignore', 'inherit', 'inherit'], detached: true });
+const killGroup = sig => { try { process.kill(-child.pid, sig); } catch { try { child.kill(sig); } catch {} } };
+let timedOut = false;
+const timer = setTimeout(() => { timedOut = true; console.error(`wk-lane: stopped after ${Math.round(LIMIT_MS / 1000)}s (timeout).`); killGroup('SIGTERM'); setTimeout(() => killGroup('SIGKILL'), 1500).unref(); }, LIMIT_MS);
+for (const sig of ['SIGINT', 'SIGTERM', 'SIGHUP']) process.on(sig, () => { killGroup('SIGTERM'); setTimeout(() => { killGroup('SIGKILL'); process.exit(130); }, 1500).unref(); });
+child.on('error', e => { clearTimeout(timer); console.error(`wk-lane: ${e.code || 'spawn failed'}`); process.exit(127); });
+child.on('exit', code => { clearTimeout(timer); killGroup('SIGKILL'); process.exit(timedOut ? 124 : (code ?? 1)); });

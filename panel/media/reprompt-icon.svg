@@ -1,0 +1,24 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" width="128" height="128" role="img" aria-label="Re-Prompt Logo">
+  <defs>
+    <linearGradient id="rp-bg" x1="14" y1="14" x2="114" y2="114" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#312E81"/>
+      <stop offset="55%" stop-color="#4F46E5"/>
+      <stop offset="100%" stop-color="#0EA5E9"/>
+    </linearGradient>
+    <linearGradient id="rp-spark" x1="72" y1="26" x2="102" y2="56" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#FEF08A"/>
+      <stop offset="100%" stop-color="#38BDF8"/>
+    </linearGradient>
+  </defs>
+  <!-- ~10% outer margin: rounded square spans 13..115 -->
+  <rect x="13" y="13" width="102" height="102" rx="24" fill="url(#rp-bg)" stroke="#E0E7FF" stroke-opacity="0.35" stroke-width="2.5"/>
+  <!-- Prompt brackets & cursor line -->
+  <path d="M40 46 L27 64 L40 82" fill="none" stroke="#FFFFFF" stroke-width="7" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M62 46 L75 64 L62 82" fill="none" stroke="#A5F3FC" stroke-width="7" stroke-linecap="round" stroke-linejoin="round"/>
+  <line x1="46" y1="78" x2="56" y2="50" stroke="#E0F2FE" stroke-width="6" stroke-linecap="round"/>
+  <!-- Sparkle glyph -->
+  <path d="M90 28 C91.4 36.2 93.8 38.6 102 40 C93.8 41.4 91.4 43.8 90 52 C88.6 43.8 86.2 41.4 78 40 C86.2 38.6 88.6 36.2 90 28 Z" fill="url(#rp-spark)"/>
+  <!-- Re-prompt refinement arc -->
+  <path d="M79 84 C88 84 95 77 95 68" fill="none" stroke="#FFFFFF" stroke-width="5.5" stroke-linecap="round"/>
+  <path d="M89 69 L95 63 L101 69" fill="none" stroke="#FFFFFF" stroke-width="5.5" stroke-linecap="round" stroke-linejoin="round"/>
+</svg>

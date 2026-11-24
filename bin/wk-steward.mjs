@@ -30,6 +30,7 @@ function tickText(r) {
   if (r.held) return `held (${r.held}): ${r.detail}` + (r.dryRun ? ' [dry run]' : '');
   switch (r.outcome) {
     case 'ok': return `visited ${r.project} (lens ${r.lens}${r.wild ? ', wildcard' : ''}): ${r.kept} new idea${r.kept === 1 ? '' : 's'} of ${r.proposed} proposed${dropText(r.dropped)}${r.qa ? `, ${r.qa} assumption${r.qa === 1 ? '' : 's'} noted` : ''}; ${usd(r.cost_usd)}; the week is ${pct(r.meter?.used ?? r.pace?.used)} used`;
+    case 'queued': return `${r.project}: ${r.note || `queued for Antigravity as task ${r.taskId}`}`;   // S8 (P2-272 review)
     case 'invalid': return `visited ${r.project}, but the answer had no usable ideas (${r.reason}); ${usd(r.cost_usd)}`;
     case 'limit': return `the account is at its usage limit; waiting until ${r.until}`;
     case 'refused': return `refused: ${r.detail}`;

@@ -17,6 +17,7 @@ class Stop extends Error { constructor(code, msg) { super(msg); this.code = code
 const bad = m => { throw new Stop(2, m); };
 
 export function parseArgs(argv) {
+  if (argv.includes('--help') || argv.includes('-h')) return { cmd: 'help', pos: [], json: false, filter: 'open' };
   const o = { cmd: argv[0] || '', pos: [], json: false, filter: 'open' };
   const VAL = { '--title': 'title', '--detail': 'detail', '--from': 'from', '--text': 'text' };
   const a = argv.slice(1);
@@ -95,7 +96,8 @@ if (isMain) {
   let code = 0;
   try {
     const o = parseArgs(process.argv.slice(2));
-    if (o.cmd === 'add') console.log(add(o).id);
+    if (o.cmd === 'help') console.log('usage: wk-suggest add|decide|list (see the top of bin/wk-suggest.mjs)');
+    else if (o.cmd === 'add') console.log(add(o).id);
     else if (o.cmd === 'decide') console.log(decide(o.pos[0], o.pos[1], o.text).msg);
     else if (o.cmd === 'list') list(o);
     else bad('usage: wk-suggest add|decide|list (see the top of bin/wk-suggest.mjs)');

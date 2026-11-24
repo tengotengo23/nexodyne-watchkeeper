@@ -25,6 +25,10 @@ export function state({ orchestration, now = new Date() } = {}) {
 const isMain = process.argv[1] && fs.realpathSync(process.argv[1]) === fs.realpathSync(new URL(import.meta.url).pathname);
 if (isMain) {
   const a = process.argv.slice(2);
+  if (a.includes('--help') || a.includes('-h')) {
+    console.log('usage: wk-state [--json] [--orchestration <dir>]');
+    process.exit(0);
+  }
   const i = a.indexOf('--orchestration');
   const s = state({ orchestration: i >= 0 ? a[i + 1] : undefined });
   if (a.includes('--json')) console.log(JSON.stringify(s, null, 2));

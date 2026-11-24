@@ -479,8 +479,8 @@ test('plugin lookup: setting first, then the ~/Projects/watchkeeper clone, then 
 
 test('sessions only: the page marks the plugin sections, and the about section starts hidden', () => {
   const html = R.renderPage({ nonce: 'abc', cspSource: 'x', styleUris: [], scriptUri: 'x' });
-  assert.equal((html.match(/data-needs="plugin"/g) || []).length, 6);
-  assert.equal((html.match(/data-needs="plugin" hidden>/g) || []).length, 6, 'plugin sections start hidden until the data says the plugin is there');
+  assert.equal((html.match(/data-needs="plugin"/g) || []).length, 7); // P2-272 P3: 6 to 7, the usage card is one more plugin section; nothing cut
+  assert.equal((html.match(/data-needs="plugin" hidden>/g) || []).length, 7, 'plugin sections start hidden until the data says the plugin is there');
   assert.equal(D.pluginInstalled(''), false);
   assert.equal(D.pluginInstalled('Projects/watchkeeper'), false, 'a relative plugin folder is never used');
   assert.match(html, /<section aria-labelledby="h-about" data-needs="no-plugin" hidden>/);

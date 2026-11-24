@@ -6,9 +6,14 @@
 const fs = require('fs');
 const path = require('path');
 const os = require('os');
-const { execFile } = require('child_process');
+const { execFile, spawn } = require('child_process');
 // P2-227: the one list of legal words, shared with wk-job, the Gemini queue and the steward
 const { isLegal, legalLabel } = require('./legal-words');
+const { readGraphifyStats } = require('./graphify-layer');
+const gate = require('./skill-gate');
+const { readLearningSummary, EMPTY_SUMMARY } = require('./learning-bridge');
+const { readWatchdogSummary, EMPTY_WATCHDOG } = require('./watchdog-bridge');
+const { CHAT_SESSION_ID, TURN_ID, listChatSessionSummaries, listArchivedChatSessions } = require('./chat-sessions');
 
 const HEAD_TAIL = 64 * 1024;
 const MAX_TEXT = 4000;
@@ -19,7 +24,27 @@ const COMMANDS = ['ready', 'refresh', 'send', 'kill', 'unkill', 'openAdvice', 'i
   // P2-223: "Waiting for you" and Gemini
   'answerQuestion', 'laterQuestion', 'decideSuggestion', 'openTaskDiff', 'addTask', 'copyAutomation',
   // P2-227: jobs and the phone
-  'jobStart', 'jobReply', 'jobStop', 'trustKey', 'rejectKey', 'remoteOn', 'remoteOff'];
+  'jobStart', 'jobReply', 'jobStop', 'trustKey', 'rejectKey', 'remoteOn', 'remoteOff',
+  // v0.8.0: Full-IDE workspace, active Re-Prompt, Orchestrator Carbon High, Skills Library
+  'openWorkspace', 'toggleMaximize', 'popOutWorkspace', 'repromptRewrite', 'repromptSend', 'repromptCopy', 'repromptStudio', 'repromptToggleAuto', 'orchestrateRun', 'skillsSync',
+  // v2.1.0: Conversational session GUI with inline confirmation + mixed-model thinking visibility + seamless task/workspace takeover
+  'chatNew', 'chatSelect', 'chatDelete', 'chatDraft', 'chatConfirm', 'chatCancel', 'chatSendToIde', 'chatInspectClaude', 'chatContinueFromClaude', 'chatToggleConfirm', 'chatToggleSyncIde', 'chatTakeTask', 'chatHandoffToClaude', 'chatToggleAutoTake',
+  // P2-272 4B: the task splitter's plan card (dag-runner.js)
+  'dagRun', 'dagNotNow', 'dagStop', 'dagMerge', 'dagMergeNo', 'dagCheck',
+  // Watchdog 1-click scan & recovery actions
+  'watchdogScan', 'watchdogRecover', 'graphRefresh',
+  // P2-272 (B): the owner approves or rejects a staged skill source
+  'skillApprove', 'skillReject',
+  // P2-272 (P3-B): archive a finished session (✓ Done or /done) and reopen one from Archived (N)
+  'chatDone', 'chatReopen',
+  // P2-272 (P3 fixes, M1): delete an archived session for good, only with confirmed: true from the confirm line
+  'chatPurge'];
+// P2-272 (B): a skill source's slug or owner/repo; never starts with '-' (it becomes a CLI argument).
+const SOURCE_REF = /^[A-Za-z0-9_][A-Za-z0-9._-]{0,99}(\/[A-Za-z0-9_][A-Za-z0-9._-]{0,99})?$/;
+const RP_TARGETS = ['auto', 'antigravity', 'claude', 'general'];
+const RP_MODES = ['auto', 'balanced', 'spec', 'bugfix', 'refactor', 'concise'];
+const ORCH_PREFER = ['auto', 'carbon', 'claude', 'gemini'];
+const SESSION_ID = /^[A-Za-z0-9_-]{4,100}$/;
 
 const isObj = v => v !== null && typeof v === 'object' && !Array.isArray(v);
 const num = v => (typeof v === 'number' && Number.isFinite(v) ? v : 0);
@@ -77,8 +102,10 @@ const PACE_FIELDS = ['decision', 'reason', 'used', 'elapsed', 'target', 'behindP
 function readPace(pluginPath, dataDir, { timeoutMs = 8000, nodeBin } = {}) {
   const script = path.join(pluginPath, 'bin', 'wk-ledger.mjs');
   if (!statOrNull(script)) return Promise.resolve({ state: 'no-plugin', script });
-  const env = { HOME: os.homedir(), PATH: process.env.PATH || '/usr/bin:/bin',
-    WK_STEWARD_DIR: path.join(dataDir, 'steward'), WK_LEDGER: path.join(dataDir, 'ledger.jsonl') };
+  const env = {
+    HOME: os.homedir(), PATH: process.env.PATH || '/usr/bin:/bin',
+    WK_STEWARD_DIR: path.join(dataDir, 'steward'), WK_LEDGER: path.join(dataDir, 'ledger.jsonl')
+  };
   if (process.env.WK_NOW) env.WK_NOW = process.env.WK_NOW;
   if (process.versions.electron) env.ELECTRON_RUN_AS_NODE = '1';
   const bin = nodeBin || process.execPath;
@@ -99,6 +126,148 @@ function readPace(pluginPath, dataDir, { timeoutMs = 8000, nodeBin } = {}) {
         return resolve({ state: 'error', code, detail: first });
       });
   });
+}
+
+// ---------------------------------------------------------------- the status bar's one line (P2-272 Phase 3)
+// `bin/wk-status.mjs --json` gives { line, ... }; the panel shows only `line`. The child leads its own process group and the whole
+// group is ended on a timeout (the process-group rule); nothing runs while the Stop switch (KILL) is on. Cached for ttlMs.
+const STATUS_CACHE = new Map();
+function readStatusLine(pluginPath, dataDir, { timeoutMs = 8000, nodeBin, cwd, killOn = false, ttlMs = 30000, now = Date.now() } = {}) {
+  const script = path.join(pluginPath || '', 'bin', 'wk-status.mjs');
+  if (!pluginPath || !statOrNull(script)) return Promise.resolve({ state: 'no-plugin', line: '' });
+  if (killOn) return Promise.resolve({ state: 'stopped', line: '' });
+  const key = `${script}\n${dataDir}\n${cwd || ''}`, hit = STATUS_CACHE.get(key);
+  if (hit && now - hit.at < ttlMs) return Promise.resolve(hit.value);
+  const env = childEnv({ WK_HOME: dataDir });
+  if (process.env.WK_NOW) env.WK_NOW = process.env.WK_NOW;
+  const bin = nodeBin || process.execPath;
+  const runCwd = cwd && path.isAbsolute(cwd) && statOrNull(cwd) ? cwd : pluginPath;
+  return new Promise(resolve => {
+    let child, out = '', done = false, timer;
+    const finish = value => {
+      if (done) return; done = true; clearTimeout(timer);
+      if (value.state === 'ok') STATUS_CACHE.set(key, { at: now, value });
+      resolve(value);
+    };
+    try {
+      child = spawn(bin, [script, '--json'], { cwd: runCwd, env, detached: process.platform !== 'win32', stdio: ['ignore', 'pipe', 'ignore'], windowsHide: true, shell: false });
+    } catch (e) { return finish({ state: 'error', line: '' }); }
+    timer = setTimeout(() => {
+      try { if (process.platform !== 'win32' && child.pid > 1) process.kill(-child.pid, 'SIGKILL'); else child.kill('SIGKILL'); } catch { /* gone */ }
+      finish({ state: 'error', line: '' });
+    }, timeoutMs);
+    child.stdout.on('data', d => { if (out.length < 512 * 1024) out += d; });
+    child.on('error', () => finish({ state: 'error', line: '' }));
+    child.on('close', () => {
+      let j = null; try { j = JSON.parse(out); } catch { j = null; }
+      const line = isObj(j) && typeof j.line === 'string' ? oneLine(j.line).slice(0, 200) : '';
+      finish(line ? { state: 'ok', line } : { state: 'error', line: '' });
+    });
+  });
+}
+
+// ---------------------------------------------------------------- the usage card (P2-272 Phase 3, spec 3.4)
+// steward/meter.json keeps every rate-limit window the last headless call reported (bin/steward-lib.mjs meterFromEvents).
+// A window that is missing, unreadable or past its reset time is "no reading yet": the card never shows an old number as current.
+const USAGE_WINDOWS = ['seven_day', 'seven_day_fable', 'seven_day_opus', 'seven_day_sonnet', 'five_hour'];
+const USAGE_KEY = /^(seven_day(_[a-z0-9_]{1,24})?|five_hour)$/;
+function readUsageWindows(dataDir, now = Date.now()) {
+  const m = readJsonSmall(path.join(dataDir || '', 'steward', 'meter.json'));
+  const out = { found: !!m, fetchedAt: 0, windows: {} };
+  if (!m) return out;
+  const f = Date.parse(m.fetchedAt); out.fetchedAt = Number.isFinite(f) ? f : 0;
+  const all = isObj(m.windows) ? { ...m.windows } : {};
+  // older meters have no `windows`: the top-level reading is the weekly one, fiveHour the five-hour one
+  if (!isObj(all.seven_day) && Number.isFinite(m.utilization) && Number.isFinite(+m.resetsAt)) all.seven_day = { utilization: m.utilization, resetsAt: m.resetsAt };
+  if (!isObj(all.five_hour) && isObj(m.fiveHour)) all.five_hour = m.fiveHour;
+  for (const [k, w] of Object.entries(all)) {
+    if (!USAGE_KEY.test(k) || !isObj(w)) continue;
+    const u = typeof w.utilization === 'number' ? w.utilization : NaN, r = Number(w.resetsAt);
+    if (!Number.isFinite(u) || u < 0 || !Number.isFinite(r) || r <= 0) continue;
+    const resetsAt = r < 1e11 ? r * 1000 : r;          // seconds in the meter; milliseconds tolerated
+    if (resetsAt <= now) continue;                      // the window has reset since the reading: no reading yet
+    // P2-272 (P3 fixes, S8): today's writers (steward-lib norm(), wk-handoff onStatusLine) store a fraction, so 1.2 is 120 %: over the
+    // limit, shown as such, never folded into a silent 100. `over` says so; pct is not capped. A reading above 1.5 is taken as an
+    // older meter's percentage (kept from stage C; the old-style test pins 12 as 12 %).
+    const pct = Math.max(0, Math.round(u > 1.5 ? u : u * 100));
+    out.windows[k] = { pct, over: pct > 100, resetsAt };
+  }
+  return out;
+}
+
+// The Claude account the IDE is signed in to: `claude auth status --json` (no secrets in it), only `email` kept. The child leads its own
+// process group, is ended after timeoutMs, never runs while the Stop switch is on, and the answer is cached for ttlMs.
+// P2-272 (P3 fixes, S7): an 'ok' answer is kept for ttlMs (10 minutes); every other state (signed out, unknown, error) for errTtlMs
+// (30 seconds), so a failed read is not retried on every refresh nor kept for long. clearAccountCache() empties it (the Refresh button).
+const ACCOUNT_CACHE = new Map();
+function clearAccountCache() { ACCOUNT_CACHE.clear(); }
+const EMAIL = /^[^\s@<>"'`]{1,64}@[^\s@<>"'`]{1,190}$/;
+function readClaudeAccount({ timeoutMs = 5000, killOn = false, ttlMs = 10 * 60 * 1000, errTtlMs = 30 * 1000, now = Date.now(), env, bin = 'claude', cwd } = {}) {
+  if (killOn) return Promise.resolve({ state: 'stopped', email: '' });
+  const runEnv = env || childEnv();
+  const key = `${bin}\n${runEnv.HOME || ''}\n${runEnv.PATH || ''}`, hit = ACCOUNT_CACHE.get(key);
+  if (hit && now - hit.at < (hit.value.state === 'ok' ? ttlMs : errTtlMs)) return Promise.resolve(hit.value);
+  return new Promise(resolve => {
+    let child, out = '', done = false, timer;
+    const finish = value => {
+      if (done) return; done = true; clearTimeout(timer);
+      ACCOUNT_CACHE.set(key, { at: now, value });
+      resolve(value);
+    };
+    try {
+      child = spawn(bin, ['auth', 'status', '--json'], { cwd: cwd || runEnv.HOME || os.homedir(), env: runEnv, detached: process.platform !== 'win32', stdio: ['ignore', 'pipe', 'ignore'], windowsHide: true, shell: false });
+    } catch (e) { return finish({ state: 'error', email: '' }); }
+    timer = setTimeout(() => {
+      try { if (process.platform !== 'win32' && child.pid > 1) process.kill(-child.pid, 'SIGKILL'); else child.kill('SIGKILL'); } catch { /* gone */ }
+      finish({ state: 'error', email: '' });
+    }, timeoutMs);
+    child.stdout.on('data', d => { if (out.length < 64 * 1024) out += d; });
+    child.on('error', () => finish({ state: 'error', email: '' }));
+    child.on('close', () => {
+      let j = null; try { j = JSON.parse(out); } catch { j = null; }
+      if (!isObj(j)) return finish({ state: 'error', email: '' });
+      const email = typeof j.email === 'string' && EMAIL.test(j.email.trim()) ? j.email.trim() : '';
+      finish({ state: j.loggedIn === false ? 'signed-out' : email ? 'ok' : 'unknown', email: j.loggedIn === false ? '' : email });
+    });
+  });
+}
+
+// Gemini through Antigravity: Watchkeeper's own count (the orchestrator's orchestrator_usage.json, reset each UTC day), never Antigravity's
+// login files. There is no weekly Gemini figure anywhere (orchestrator_usage.json holds one UTC day only). The only dated record is the
+// wk-task queue (tasks/<id>/meta.json created_at), so the week line counts tasks queued for Antigravity (P2-272 P3 fixes, M3).
+// The label is only what the owner typed.
+function geminiDataDir(home, env = process.env) {
+  const e = env.REPROMPT_DATA_DIR || env.PLUGIN_DATA;
+  if (e) return e === '~' ? home : /^~[\/]/.test(e) ? path.join(home, e.slice(2)) : e;
+  const wk = path.join(home, '.gemini', 'antigravity', 'plugin_data', 'watchkeeper');
+  if (statOrNull(wk) && statOrNull(wk).isDirectory()) return wk;
+  return process.platform === 'win32' ? path.join(env.APPDATA || path.join(home, 'AppData', 'Roaming'), 're-prompt')
+    : process.platform === 'darwin' ? path.join(home, 'Library', 'Application Support', 're-prompt')
+      : path.join(env.XDG_DATA_HOME || path.join(home, '.local', 'share'), 're-prompt');
+}
+const cleanLabel = v => typeof v === 'string' ? oneLine(v).slice(0, 80) : '';
+const WEEK_MS = 7 * 24 * 3600 * 1000;
+function countWeekTasks(dataDir, now = Date.now()) {
+  let names; try { names = fs.readdirSync(path.join(dataDir, 'tasks')).filter(x => TASK_ID.test(x)); } catch { return null; }
+  let n = 0;
+  for (const id of names.slice(-500)) {
+    const m = readJsonSmall(path.join(dataDir, 'tasks', id, 'meta.json'), 64 * 1024);
+    const at = m && m.id === id ? Date.parse(m.created_at) : NaN;
+    if (Number.isFinite(at) && at <= now + 60000 && now - at < WEEK_MS) n++;
+  }
+  return n;
+}
+function readGeminiUsage(home, { now = Date.now(), env = process.env, label = '', dataDir = '' } = {}) {
+  const out = { label: cleanLabel(label), tracked: false, today: null, cooldownUntil: 0, cooldownReason: '', weekTasks: dataDir ? countWeekTasks(dataDir, now) : null };
+  const raw = readJsonSmall(path.join(geminiDataDir(home || os.homedir(), env), 'orchestrator_usage.json'), 512 * 1024);
+  const u = raw && isObj(raw.providers) && isObj(raw.providers.gemini) ? raw.providers.gemini : null;
+  if (!u) return out;
+  out.tracked = true;
+  const today = new Date(now).toISOString().slice(0, 10);
+  if (raw.date === today) out.today = { requests: Math.max(0, Math.floor(Number(u.requests) || 0)), spendUsd: Math.max(0, Number(u.spend_usd) || 0) };
+  const until = Number(u.cooldown_until || 0) * 1000;
+  if (until > now) { out.cooldownUntil = until; out.cooldownReason = oneLine(String(u.cooldown_reason || '')).slice(0, 60); }
+  return out;
 }
 
 // ---------------------------------------------------------------- reading big files safely
@@ -197,9 +366,11 @@ function readMembers(subDir, now = Date.now()) {
     const task = cleanText(typeof meta.description === 'string' ? meta.description : '').slice(0, 160) || 'No task given';
     const finished = meta.finished === true;
     const state = finished ? 'done' : now - at < 30 * MIN ? 'running' : 'stopped';
-    out.push({ id: n.replace(/\.meta\.json$/, ''), role: /\breview/i.test(task) ? 'Reviewer' : 'Worker', task,
+    out.push({
+      id: n.replace(/\.meta\.json$/, ''), role: /\breview/i.test(task) ? 'Reviewer' : 'Worker', task,
       model: modelName(meta.model), effort: typeof meta.effort === 'string' ? meta.effort.slice(0, 12) : '',
-      state, at, depth: Number.isFinite(meta.spawnDepth) ? meta.spawnDepth : 1 });
+      state, at, depth: Number.isFinite(meta.spawnDepth) ? meta.spawnDepth : 1
+    });
   }
   const rank = { running: 0, stopped: 1, done: 2 };
   return out.sort((a, b) => rank[a.state] - rank[b.state] || b.at - a.at);
@@ -223,12 +394,89 @@ function listSessions(claudeDir, now = Date.now(), { windowMs = 24 * HOUR, activ
   const sessions = [];
   for (const s of found.slice(0, max)) {
     let info; try { info = sessionInfo(s.file); } catch { continue; }
-    sessions.push({ id: s.id, title: info.title, project: info.cwd ? path.basename(info.cwd) : decodeProject(s.folder),
+    sessions.push({
+      id: s.id, title: info.title, project: info.cwd ? path.basename(info.cwd) : decodeProject(s.folder),
+      cwd: info.cwd || '',
       at: s.mtime, active: now - s.mtime < activeMs, model: info.model, tokens: Math.round(info.size / 2.5),
-      members: readMembers(path.join(root, s.folder, s.id, 'subagents'), now) });
+      members: readMembers(path.join(root, s.folder, s.id, 'subagents'), now)
+    });
   }
   sessions.sort((a, b) => (b.active - a.active) || b.at - a.at);
   return { missing: false, root, sessions, more: Math.max(0, found.length - max) };
+}
+
+function readClaudeTranscript(claudeDir, sessionId, { maxBytes = 256 * 1024, maxTurns = 30 } = {}) {
+  if (!claudeDir || !SESSION_ID.test(String(sessionId || ''))) return null;
+  const root = path.resolve(claudeDir, 'projects');
+  let folders;
+  try { folders = fs.readdirSync(root, { withFileTypes: true }); } catch { return null; }
+  for (const d of folders) {
+    if (!d.isDirectory()) continue;
+    const cand = path.resolve(root, d.name, `${sessionId}.jsonl`);
+    if (!cand.startsWith(root + path.sep)) continue;
+    const st = statOrNull(cand);
+    if (!st || !st.isFile()) continue;
+
+    let raw = '';
+    if (st.size > maxBytes) {
+      const fd = fs.openSync(cand, 'r');
+      try {
+        const b = Buffer.alloc(maxBytes);
+        const r = fs.readSync(fd, b, 0, maxBytes, st.size - maxBytes);
+        raw = b.toString('utf8', 0, r).split('\n').slice(1).join('\n');
+      } finally { fs.closeSync(fd); }
+    } else {
+      raw = fs.readFileSync(cand, 'utf8');
+    }
+
+    const lines = parseLines(raw);
+    const info = sessionInfo(cand);
+    const turns = [];
+    for (const o of lines) {
+      if (o.type === 'user' && !o.isMeta && !o.isSidechain && isObj(o.message)) {
+        const txt = userText(o);
+        if (txt) {
+          turns.push({ role: 'user', at: Date.parse(o.timestamp) || 0, text: txt.slice(0, 4000) });
+        }
+      } else if (o.type === 'assistant' && isObj(o.message)) {
+        const rawM = typeof o.message.model === 'string' && o.message.model !== '<synthetic>' ? modelName(o.message.model) : '';
+        const content = o.message.content;
+        const thinking = [];
+        const text = [];
+        const tools = [];
+        if (typeof content === 'string') text.push(content);
+        else if (Array.isArray(content)) {
+          for (const b of content) {
+            if (!isObj(b)) continue;
+            if (b.type === 'thinking' && typeof b.thinking === 'string' && b.thinking.trim()) thinking.push(b.thinking.trim());
+            else if (b.type === 'text' && typeof b.text === 'string' && b.text.trim()) text.push(b.text.trim());
+            else if (b.type === 'tool_use' && b.name && !tools.includes(String(b.name))) tools.push(String(b.name));
+          }
+        }
+        if (text.length || thinking.length || tools.length) {
+          turns.push({
+            role: 'assistant',
+            at: Date.parse(o.timestamp) || 0,
+            model: rawM || info.model || 'Claude',
+            thinking: thinking.join('\n').slice(0, 4000),
+            tools: tools.slice(0, 16),
+            text: text.join('\n').slice(0, 4000),
+          });
+        }
+      }
+    }
+    const members = readMembers(path.join(root, d.name, sessionId, 'subagents'));
+    return {
+      id: sessionId,
+      title: info.title,
+      project: info.cwd ? path.basename(info.cwd) : decodeProject(d.name),
+      cwd: info.cwd || '',
+      model: info.model,
+      turns: turns.slice(-maxTurns),
+      members,
+    };
+  }
+  return null;
 }
 
 // ---------------------------------------------------------------- ledger
@@ -328,9 +576,11 @@ function readAdvice(dataDir, n = 5) {
     if (!isObj(m) || m.id !== id) continue;
     let status = ADVICE_STATES.includes(m.status) ? m.status : 'failed';
     if (status === 'asking' && !pidAlive(m.pid)) status = 'stopped';
-    items.push({ id, status, from: str(m.from, 30) || 'an agent', at: Date.parse(m.asked_at) || 0, done: Date.parse(m.finished_at) || 0,
+    items.push({
+      id, status, from: str(m.from, 30) || 'an agent', at: Date.parse(m.asked_at) || 0, done: Date.parse(m.finished_at) || 0,
       preview: str(m.preview, 300), error: str(m.error, 160), cost: typeof m.cost_usd === 'number' && Number.isFinite(m.cost_usd) ? m.cost_usd : null,
-      hasAnswer: !!statOrNull(path.join(dir, id, 'answer.md')) });
+      hasAnswer: !!statOrNull(path.join(dir, id, 'answer.md'))
+    });
   }
   return { items, total: names.length };
 }
@@ -383,8 +633,12 @@ function readUpdate(dataDir, pluginPath) {
   try { r = JSON.parse(fs.readFileSync(path.join(dataDir, 'update.json'), 'utf8')); } catch { /* no check has run here */ }
   if (!isObj(r)) return { version, route, last: null };
   const at = Date.parse(r.at);
-  return { version, route, last: { at: Number.isFinite(at) ? at : 0, result: UPDATE_RESULTS.includes(r.result) ? r.result : 'problem', problem: str(r.problem, 300), held: str(r.held, 300),
-    moved: isObj(r.moved) ? { from: str(r.moved.from, 20), to: str(r.moved.to, 20) } : null } };
+  return {
+    version, route, last: {
+      at: Number.isFinite(at) ? at : 0, result: UPDATE_RESULTS.includes(r.result) ? r.result : 'problem', problem: str(r.problem, 300), held: str(r.held, 300),
+      moved: isObj(r.moved) ? { from: str(r.moved.from, 20), to: str(r.moved.to, 20) } : null
+    }
+  };
 }
 
 // ---------------------------------------------------------------- kill switch (the other write)
@@ -559,9 +813,11 @@ function readSuggestions(dataDir, now = Date.now()) {
     if (typeof o.title !== 'string' || items.has(o.id)) continue;
     const a = isObj(o.action) ? o.action : {};
     const type = a.type === 'task-merge' && typeof a.ref === 'string' && TASK_ID.test(a.ref) ? 'task-merge' : 'none';
-    items.set(o.id, { id: o.id, at: Date.parse(o.at) || 0, from: FROM.includes(o.from) ? o.from : 'unknown',
+    items.set(o.id, {
+      id: o.id, at: Date.parse(o.at) || 0, from: FROM.includes(o.from) ? o.from : 'unknown',
       title: oneLine(o.title).slice(0, MAX_TITLE) || 'Untitled suggestion', detail: manyLines(typeof o.detail === 'string' ? o.detail : '').slice(0, MAX_TEXT),
-      action: type, ref: type === 'task-merge' ? a.ref : '', money: false });
+      action: type, ref: type === 'task-merge' ? a.ref : '', money: false
+    });
   }
   const open = [];
   for (const s of items.values()) {
@@ -586,10 +842,12 @@ function readTasks(dataDir, n = 8) {
     const m = readJsonSmall(path.join(dir, id, 'meta.json'), 64 * 1024);
     if (!m || m.id !== id) continue;
     const t = k => Date.parse(m[k]) || 0;
-    items.push({ id, title: oneLine(m.title).slice(0, MAX_TITLE) || 'Untitled task', kind: TASK_KINDS.includes(m.kind) ? m.kind : '',
+    items.push({
+      id, title: oneLine(m.title).slice(0, MAX_TITLE) || 'Untitled task', kind: TASK_KINDS.includes(m.kind) ? m.kind : '',
       model: str(m.model, 60), fallback: str(m.fallback, 60), modelUsed: str(m.model_used, 60),
       status: TASK_STATES.includes(m.status) ? m.status : 'unknown', from: FROM.includes(m.from) ? m.from : 'unknown',
-      at: t('created_at'), takenAt: t('taken_at'), doneAt: t('done_at'), note: str(m.note, 300), hasDiff: !!taskDiffFile(dataDir, id), hasTest: !!m.test });
+      at: t('created_at'), takenAt: t('taken_at'), doneAt: t('done_at'), note: str(m.note, 300), hasDiff: !!taskDiffFile(dataDir, id), hasTest: !!m.test
+    });
   }
   return { items, total: names.length };
 }
@@ -604,8 +862,10 @@ function taskDiffFile(dataDir, id) {
 function readGeminiSessions(dataDir, now = Date.now(), n = 5) {
   const text = readCapped(path.join(dataDir, 'gemini', 'sessions.jsonl'), 512 * 1024);
   if (text == null) return { items: [], active: 0 };
-  const rows = parseLines(text).map(o => ({ at: Date.parse(o.at) || 0, id: str(o.conversation_id, 80), model: str(o.model, 60),
-    folder: typeof o.workspace === 'string' && o.workspace ? str(path.basename(o.workspace.replace(/[\\/]+$/, '')), 60) : '' }))
+  const rows = parseLines(text).map(o => ({
+    at: Date.parse(o.at) || 0, id: str(o.conversation_id, 80), model: str(o.model, 60),
+    folder: typeof o.workspace === 'string' && o.workspace ? str(path.basename(o.workspace.replace(/[\\/]+$/, '')), 60) : ''
+  }))
     .filter(r => r.at && r.at <= now + HOUR).sort((a, b) => b.at - a.at);
   const active = new Set(rows.filter(r => now - r.at < 10 * MIN).map(r => r.id || String(r.at))).size;
   // one row per conversation: its newest stop
@@ -709,6 +969,7 @@ function validateMessage(m) {
     return { ok: true, msg: { cmd: 'jobReply', job: m.job, prompt: manyLines(m.prompt) } };
   }
   if (m.cmd === 'jobStop') return typeof m.job === 'string' && JOB_ID.test(m.job) ? { ok: true, msg: { cmd: 'jobStop', job: m.job } } : { ok: false, error: 'unknown job' };
+  if (m.cmd === 'skillApprove' || m.cmd === 'skillReject') return typeof m.slug === 'string' && SOURCE_REF.test(m.slug) ? { ok: true, msg: { cmd: m.cmd, slug: m.slug } } : { ok: false, error: 'unknown skill source' };
   if (m.cmd === 'trustKey' || m.cmd === 'rejectKey') return typeof m.id === 'string' && CRED_ID.test(m.id) ? { ok: true, msg: { cmd: m.cmd, id: m.id } } : { ok: false, error: 'unknown phone key' };
   if (m.cmd === 'send') {
     if (!KINDS.includes(m.kind)) return { ok: false, error: 'unknown kind' };
@@ -717,6 +978,148 @@ function validateMessage(m) {
     if (!text) return { ok: false, error: 'Write something first.' };
     if (text.length > MAX_TEXT) return { ok: false, error: 'That is over 4,000 characters. Please shorten it.' };
     return { ok: true, msg: { cmd: 'send', kind: m.kind, text } };
+  }
+  if (m.cmd === 'repromptRewrite') {
+    if (typeof m.draft !== 'string' || !m.draft.trim()) return { ok: false, error: 'Write a rough prompt first.' };
+    if (m.draft.length > MAX_PROMPT) return { ok: false, error: 'That is over 8,000 characters. Please shorten it.' };
+    const target = m.target == null || m.target === '' ? 'antigravity' : m.target;
+    const mode = m.mode == null || m.mode === '' ? 'balanced' : m.mode;
+    if (!RP_TARGETS.includes(target)) return { ok: false, error: 'unknown target' };
+    if (!RP_MODES.includes(mode)) return { ok: false, error: 'unknown mode' };
+    const skills = m.skills != null ? oneLine(m.skills).slice(0, 300) : '';
+    return { ok: true, msg: { cmd: 'repromptRewrite', draft: manyLines(m.draft), target, mode, skills } };
+  }
+  if (m.cmd === 'repromptSend') {
+    if (typeof m.text !== 'string' || !m.text.trim()) return { ok: false, error: 'Rewrite or write a prompt first.' };
+    if (m.text.length > MAX_PROMPT) return { ok: false, error: 'That is over 8,000 characters. Please shorten it.' };
+    const target = m.target == null || m.target === '' ? 'antigravity' : m.target;
+    if (target !== 'antigravity' && target !== 'claude') return { ok: false, error: 'unknown target' };
+    return { ok: true, msg: { cmd: 'repromptSend', text: manyLines(m.text), target } };
+  }
+  if (m.cmd === 'repromptCopy') {
+    if (typeof m.text !== 'string' || !m.text.trim()) return { ok: false, error: 'Nothing to copy yet.' };
+    if (m.text.length > 200000) return { ok: false, error: 'That is too large to copy.' };
+    return { ok: true, msg: { cmd: 'repromptCopy', text: manyLines(m.text) } };
+  }
+  if (m.cmd === 'repromptStudio') {
+    const tab = ['reprompt', 'orchestrator', 'skills'].includes(m.tab) ? m.tab : 'reprompt';
+    return { ok: true, msg: { cmd: 'repromptStudio', tab } };
+  }
+  if (m.cmd === 'repromptToggleAuto') {
+    return { ok: true, msg: { cmd: 'repromptToggleAuto', enabled: m.enabled === true } };
+  }
+  if (m.cmd === 'orchestrateRun') {
+    if (typeof m.prompt !== 'string' || !m.prompt.trim()) return { ok: false, error: 'Write a task first.' };
+    if (m.prompt.length > MAX_PROMPT) return { ok: false, error: 'That is over 8,000 characters. Please shorten it.' };
+    const prefer = m.prefer == null || m.prefer === '' ? 'auto' : m.prefer;
+    if (!ORCH_PREFER.includes(prefer)) return { ok: false, error: 'unknown provider' };
+    return { ok: true, msg: { cmd: 'orchestrateRun', prompt: manyLines(m.prompt), prefer } };
+  }
+  if (m.cmd === 'chatNew') {
+    const title = m.title != null ? oneLine(m.title).slice(0, 80) : '';
+    return { ok: true, msg: { cmd: 'chatNew', title } };
+  }
+  if (m.cmd === 'chatSelect' || m.cmd === 'chatDelete') {
+    return typeof m.sessionId === 'string' && CHAT_SESSION_ID.test(m.sessionId)
+      ? { ok: true, msg: { cmd: m.cmd, sessionId: m.sessionId } }
+      : { ok: false, error: 'unknown session' };
+  }
+  if (m.cmd === 'chatDone') {
+    if (m.sessionId == null || m.sessionId === '') return { ok: true, msg: { cmd: 'chatDone' } };
+    return typeof m.sessionId === 'string' && CHAT_SESSION_ID.test(m.sessionId)
+      ? { ok: true, msg: { cmd: 'chatDone', sessionId: m.sessionId } }
+      : { ok: false, error: 'unknown session' };
+  }
+  if (m.cmd === 'chatPurge') {
+    if (m.confirmed !== true) return { ok: false, error: 'not confirmed' };
+    return typeof m.sessionId === 'string' && CHAT_SESSION_ID.test(m.sessionId)
+      ? { ok: true, msg: { cmd: 'chatPurge', sessionId: m.sessionId, confirmed: true } }
+      : { ok: false, error: 'unknown session' };
+  }
+  if (m.cmd === 'chatReopen') {
+    return typeof m.sessionId === 'string' && CHAT_SESSION_ID.test(m.sessionId)
+      ? { ok: true, msg: { cmd: 'chatReopen', sessionId: m.sessionId } }
+      : { ok: false, error: 'unknown session' };
+  }
+  if (m.cmd === 'chatInspectClaude' || m.cmd === 'chatContinueFromClaude') {
+    return typeof m.sessionId === 'string' && SESSION_ID.test(m.sessionId)
+      ? { ok: true, msg: { cmd: m.cmd, sessionId: m.sessionId } }
+      : { ok: false, error: 'unknown Claude session' };
+  }
+  if (m.cmd === 'chatDraft') {
+    if (typeof m.prompt !== 'string' || !m.prompt.trim()) return { ok: false, error: 'Write a message first.' };
+    if (m.prompt.length > MAX_PROMPT) return { ok: false, error: 'That is over 8,000 characters. Please shorten it.' };
+    const target = m.target == null || m.target === '' ? 'auto' : m.target;
+    const mode = m.mode == null || m.mode === '' ? 'auto' : m.mode;
+    const route = m.route == null || m.route === '' ? 'auto' : m.route;
+    if (!RP_TARGETS.includes(target)) return { ok: false, error: 'unknown target' };
+    if (!RP_MODES.includes(mode)) return { ok: false, error: 'unknown mode' };
+    if (!ORCH_PREFER.includes(route)) return { ok: false, error: 'unknown route' };
+    const sessionId = typeof m.sessionId === 'string' && CHAT_SESSION_ID.test(m.sessionId) ? m.sessionId : '';
+    const skills = m.skills != null ? oneLine(m.skills).slice(0, 300) : '';
+    return {
+      ok: true,
+      msg: {
+        cmd: 'chatDraft',
+        sessionId,
+        prompt: manyLines(m.prompt),
+        target,
+        mode,
+        route,
+        skills,
+        confirmBeforeGo: m.confirmBeforeGo === true,
+        syncToIde: m.syncToIde !== false,
+        autoReprompt: m.autoReprompt !== false,
+      },
+    };
+  }
+  if (m.cmd === 'chatConfirm' || m.cmd === 'chatSendToIde') {
+    if (typeof m.sessionId !== 'string' || !CHAT_SESSION_ID.test(m.sessionId)) return { ok: false, error: 'unknown session' };
+    if (typeof m.turnId !== 'string' || !TURN_ID.test(m.turnId)) return { ok: false, error: 'unknown turn' };
+    const target = m.target == null || m.target === '' ? 'auto' : m.target;
+    const mode = m.mode == null || m.mode === '' ? 'auto' : m.mode;
+    const route = m.route == null || m.route === '' ? 'auto' : m.route;
+    if (!RP_TARGETS.includes(target)) return { ok: false, error: 'unknown target' };
+    if (!RP_MODES.includes(mode)) return { ok: false, error: 'unknown mode' };
+    if (!ORCH_PREFER.includes(route)) return { ok: false, error: 'unknown route' };
+    const repromptedText = typeof m.repromptedText === 'string' ? manyLines(m.repromptedText).slice(0, MAX_PROMPT * 2) : '';
+    const skills = Array.isArray(m.skills)
+      ? m.skills.slice(0, 12).map(s => oneLine(s).slice(0, 80)).filter(Boolean)
+      : (typeof m.skills === 'string' ? oneLine(m.skills).slice(0, 400).split(/\s+/).filter(Boolean) : null);
+    return {
+      ok: true,
+      msg: { cmd: m.cmd, sessionId: m.sessionId, turnId: m.turnId, repromptedText, target, mode, route, skills },
+    };
+  }
+  if (m.cmd === 'chatCancel') {
+    if (typeof m.sessionId !== 'string' || !CHAT_SESSION_ID.test(m.sessionId)) return { ok: false, error: 'unknown session' };
+    if (typeof m.turnId !== 'string' || !TURN_ID.test(m.turnId)) return { ok: false, error: 'unknown turn' };
+    return { ok: true, msg: { cmd: 'chatCancel', sessionId: m.sessionId, turnId: m.turnId } };
+  }
+  // P2-272 4B: plan-card buttons carry only a session id and a turn id; dag-runner.js reads the run id from the stored turn.
+  if (['dagRun', 'dagNotNow', 'dagStop', 'dagMerge', 'dagMergeNo', 'dagCheck'].includes(m.cmd)) {
+    if (typeof m.sessionId !== 'string' || !CHAT_SESSION_ID.test(m.sessionId)) return { ok: false, error: 'unknown session' };
+    if (typeof m.turnId !== 'string' || !TURN_ID.test(m.turnId)) return { ok: false, error: 'unknown turn' };
+    return { ok: true, msg: { cmd: m.cmd, sessionId: m.sessionId, turnId: m.turnId } };
+  }
+  if (m.cmd === 'chatToggleConfirm') {
+    return { ok: true, msg: { cmd: 'chatToggleConfirm', enabled: m.enabled === true } };
+  }
+  if (m.cmd === 'chatToggleSyncIde') {
+    return { ok: true, msg: { cmd: 'chatToggleSyncIde', enabled: m.enabled !== false } };
+  }
+  if (m.cmd === 'chatToggleAutoTake') {
+    return { ok: true, msg: { cmd: 'chatToggleAutoTake', enabled: m.enabled !== false } };
+  }
+  if (m.cmd === 'chatTakeTask') {
+    const tid = m.taskId == null ? '' : String(m.taskId).trim();
+    if (tid && !TASK_ID.test(tid)) return { ok: false, error: 'unknown task' };
+    return { ok: true, msg: { cmd: 'chatTakeTask', taskId: tid } };
+  }
+  if (m.cmd === 'chatHandoffToClaude') {
+    if (typeof m.sessionId !== 'string' || !CHAT_SESSION_ID.test(m.sessionId)) return { ok: false, error: 'unknown session' };
+    const note = m.note != null ? manyLines(String(m.note)).slice(0, 1000) : '';
+    return { ok: true, msg: { cmd: 'chatHandoffToClaude', sessionId: m.sessionId, note } };
   }
   return { ok: true, msg: { cmd: m.cmd } };
 }
@@ -731,8 +1134,10 @@ const MODE_WORDS = { auto: 'Edit and run commands (auto mode)', acceptEdits: 'Ed
 const JOB_STATES = ['queued', 'running', 'waiting', 'done', 'failed', 'stopped'];
 const MAX_PROMPT = 8000;
 // No built-in server (P2-243): the same shape and values as bin/remote-lib.mjs; `wk-bridge config` sets origin, rp_id, host and user.
-const REMOTE_DEFAULTS = { enabled: false, login: 'passkey', origin: '', rp_id: '', host: '', port: 22, user: '', server_command: '',
-  key: '~/.ssh/wk_bridge_ed25519', max_jobs: 2, job_hours: 3, pace_stop_pct: 90 };
+const REMOTE_DEFAULTS = {
+  enabled: false, login: 'passkey', origin: '', rp_id: '', host: '', port: 22, user: '', server_command: '',
+  key: '~/.ssh/wk_bridge_ed25519', max_jobs: 2, job_hours: 3, pace_stop_pct: 90
+};
 const fin = v => (typeof v === 'number' && Number.isFinite(v) ? v : null);
 
 function readRemote(dataDir) {
@@ -749,9 +1154,11 @@ function readPhone(dataDir) {
   const k = readJsonSmall(path.join(dataDir, 'remote-keys.json'), 512 * 1024) || {};
   const p = readJsonSmall(path.join(dataDir, 'remote-pending.json'), 512 * 1024) || {};
   const ok = x => isObj(x) && typeof x.id === 'string' && CRED_ID.test(x.id);
-  return { enabled: r.enabled, origin: r.origin,
+  return {
+    enabled: r.enabled, origin: r.origin,
     trusted: (Array.isArray(k.keys) ? k.keys : []).filter(ok).slice(0, 20).map(x => ({ id: x.id, label: oneLine(x.label).slice(0, 40) || 'Phone', added_at: num(x.added_at) })),
-    pending: (Array.isArray(p.keys) ? p.keys : []).filter(ok).slice(-5).map(x => ({ id: x.id, label: oneLine(x.label).slice(0, 40) || 'Phone', registered_at: num(x.registered_at) })) };
+    pending: (Array.isArray(p.keys) ? p.keys : []).filter(ok).slice(-5).map(x => ({ id: x.id, label: oneLine(x.label).slice(0, 40) || 'Phone', registered_at: num(x.registered_at) }))
+  };
 }
 
 function readJobEvents(file, after = 0, max = 200) {
@@ -762,12 +1169,19 @@ function readJobEvents(file, after = 0, max = 200) {
 function jobSummary(m, dir, { tail = 0 } = {}) {
   const t = (s, n) => oneLine(s).slice(0, n);
   const first = (() => { try { return fs.readFileSync(path.join(dir, 'prompt-1.txt'), 'utf8').split('\n').find(l => l.trim() && !/^Work in .*\(project .*\)\.$/.test(l.trim())) || ''; } catch { return ''; } })();
-  const out = { id: m.id, project: t(m.project, 64), model: MODELS.includes(m.model) ? m.model : '', mode: MODES.includes(m.mode) ? m.mode : '',
+  const out = {
+    id: m.id, project: t(m.project, 64), model: MODELS.includes(m.model) ? m.model : '', mode: MODES.includes(m.mode) ? m.mode : '',
     from: ['phone', 'panel', 'cli'].includes(m.from) ? m.from : 'cli', state: JOB_STATES.includes(m.state) ? m.state : 'failed',
     started_at: num(m.started_at), ended_at: num(m.ended_at), cost_usd: fin(m.cost_usd), turns: fin(m.turns),
-    title: t(first, 80) || 'Untitled job', last_text: t(m.last_text, 300) };
+    title: t(first, 80) || 'Untitled job', last_text: t(m.last_text, 300)
+  };
   // a legal job runs on the newest top model the plan has (wk-job, config/models.json): its label names the model it ran on
   if (m.legal === true) { out.legal = true; out.model_id = typeof m.model_id === 'string' && /^[a-z][a-z0-9.-]{1,63}$/.test(m.model_id) ? m.model_id : ''; }
+  if (m.carbon_fallback === true) {
+    out.carbon_fallback = true;
+    out.provider = typeof m.provider === 'string' ? oneLine(m.provider).slice(0, 40) : 'orchestrator-carbon-high';
+    if (typeof m.model_id === 'string' && /^[a-z][a-z0-9.-]{1,63}$/.test(m.model_id)) out.model_id = m.model_id;
+  }
   if (tail) out.tail = readJobEvents(path.join(dir, 'events.jsonl'), 0, tail).map(e => {
     const x = { n: e.n, type: String(e.type || '').slice(0, 24) };
     for (const k of ['model', 'permissionMode', 'name', 'tool', 'subtype']) if (typeof e[k] === 'string') x[k] = oneLine(e[k]).slice(0, 60);
@@ -809,9 +1223,11 @@ const GIT_SAFE = ['-c', 'core.fsmonitor=false', '-c', 'log.showSignature=false',
   '-c', 'protocol.allow=never', ...NO_TRANSPORT];
 function gitRun(cwd, args, timeoutMs = 5000) {
   return new Promise(resolve => {
-    execFile('git', ['-C', cwd, ...GIT_SAFE, ...args], { timeout: timeoutMs, maxBuffer: 512 * 1024, windowsHide: true, shell: false,
-      env: { HOME: os.homedir(), PATH: process.env.PATH || '/usr/bin:/bin', GIT_OPTIONAL_LOCKS: '0', GIT_TERMINAL_PROMPT: '0', GIT_NO_LAZY_FETCH: '1' } },
-    (err, stdout) => resolve({ code: !err ? 0 : (typeof err.code === 'number' ? err.code : -1), out: String(stdout || '') }));
+    execFile('git', ['-C', cwd, ...GIT_SAFE, ...args], {
+      timeout: timeoutMs, maxBuffer: 512 * 1024, windowsHide: true, shell: false,
+      env: { HOME: os.homedir(), PATH: process.env.PATH || '/usr/bin:/bin', GIT_OPTIONAL_LOCKS: '0', GIT_TERMINAL_PROMPT: '0', GIT_NO_LAZY_FETCH: '1' }
+    },
+      (err, stdout) => resolve({ code: !err ? 0 : (typeof err.code === 'number' ? err.code : -1), out: String(stdout || '') }));
   });
 }
 const git = (cwd, args, timeoutMs) => gitRun(cwd, args, timeoutMs).then(r => (r.code === 0 ? r.out : null));
@@ -873,12 +1289,14 @@ async function projectInfo(p, home) {
   ]);
   const [sha, at, subject] = (log || '').trim().split('\0');
   const [behind, ahead] = (ab || '').trim().split(/\s+/).map(Number);
-  return { key: p.key, name: p.name, path: tilde(p.path, home), kind: p.kind,
+  return {
+    key: p.key, name: p.name, path: tilde(p.path, home), kind: p.kind,
     branch: branch ? oneLine(branch).slice(0, 80) : '', git: branch != null,
     last: sha ? { sha7: sha.slice(0, 7), at: (Number(at) || 0) * 1000, subject: oneLine(subject).slice(0, 100) } : null,
     changed: st == null ? null : st.split('\n').filter(Boolean).length,
     ahead: Number.isFinite(ahead) ? ahead : null, behind: Number.isFinite(behind) ? behind : null,
-    items: openItems(repo, rel || null) };
+    items: openItems(repo, rel || null)
+  };
 }
 const tilde = (p, home) => (home && typeof p === 'string' && (p === home || p.startsWith(home + '/')) ? '~' + p.slice(home.length) : p);
 async function readProjects(dataDir, { home = os.homedir(), now = Date.now(), sessions, jobs, max = 40 } = {}) {
@@ -904,12 +1322,106 @@ async function readProjects(dataDir, { home = os.homedir(), now = Date.now(), se
   const ss = (sessions && sessions.sessions) || [], js = Array.isArray(jobs) ? jobs : [];
   const items = hit.items.map(x => {
     const abs = expandHome(x.path, home), base = path.basename(abs);
-    return { ...x,
+    return {
+      ...x,
       sessions: ss.filter(s => s.active && s.project === base).length,
       gemini: Object.entries(repoOf).filter(([r]) => r === abs).reduce((a, [, c]) => a + c, 0),
-      jobs: js.filter(j => j.project === x.key && (j.state === 'running' || j.state === 'waiting')).length };
+      jobs: js.filter(j => j.project === x.key && (j.state === 'running' || j.state === 'waiting')).length
+    };
   });
   return { found: true, items, more: Math.max(0, f.projects.length - list.length) };
+}
+
+// v0.8.0: Skill Library (~/.gemini/skill-vault/index.json + ~/.wk/skill-sync.json) and Carbon High failover state
+function readSkillLibrary(home, dataDir, maxItems = 120) {
+  const vaultDir = typeof process.env.REPROMPT_SKILL_VAULT_DIR === 'string' && process.env.REPROMPT_SKILL_VAULT_DIR
+    ? path.resolve(process.env.REPROMPT_SKILL_VAULT_DIR)
+    : path.join(home, '.gemini', 'skill-vault');
+  const idx = readJsonSmall(path.join(vaultDir, 'index.json'), 4 * 1024 * 1024);
+  const syncRaw = readJsonSmall(path.join(dataDir, 'skill-sync.json'), 128 * 1024);
+  const sync = syncRaw ? {
+    lastAt: Date.parse(syncRaw.last_sync_at) || 0,
+    discoveredTotal: num(syncRaw.discovered_total),
+    addedRepos: Array.isArray(syncRaw.added_repos) ? syncRaw.added_repos.slice(0, 10).map(r => oneLine(r).slice(0, 80)) : [],
+    totalRepos: num(syncRaw.total_repos),
+    topTrending: Array.isArray(syncRaw.top_trending) ? syncRaw.top_trending.slice(0, 6).map(t => ({
+      repo: oneLine(t && t.repo).slice(0, 80),
+      stars: num(t && t.stars),
+      forks: num(t && t.forks),
+      domain: oneLine(t && t.domain).slice(0, 40),
+    })) : [],
+  } : null;
+  // P2-272 (B): only approved sources count (panel/src/skill-gate.js, twin of skill_vault.is_approved).
+  const sources = readJsonSmall(path.join(vaultDir, 'sources.json'), 4 * 1024 * 1024);
+  const review = sources ? gate.pendingSources(sources).slice(0, 50).map(r => ({
+    slug: oneLine(r.slug || '').slice(0, 100),
+    repo: oneLine(r.repo || '').slice(0, 100),
+    stars: num(r.stars),
+    description: oneLine(r.description || r.ecosystem_focus || r.default_domain || '').slice(0, 160),
+    url: /^https:\/\/github\.com\/[A-Za-z0-9._-]+\/[A-Za-z0-9._-]+$/.test(String(r.url || '')) ? String(r.url)
+      : (/^[A-Za-z0-9._-]+\/[A-Za-z0-9._-]+$/.test(String(r.repo || '')) ? `https://github.com/${r.repo}` : ''),
+  })).filter(r => SOURCE_REF.test(r.slug) || SOURCE_REF.test(r.repo)) : [];
+  const reviewCount = sources ? gate.pendingSources(sources).length : 0;
+  const approvedCount = sources ? gate.approvedSources(sources).length : 0;
+  if (!idx || !Array.isArray(idx.skills)) {
+    return { ready: false, total: 0, skill_count: 0, repos: 0, repo_count: 0, clonedRepos: 0, cloned_repo_count: 0, domains: [], items: [], sync, review, reviewCount, approvedCount };
+  }
+  // Fails closed: when sources.json is missing, too big or does not parse, only the owner's own skills (local-installed) count.
+  const allowed = gate.allowedSkills(idx, sources || {});
+  const dc = isObj(idx.domain_counts) ? Object.entries(idx.domain_counts)
+    .filter(([k, v]) => typeof k === 'string' && Number.isFinite(v))
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, 16)
+    .map(([domain, count]) => ({ domain: oneLine(domain).slice(0, 40), count })) : [];
+  const ranked = [...allowed]
+    .filter(isObj)
+    .sort((a, b) => (Number(Boolean(b.trending)) - Number(Boolean(a.trending)))
+      || (num(b.stars) - num(a.stars))
+      || ((Number(a.tier) || 3) - (Number(b.tier) || 3))
+      || String(a.name || '').localeCompare(String(b.name || '')));
+  const items = ranked.slice(0, maxItems).map(s => ({
+    id: oneLine(s.id || s.name).slice(0, 80),
+    name: oneLine(s.name).slice(0, 60),
+    domain: oneLine(s.domain).slice(0, 40),
+    repo: oneLine(s.repo).slice(0, 80),
+    description: oneLine(s.description).slice(0, 200),
+    stars: num(s.stars),
+    forks: num(s.forks),
+    trending: Boolean(s.trending),
+    tier: Number(s.tier) || 3,
+  }));
+  const totalSkills = allowed.length;
+  const totalRepos = num(idx.repo_count);
+  const clonedReposCount = num(idx.cloned_repo_count);
+  return {
+    ready: true,
+    total: totalSkills,
+    skill_count: totalSkills,
+    repos: totalRepos,
+    repo_count: totalRepos,
+    clonedRepos: clonedReposCount,
+    cloned_repo_count: clonedReposCount,
+    domains: dc,
+    items,
+    sync,
+    review,
+    reviewCount,
+    approvedCount,
+  };
+}
+
+function readCarbonState(pace, home) {
+  const used = pace && pace.state === 'ok' && pace.pace ? Number(pace.pace.used) : 0;
+  const five = pace && pace.state === 'ok' && pace.pace ? Number(pace.pace.fiveHour) : 0;
+  const reason = pace && pace.state === 'ok' && pace.pace ? pace.pace.reason : '';
+  const claudeExhausted = Boolean(used >= 0.98 || five >= 0.98 || reason === 'ceiling' || reason === 'landed' || reason === 'five_hour');
+  const agyReady = [
+    path.join(home, '.gemini', 'bin', 'agy'),
+    path.join(home, '.local', 'bin', 'agy'),
+    '/usr/local/bin/agy',
+    '/opt/homebrew/bin/agy',
+  ].some(p => { try { fs.accessSync(p, fs.constants.X_OK); return true; } catch { return false; } });
+  return { claudeExhausted, agyReady, model: 'gemini-4-carbon-high' };
 }
 
 // The one check a stranger's panel makes beyond the session files: is the Watchkeeper plugin there?
@@ -924,22 +1436,35 @@ async function collect(cfg = {}, now = Date.now(), opts = {}) {
   const locks = safe(() => readLocks(p.orchestrationDir), { missing: true, locks: [] });
   // Without the plugin the panel reads nothing else: no ~/.wk, no plugin files, no Gemini settings (README "Private by design").
   if (!pluginOk) {
-    return { now, paths: p, pluginOk, dataOk: false, pace: { state: 'no-plugin' }, kill: { on: false, at: 0, file: '' },
+    return {
+      now, paths: p, pluginOk, dataOk: false, pace: { state: 'no-plugin' }, statusLine: '', statusState: 'no-plugin', kill: { on: false, at: 0, file: '' },
       ledger: { missing: true, totals: { usd: 0, runs: 0, in: 0, cache_read: 0, cache_write: 0, out: 0 }, top: [], wakeups: [], bad: 0 },
       sessions, locks, inbox: [], advice: { items: [], total: 0 }, ask: { installed: false, off: false, commandOk: false }, update: { version: null, last: null },
       questions: { available: false, items: [], total: 0, hidden: 0 }, suggestions: { items: [], total: 0 }, tasks: { items: [], total: 0 },
       gemini: { items: [], active: 0 }, geminiConfig: { found: false, prompt: '', routes: {} },
-      jobs: [], projects: [], projectsFile: { found: false, more: 0 }, phone: { enabled: false, origin: '', trusted: [], pending: [] }, remote: null };
+      jobs: [], projects: [], projectsFile: { found: false, more: 0 }, phone: { enabled: false, origin: '', trusted: [], pending: [] }, remote: null,
+      skillLibrary: { ready: false, total: 0, repos: 0, clonedRepos: 0, domains: [], items: [], sync: null },
+      learning: { ...EMPTY_SUMMARY, topSnippets: [], topHeuristics: [] },
+      watchdog: { ...EMPTY_WATCHDOG, items: [] },
+      carbon: { claudeExhausted: false, agyReady: false, model: 'gemini-4-carbon-high' },
+      usage: { found: false, fetchedAt: 0, windows: {} }, account: { state: 'no-plugin', email: '' }, geminiUsage: { label: '', tracked: false, today: null, cooldownUntil: 0, cooldownReason: '', weekTasks: null },
+      archivedChatSessions: []
+    };
   }
   const later = safe(() => readPanelState(p.dataDir).later, {});
   const killFile = killFilePath(p.pluginPath, p.home);
   const jobs = safe(() => readJobs(p.dataDir), []);
-  const [pace, pr] = await Promise.all([readPace(p.pluginPath, p.dataDir, opts),
-    readProjects(p.dataDir, { home: p.home, now, sessions, jobs }).catch(() => ({ found: false, items: [], more: 0 }))]);
+  const killNow = killState(killFile).on;
+  const [pace, pr, status, account] = await Promise.all([readPace(p.pluginPath, p.dataDir, opts),
+  readProjects(p.dataDir, { home: p.home, now, sessions, jobs }).catch(() => ({ found: false, items: [], more: 0 })),
+  readStatusLine(p.pluginPath, p.dataDir, { ...opts, cwd: cfg.workspace || '', killOn: killNow, now }).catch(() => ({ state: 'error', line: '' })),
+  // the account runs `claude` only when the caller asks (the extension does; tests pass a stub on a temp PATH)
+  (opts.account ? readClaudeAccount({ killOn: killNow, now, ...(opts.accountEnv ? { env: opts.accountEnv } : {}) }) : Promise.resolve({ state: 'off', email: '' })).catch(() => ({ state: 'error', email: '' }))]);
   return {
     now, paths: p, pluginOk,
     dataOk: !!statOrNull(p.dataDir),
     pace,
+    statusLine: status.line, statusState: status.state,
     kill: killState(killFile),
     ledger: safe(() => readLedger(path.join(p.dataDir, 'ledger.jsonl'), now), { missing: true, totals: { usd: 0, runs: 0, in: 0, cache_read: 0, cache_write: 0, out: 0 }, top: [], wakeups: [], bad: 0 }),
     sessions, locks,
@@ -958,16 +1483,33 @@ async function collect(cfg = {}, now = Date.now(), opts = {}) {
     jobs, projects: pr.items, projectsFile: { found: pr.found, more: pr.more },
     phone: safe(() => readPhone(p.dataDir), { enabled: false, origin: '', trusted: [], pending: [] }),
     remote: safe(() => { const r = readRemote(p.dataDir); return { enabled: r.enabled, origin: r.origin, max_jobs: r.max_jobs, job_hours: r.job_hours, pace_stop_pct: r.pace_stop_pct }; }, null),
+    skillLibrary: safe(() => readSkillLibrary(p.home, p.dataDir), { ready: false, total: 0, repos: 0, clonedRepos: 0, domains: [], items: [], sync: null, review: [], reviewCount: 0, approvedCount: 0 }),
+    learning: safe(() => readLearningSummary(p.dataDir), { ...EMPTY_SUMMARY, topSnippets: [], topHeuristics: [] }),
+    watchdog: safe(() => readWatchdogSummary(p.dataDir, now), { ...EMPTY_WATCHDOG, items: [] }),
+    carbon: safe(() => readCarbonState(pace, p.home), { claudeExhausted: false, agyReady: false, model: 'gemini-4-carbon-high' }),
+    chatSessions: safe(() => listChatSessionSummaries(p.dataDir), []),
+    graphify: safe(() => readGraphifyStats(cfg.workspace || ''), { available: false, totalNodes: 0, totalEdges: 0, mode: 'none' }),
+    // P2-272 Phase 3 stage B: the usage card and archived chats
+    usage: safe(() => readUsageWindows(p.dataDir, now), { found: false, fetchedAt: 0, windows: {} }),
+    account: { state: account.state, email: account.email },
+    geminiUsage: safe(() => readGeminiUsage(p.home, { now, env: opts.env || process.env, label: cfg.geminiLabel, dataDir: p.dataDir }), { label: '', tracked: false, today: null, cooldownUntil: 0, cooldownReason: '', weekTasks: null }),
+    archivedChatSessions: safe(() => listArchivedChatSessions(p.dataDir), []),
   };
 }
 
-module.exports = { pluginInstalled, HEAD_TAIL, MAX_TEXT, expandHome, resolvePaths, readPace, readHeadTail, parseLines, decodeProject, modelName,
-  cleanText, userText, sessionInfo, readMembers, listSessions, readLedger, readLocks, appendInbox, readInbox, inboxFile,
+module.exports = {
+  pluginInstalled, HEAD_TAIL, MAX_TEXT, expandHome, resolvePaths, readPace, readStatusLine, readHeadTail, parseLines, decodeProject, modelName,
+  cleanText, userText, sessionInfo, readMembers, listSessions, readClaudeTranscript, readLedger, readLocks, appendInbox, readInbox, inboxFile,
   killFilePath, killState, setKill, validateMessage, collect, readAdvice, adviceFile, askState, installAsk, readUpdate,
   // P2-223
-  COMMANDS, KINDS, TASK_KINDS, TASK_STATES, CHOICES, SUGGESTION_ID, TASK_ID, QUESTION_N, LATER_MS, isMoney, isLegal, legalLabel, oneLine, manyLines,
+  COMMANDS, KINDS, TASK_KINDS, TASK_STATES, CHOICES, SUGGESTION_ID, TASK_ID, QUESTION_N, SESSION_ID, LATER_MS, isMoney, isLegal, legalLabel, oneLine, manyLines,
   questionsAvailable, questionsDir, updateRoute, parseQuestionLine, readQuestions, findOpenQuestion, okAnswer, answerQuestion, readPanelState, setLater, panelStateFile,
   readSuggestions, findOpenSuggestion, readTasks, taskDiffFile, readGeminiSessions, readGeminiConfig, readHookPass, MERGE_TIMEOUT_MS, MAX_TEST, decideSuggestion, addTask,
   // P2-227
   run, childEnv, writePrivate, readJsonSmall, JOB_ID, PROJECT_KEY, CRED_ID, MODELS, MODES, MODE_WORDS, JOB_STATES, MAX_PROMPT, REMOTE_DEFAULTS,
-  readRemote, readPhone, readJobs, readJobEvents, jobSummary, readProjectsFile, readProjects, openItems, git };
+  readRemote, readPhone, readJobs, readJobEvents, jobSummary, readProjectsFile, readProjects, openItems, git,
+  // v0.8.0 + v2.1.0
+  readSkillLibrary, SOURCE_REF, readCarbonState, RP_TARGETS, RP_MODES, ORCH_PREFER,
+  // P2-272 Phase 3 stage B
+  USAGE_WINDOWS, readUsageWindows, readClaudeAccount, clearAccountCache, readGeminiUsage, countWeekTasks, geminiDataDir
+};

@@ -1,0 +1,12 @@
+{
+  "mcpServers": {
+    "re-prompt": {
+      "command": "python3",
+      "args": [
+        "${PLUGIN_ROOT}/server/reprompt_mcp_server.py",
+        "--data-dir",
+        "${PLUGIN_DATA}"
+      ]
+    }
+  }
+}

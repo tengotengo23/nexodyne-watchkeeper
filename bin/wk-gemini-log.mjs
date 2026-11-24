@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 // Antigravity Stop hook (P2-223): one line per finished Gemini turn in ~/.wk/gemini/sessions.jsonl (or $WK_HOME),
 // {at, conversation_id, model, workspace, reason}; the last 500 lines are kept. It never asks Gemini to go on:
-// it prints {"decision":"stop"} (the docs: any value other than "continue" lets the agent stop) and always exits 0.
+// it prints {} (P2-272: the verified Antigravity Stop contract; {"decision":"continue"} would block the stop) and always exits 0.
 import fs from 'node:fs';
 import path from 'node:path';
 import { sessionsFile, appendLine, writeFile, oneLine, config } from './gemini-lib.mjs';
@@ -25,6 +25,6 @@ export function log(raw, now = new Date()) {
 const isMain = process.argv[1] && fs.realpathSync(process.argv[1]) === fs.realpathSync(new URL(import.meta.url).pathname);
 if (isMain) {
   try { log(fs.readFileSync(0, 'utf8')); } catch {}
-  process.stdout.write(JSON.stringify({ decision: 'stop' }) + '\n');
+  process.stdout.write('{}\n');
   process.exitCode = 0;
 }

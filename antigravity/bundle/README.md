@@ -52,6 +52,7 @@ In your own chats the guard only passes on a decision for each tool call: "allow
   - `~/.wk/`: state, tasks and logs, including one line for each finished turn in every chat (conversation id, model and workspace path); and the memory in `~/.wk/learning/` (copies of code the agent edited, and your saved snippets).
   - The plugin's data folder that Antigravity gives it: your last 50 prompts and their rewrites, and the hooks' state for each chat.
   - `~/.gemini/skill-vault/`: the skills index.
+  - `~/.wk/watch.json`, and, only if you run `wk-watch install`, a LaunchAgent (`~/Library/LaunchAgents/com.tengo.watchkeeper-watch.plist`) or a systemd user timer (`~/.config/systemd/user/watchkeeper-watch.timer`) that checks every 30 seconds for waiting work and shows a notification. It never starts an agent.
   - In each project: a `.wk/` folder for its logs (with a `.gitignore`, so git ignores it) and a `graphify-out/` folder for the graph.
 - **Sends:** nothing to Nexodyne. There is no telemetry and no account. Other connections happen only through steps you start:
   - `/ask-claude` uses your own Claude Code login.
@@ -62,6 +63,7 @@ In your own chats the guard only passes on a decision for each tool call: "allow
 ## Turn it off
 
 - Stop switch: `wk stop` stops every step in Watchkeeper's conversations and pauses Re-Prompt, the graph and the memory in every chat; `wk go` turns it off again.
+- The 30-second checker, if you installed it: `wk-watch uninstall`.
 - Switch the plugin off with `/plugin disable watchkeeper`, or remove it with `/plugin uninstall watchkeeper`. Your data stays in the folders above until you delete it.
 
 ## Licence

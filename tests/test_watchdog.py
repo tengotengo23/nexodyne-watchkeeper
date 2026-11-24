@@ -212,13 +212,22 @@ class DynamicWatchdogTests(unittest.TestCase):
         )
         old_mtime = time.time() - 7200
         os.utime(wt_clean / "app.py", (old_mtime, old_mtime))
+        # P2-276 review: automatic recovery counts only quiet time the watcher itself saw (2 x the stale
+        # window for a clean task, passes at most 120 s apart), so two task-only passes come first.
+        for early in (now_ms - 120_000, now_ms - 60_000):
+            pre = recover_hanging_tasks(self.wk_home, now_ms=early, task_stale_ms=60_000, surface="task")
+            self.assertEqual([r for r in pre["recovered"] if r.get("id") == tid_clean], [], pre)
+        self.assertTrue(wt_clean.is_dir())
 
         # 3. Dirty stalled task -> preserves worktree, writes change.diff, adds one idempotent suggestion
         tid_dirty = "20261122-010300-dirty-task"
         wt_dirty = self.wk_home / "worktrees" / tid_dirty
         _git(self.repo, "worktree", "add", "--detach", str(wt_dirty), self.base_sha)
         (wt_dirty / "app.py").write_text("print('unsaved-work')\n", encoding="utf-8")
-        os.utime(wt_dirty / "app.py", (old_mtime, old_mtime))
+        # P2-276: quiet for 2 minutes with a 1-minute stale window: hung, but short of 3 x the window, so the
+        # task with changes is preserved (the automatic backup-and-requeue comes only after 3 x).
+        dirty_mtime = time.time() - 120
+        os.utime(wt_dirty / "app.py", (dirty_mtime, dirty_mtime))
         tdir_dirty = self.wk_home / "tasks" / tid_dirty
         tdir_dirty.mkdir(parents=True, exist_ok=True)
         (tdir_dirty / "meta.json").write_text(
@@ -266,17 +275,17 @@ class DynamicWatchdogTests(unittest.TestCase):
         self.assertEqual(json.loads((self.wk_home / "jobs" / j_dead / "meta.json").read_text())["state"], "failed")
         self.assertEqual(json.loads((self.wk_home / "jobs" / j_live / "meta.json").read_text())["state"], "failed")
 
-        # P2-272 (owner's spec, Phase 0 item 4): no worktree is deleted by the clock alone. The quiet clean task
-        # waits as a pending removal with its worktree intact until the owner presses OK in the W panel; after
-        # that OK the old outcome holds (requeued, claim and worktree gone).
-        clean_wait = json.loads((tdir_clean / "meta.json").read_text())
-        self.assertEqual(clean_wait["status"], "taken")
-        self.assertTrue(wt_clean.is_dir())
+        # P2-276 (replaces the P2-272 rule that a dead clean task waits for the owner's OK): a clean task with
+        # no sign of life (no process, no CPU, no heartbeat, no worktree change for the stale window) is
+        # requeued automatically through the same checked path (re-check of life, backup, removal), with one
+        # info-only suggestion.
+        auto = [r for r in rec["recovered"] if r.get("id") == tid_clean]
+        self.assertEqual(auto[0]["action"], "auto_requeued")
         pending = load_pending_removals(self.wk_home)["items"]
         self.assertIn(tid_clean, pending)
-        self.assertIsNone(pending[tid_clean]["decision"])
-        approved = decide_pending_removal(tid_clean, "approve-remove", wk_home=self.wk_home, now_ms=now_ms + 1000)
-        self.assertTrue(approved["ok"], approved)
+        self.assertEqual(pending[tid_clean]["decision"], "approved")
+        self.assertTrue(pending[tid_clean]["auto"])
+        self.assertTrue(pending[tid_clean]["removed_at"])
 
         clean_after = json.loads((tdir_clean / "meta.json").read_text())
         self.assertEqual(clean_after["status"], "queued")
@@ -293,18 +302,19 @@ class DynamicWatchdogTests(unittest.TestCase):
 
         # Re-running recover must NOT duplicate the suggestion line for dirty task
         rec2 = recover_hanging_tasks(self.wk_home, now_ms=now_ms, job_stall_ms=60_000, task_stale_ms=60_000, chat_stall_ms=60_000)
-        # P2-272: the clean task's removal question is a suggestion too, and the owner's OK closed it with an "ok"
-        # event (the panel's own format). Still exactly one suggestion per stalled task: none duplicated by the re-run.
+        # P2-276: the clean task's automatic requeue left one info-only line (nothing to answer); the dirty task
+        # has its one question. Still exactly one suggestion per stalled task: none duplicated by the re-run.
         rows = [json.loads(l) for l in (self.wk_home / "suggestions.jsonl").read_text(encoding="utf-8").splitlines() if l.strip()]
         items = [r for r in rows if "title" in r]
         events = [r for r in rows if "status" in r]
         item_ids = [r["id"] for r in items]
-        clean_sug = clean_wait["stalled_suggestion_id"]
+        clean_sug = auto[0]["suggestion_id"]
         self.assertEqual(len(items), 2)
         self.assertEqual(len(set(item_ids)), 2)
         self.assertIn(dirty_after["stalled_suggestion_id"], item_ids)
         self.assertIn(clean_sug, item_ids)
-        self.assertEqual([(e["id"], e["status"]) for e in events], [(clean_sug, "ok")])
+        self.assertEqual(next(r for r in items if r["id"] == clean_sug)["action"], {"type": "none"})
+        self.assertEqual(events, [])
         self.assertGreaterEqual(rec2["remainingHungCount"], 1)
 
         chat_after = json.loads((self.wk_home / "chat-sessions.json").read_text())

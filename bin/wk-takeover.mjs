@@ -6,6 +6,7 @@ import os from 'node:os';
 import path from 'node:path';
 import crypto from 'node:crypto';
 import { execFileSync } from 'node:child_process';
+import { earlierWorkLines } from './lib.mjs';
 
 const BIN = path.dirname(new URL(import.meta.url).pathname);
 const TASK_ID_RE = /^\d{8}-\d{6}-[a-z0-9-]+$/;
@@ -360,6 +361,7 @@ function buildTaskBrief(meta, dataDir) {
     `Kind: ${meta.kind} · Suggested model: ${meta.model || 'gemini-pro-orchestrator'}`,
     `Allowed files: ${(meta.allow || ['**']).join(', ')}`,
     `Test command: ${meta.test || 'none set'}`,
+    ...earlierWorkLines(meta, dataDir),
     '',
     'Execution Rules:',
     '- Work ONLY inside the Worktree path above. Never modify the main repository directly on a queued task.',

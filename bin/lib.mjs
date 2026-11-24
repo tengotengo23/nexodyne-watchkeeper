@@ -281,3 +281,71 @@ export function agyBlockedForClaude(agyPath, env = process.env) {
     return !fs.realpathSync(agyPath).startsWith(home + path.sep);
   } catch { return true; }
 }
+
+// ---- P2-276: task heartbeat. A tool call whose cwd, or a path in its input, lies inside WK_HOME/worktrees/<id>/ touches
+// WK_HOME/tasks/<id>/heartbeat, so the watchdog sees a working agent even when no file changes. Real paths only, the id must
+// match the task id rule, no symlink is followed out, and every error is ignored: a hook must never fail or slow down for this.
+// P2-276 review: the folder is <id> (attempt 1) or <id>.a<n> (attempt n); only the current attempt's folder of a taken task
+// counts, so an agent left over from an earlier, requeued attempt cannot keep the new attempt looking alive.
+const HB_TASK_ID = /^\d{8}-\d{6}-[a-z0-9-]{1,40}$/;
+const HB_FOLDER = /^(\d{8}-\d{6}-[a-z0-9-]{1,40})(?:\.a([2-9]|[1-9]\d{1,3}))?$/;
+function hbCurrentAttempt(home, id, folder) {
+  try {
+    const mp = path.join(home, 'tasks', id, 'meta.json');
+    const st = fs.lstatSync(mp); if (!st.isFile() || st.size > 1 << 20) return false;
+    const m = JSON.parse(fs.readFileSync(mp, 'utf8'));
+    if (!m || m.status !== 'taken') return false;
+    const n = Number(m.attempt);
+    const cur = Number.isInteger(n) && n >= 2 && n <= 9999 ? `${id}.a${n}` : id;
+    return folder === cur;
+  } catch { return false; }
+}
+export function touchTaskHeartbeat(cwd, paths = [], now = new Date()) {
+  const done = new Set();
+  try {
+    const home = path.resolve(process.env.WK_HOME || path.join(os.homedir(), '.wk'));
+    let wt; try { wt = fs.realpathSync(path.join(home, 'worktrees')); } catch { return []; }
+    const cands = [cwd, ...(Array.isArray(paths) ? paths : [])].filter(p => typeof p === 'string' && p && p.length < 4096).slice(0, 12);
+    for (const c of cands) {
+      try {
+        const abs = path.isAbsolute(c) ? c : (typeof cwd === 'string' && path.isAbsolute(cwd) ? path.resolve(cwd, c) : null);
+        if (!abs) continue;
+        const r = real(abs);
+        if (!r.startsWith(wt + path.sep)) continue;
+        const folder = r.slice(wt.length + 1).split(path.sep)[0];
+        const fm = HB_FOLDER.exec(folder); if (!fm) continue;
+        const id = fm[1];
+        if (!HB_TASK_ID.test(id) || done.has(id) || !hbCurrentAttempt(home, id, folder)) continue;
+        const tdir = path.join(home, 'tasks', id);
+        const st = fs.lstatSync(tdir); if (!st.isDirectory() || st.isSymbolicLink()) continue;
+        const hb = path.join(tdir, 'heartbeat');
+        let h = null; try { h = fs.lstatSync(hb); } catch {}
+        if (h && (h.isSymbolicLink() || !h.isFile())) continue;
+        if (h) fs.utimesSync(hb, now, now);
+        else { const fd = fs.openSync(hb, fs.constants.O_WRONLY | fs.constants.O_CREAT | fs.constants.O_EXCL | (fs.constants.O_NOFOLLOW || 0), 0o600); fs.closeSync(fd); fs.utimesSync(hb, now, now); }
+        done.add(id);
+      } catch { /* ignored on purpose */ }
+    }
+  } catch { /* ignored on purpose */ }
+  return [...done];
+}
+
+// P2-276: a task that came back to the queue after a dead attempt names that attempt's work in the next brief.
+export function earlierWorkLines(meta, dataDir) {
+  try {
+    if (!meta || typeof meta !== 'object' || typeof meta.id !== 'string') return [];
+    const out = [];
+    // P2-276 review: every earlier attempt's backup (removal_backups, non-empty entries); removal_backup only for older metas.
+    let bks = (Array.isArray(meta.removal_backups) ? meta.removal_backups : []).filter(b => typeof b === 'string' && b);
+    if (!bks.length && typeof meta.removal_backup === 'string' && meta.removal_backup) bks = [meta.removal_backup];
+    bks = [...new Set(bks)].slice(-10);
+    const diff = path.join(dataDir, 'tasks', meta.id, 'change.diff');
+    const hasDiff = (() => { try { return fs.lstatSync(diff).isFile(); } catch { return false; } })();
+    if (!bks.length && !hasDiff) return [];
+    out.push(`Earlier attempt${meta.requeue_count ? ` (requeued ${meta.requeue_count} time${meta.requeue_count === 1 ? '' : 's'})` : ''}: read its work before you start, and reuse what is good.`);
+    if (bks.length === 1) out.push(`- Backup of the earlier worktree: ${bks[0]} (changes.patch, untracked.tar, commits.patch if any)`);
+    else bks.forEach((b, i) => out.push(`- Backup of earlier worktree ${i + 1} of ${bks.length}${i === bks.length - 1 ? ' (newest)' : ''}: ${b} (changes.patch, untracked.tar, commits.patch if any)`));
+    if (hasDiff) out.push(`- Earlier change: ${diff}`);
+    return out;
+  } catch { return []; }
+}

@@ -19,7 +19,7 @@ Nothing here talks to Google or runs `agy`: Gemini reads and writes these files 
 | `tasks/<id>/change.diff` | `wk-task done` (and `discard` when no diff exists yet) | the panel (*Show the change*), `wk-task merge` (its sha-256) |
 | `tasks/<id>/verify.json` | `wk-task done` | the panel, `wk-task show` |
 | `tasks/<id>/claim` | `wk-task take` (made once, so a task is taken once) | `wk-task` |
-| `worktrees/<id>/` | `wk-task take` (git worktree, detached at the repository's HEAD) | Gemini works here |
+| `worktrees/<id>/`, `worktrees/<id>.a<n>/` | `wk-task take` (git worktree, detached at the repository's HEAD; `.a<n>` for attempt n ≥ 2) | Gemini works here |
 | `suggestions.jsonl` | `wk-suggest add/decide`, `wk-task done` | the panel, `wk-state`, `wk-suggest list` |
 | `owner-inbox.jsonl` | the panel (recommendation, rule, decision), `wk-suggest decide` (decision) | a Claude Code session |
 | `gemini/sessions.jsonl` | `wk-gemini-log` (the Antigravity Stop hook) | the panel, `wk-state` |
@@ -40,12 +40,14 @@ Nothing here talks to Google or runs `agy`: Gemini reads and writes these files 
 { "id", "created_at" (ISO), "from": "claude"|"owner"|"gemini", "title" (≤200), "kind", "model" (suggested), "fallback",
   "repo" (absolute, the repository's top folder), "allow": [globs relative to the repository], "test": string|null,
   "status": "queued"|"taken"|"verified"|"failed"|"out-of-scope"|"no-change"|"merged"|"discarded"|"conflict",
-  "taken_at", "model_used", "worktree", "base" (sha), "commit" (sha), "done_at", "note" (≤4000) }
+  "taken_at", "model_used", "worktree", "base" (sha), "commit" (sha), "done_at", "note" (≤4000),
+  "attempt" (1, 2, ...), "claim_nonce", "requeue_count", "removal_backup", "removal_backups": [paths] }
 ```
 - `queued` → `take` → `taken` → `done` → `verified` (scope and test pass, committed in the worktree), `failed` (the test failed or the commit failed), `out-of-scope` (a file outside `allow`, or one `gates.json` excludes), or `no-change`.
 - `failed` and `out-of-scope` can run `done` again after a fix. `verified` → `merge` → `merged`, or `conflict` (the merge was undone). Anything not merged → `discard` → `discarded`.
 - `allow` defaults to `["**"]`. `*` matches within one folder, `**` across folders. A task from Gemini never has a `test`.
-- `worktree` is written for readers only. Every tool uses `worktrees/<id>/` and never this field, because Gemini could rewrite this file.
+- `worktree` is written for readers only. The folder follows `attempt`: `worktrees/<id>/` for attempt 1, `worktrees/<id>.a<n>/` after an automatic requeue. The watchdog uses this field only when it names such a folder directly inside `worktrees/` for this task; otherwise it uses `worktrees/<id>/`, because Gemini could rewrite this file.
+- `attempt` goes up by one at each requeue. `done --attempt <n>` must name the current attempt; a `done` from an earlier attempt (or on a requeued task) is refused and names the latest backup. `removal_backups` lists every backup of a removed worktree; `removal_backup` is the latest.
 - Scope: a rename counts as a deletion of the old path plus a new file (`--no-renames`). Files under `.husky/`, `.githooks/` or the configured `core.hooksPath` are out of scope unless an `allow` glob names that folder (`.husky/**`, not `**`).
 - `merge` checks again from git and refuses, changing nothing, unless `commit` is one commit whose parent is `base`, `base` is in the repository's branch, every file of `git diff --no-renames base commit` is in scope, and the sha-256 of `git diff --binary --no-renames --no-ext-diff --no-textconv --no-relative --no-color base commit` equals that of `change.diff`. It also refuses while the repository has staged changes.
 

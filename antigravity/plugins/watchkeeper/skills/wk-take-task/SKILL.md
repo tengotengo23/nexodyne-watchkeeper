@@ -24,7 +24,7 @@ Run:
 
 - Exit code 3: the owner has stopped Watchkeeper (the Stop switch). Stop and say so in one line.
 - Exit code 4: today's task limit is reached. Stop and say so in one line.
-- Exit code 5: nothing is queued. Stop.
+- Exit code 5: nothing is queued. Check for a handoff once (section 6); if that also finds nothing, stop at once with one short line, such as "Nothing queued.". Run no other tool and look for no other work, so an hourly automation with nothing to do costs almost nothing.
 - Otherwise it prints the task id, the worktree folder, the suggested model, the allowed files, the test and the task text. Read all of it.
 
 ## 2. The model
@@ -60,6 +60,8 @@ If `wk-task.mjs take` exits with code 5 (nothing queued), or when taking over an
 ```
 "{{NODE}}" "{{WK_BIN_DIR}}/wk-takeover.mjs" brief --cwd "$PWD" --engine antigravity --consume
 ```
+
+If it prints "No queued Watchkeeper tasks or active handoff found" (exit code 5), stop at once with one short line, such as "Nothing queued.".
 
 - Continue working directly inside the shared repository workspace (`$PWD`) on the active task described in the takeover brief.
 - Use `graphify query/path/explain` before broad greps if `graphify-out/graph.json` exists, and run `graphify update .` after edits.

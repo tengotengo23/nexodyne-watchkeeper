@@ -1,4 +1,4 @@
-# Watchkeeper · v3.2.1
+# Watchkeeper · v3.3.0
 
 **Watchkeeper is an open-source (MIT), local-first AI coding control plane and full-IDE workspace for Claude Code and Google Antigravity.** It unifies fail-closed tool & secret guards, test-verified completion gates (`done` evidence), an integrated **Re-Prompt** prompt-normalization studio, a **Running Tasks** cockpit, an auto-updating **Skills Library** that discovers trending GitHub agent skills daily, and a Claude-limit handover (the Gemini lane by quota, or the task queue for Antigravity) so work is not lost when Claude Code plan or rate limits run out. Everything stays in local files on your machine — zero Nexodyne servers, zero accounts, and zero telemetry.
 
@@ -118,6 +118,12 @@ With the plugin installed the panel also shows:
 - **Jobs** and **Projects**: start, reply to and stop `claude -p` jobs in a project you listed.
 - **Spend, last 7 days**, **Gemini** (the task queue, the last Gemini sessions, a form to hand Gemini a task), **Answered for you** (questions Gemini asked Claude), **Recommendations and rules**, a **Wake-up switch** that stops all unattended work, and **Updates**.
 
+### The 30-second checker (optional)
+
+`node <plugin>/bin/wk-watch.mjs install` adds a small background job (a LaunchAgent on macOS, a systemd user timer on Linux) that looks every 30 seconds for work waiting for Gemini or Claude and shows one notification for each new item. It never starts an agent and uses no network. Every 5 minutes it also puts dead tasks back in the queue: a clean one at once, one with changes after a checked backup; after 3 automatic requeues the task waits for you. `uninstall` removes the job.
+
+The agents take the work themselves: in Antigravity, a Background automation set to **Hourly** with the prompt `/wk-take-task. If nothing is queued, stop.` (run it once by hand first, so its approvals are recorded); in Claude Code, `/loop 5m /wk-take-task`. With nothing queued, `/wk-take-task` stops after one short line.
+
 ## What the plugin does
 
 Four hooks run in every Claude Code session (`hooks/hooks.json`):
@@ -169,7 +175,7 @@ Aliases that still work: `/wk-status`, `/wk-take-task`, `/wk-add-task`, `/wk-sug
 
 **Reads.** The panel reads `~/.claude/projects` (of a long file only its start and end), the workspace's `orchestration/locks/` folder if there is one, and with the plugin `~/.wk/` and the plugin's own config. The plugin's hooks read the policy, the project's `worklog/` and `.wk/` files, and the tool call Claude Code hands them.
 
-**Writes.** The plugin writes `~/.wk/` (ledger, pin, kill file, notes, steward state, tasks, worktrees, advice). Watchkeeper edits none of your files. It adds one folder, `.wk/`, to each project it runs in, for its logs (blocked, approved and evidence), with a `.wk/.gitignore` containing `*` so git leaves it out. The worktrees for Gemini live under `~/.wk/worktrees/`.
+**Writes.** The plugin writes `~/.wk/` (ledger, pin, kill file, notes, steward state, tasks, worktrees, advice). Watchkeeper edits none of your files. It adds one folder, `.wk/`, to each project it runs in, for its logs (blocked, approved and evidence), with a `.wk/.gitignore` containing `*` so git leaves it out. The worktrees for Gemini live under `~/.wk/worktrees/`. The 30-second checker, if you install it, reads `~/.wk/tasks/` and `~/.wk/shared-workspace.json`, writes `~/.wk/watch.json` and adds `~/Library/LaunchAgents/com.tengo.watchkeeper-watch.plist` (macOS) or `~/.config/systemd/user/watchkeeper-watch.{service,timer}` (Linux).
 
 **Runs.** The panel writes the kill file and a note line. On each refresh it runs the plugin's `bin/wk-ledger.mjs pace` and read-only git commands (branch, last commit, status) in the projects listed in `~/.wk/projects.json`. Those git commands never contact a remote, and they switch off the repository settings that would run a command of its own (fsmonitor, filters, signature checks, hooks); status does not look inside submodules; if git cannot list a project's filters, the panel skips that project's status. On your press it runs only the plugin's own scripts from the plugin's folder (answer a suggestion, add a task, start, reply to or stop a job, set up Gemini's ask skill, the phone controls) and, for a question, the `nx` script in the orchestration folder named in `~/.wk/remote.json`. It never runs a file from a workspace folder. In a folder you have not trusted, it runs nothing at all and says so.
 
@@ -257,6 +263,7 @@ Run them with a temporary `HOME` and `WK_HOME`; the suites use fakes for ssh, la
 - The Gemini plugin: delete `~/.gemini/config/plugins/watchkeeper`.
 - The phone link, if you set it up: `node <plugin>/bin/wk-bridge.mjs uninstall`, then delete `~/.ssh/wk_bridge_ed25519*` and its line in the server's `authorized_keys`.
 - The updater, if you installed it: `node <plugin>/bin/wk-update.mjs uninstall`.
+- The 30-second checker, if you installed it: `node <plugin>/bin/wk-watch.mjs uninstall`.
 - Your data: delete `~/.wk/` and the `.wk/` folder in each project.
 
 ## Licence and trademarks

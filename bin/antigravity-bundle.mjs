@@ -15,6 +15,7 @@ export const TOOLS = {
   'wk': ['node', 'bin/wk.mjs'],
   'wk-status': ['node', 'bin/wk-status.mjs'],
   'wk-task': ['node', 'bin/wk-task.mjs'],
+  'wk-watch': ['node', 'bin/wk-watch.mjs'],
   'wk-suggest': ['node', 'bin/wk-suggest.mjs'],
   'wk-takeover': ['node', 'bin/wk-takeover.mjs'],
   'wk-ask-claude': ['node', 'bin/wk-ask-claude.mjs'],

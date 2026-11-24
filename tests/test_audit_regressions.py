@@ -204,6 +204,11 @@ class AuditRegressionsPythonTests(unittest.TestCase):
         }
         (task_dir / "meta.json").write_text(json.dumps(stale_meta), encoding="utf-8")
         now = int(time.time() * 1000) + 120_000
+        # P2-276 review: only quiet time the watcher saw counts (2 x the stale window, passes at most
+        # 120 s apart), so a first pass starts the count and changes nothing.
+        first = recover_hanging_tasks(self.wk_home, now_ms=now - 1000, task_stale_ms=100, dry_run=False)
+        self.assertNotIn("20261122-010101-requeue", [r.get("id") for r in first.get("recovered", [])])
+        self.assertTrue(wt.is_dir())
         res = recover_hanging_tasks(
             self.wk_home,
             now_ms=now,
@@ -211,16 +216,15 @@ class AuditRegressionsPythonTests(unittest.TestCase):
             dry_run=False,
         )
         self.assertTrue(res["ok"])
-        # P2-272 (owner's spec, Phase 0 item 4): the clock alone never removes a worktree. The task waits as a
-        # pending removal until the owner's OK; after the OK it is requeued and its stall fields are cleared.
-        waiting = json.loads((task_dir / "meta.json").read_text(encoding="utf-8"))
-        self.assertEqual(waiting["status"], "taken")
-        self.assertTrue(wt.is_dir())
+        # P2-276 (replaces the P2-272 wait for the owner's OK): a dead clean task is requeued automatically
+        # through decide_pending_removal (life re-checked, backup, removal); its stall fields are cleared.
+        auto = [r for r in res["recovered"] if r.get("id") == "20261122-010101-requeue"]
+        self.assertEqual(auto[0]["action"], "auto_requeued", res)
         self.assertIn("20261122-010101-requeue", load_pending_removals(self.wk_home)["items"])
         approved = decide_pending_removal(
             "20261122-010101-requeue", "approve-remove", wk_home=self.wk_home, now_ms=now + 1000, stale_ms=100
         )
-        self.assertTrue(approved["ok"], approved)
+        self.assertTrue(approved["ok"], approved)   # a second OK is harmless: "Already removed."
         self.assertFalse(wt.exists())
         updated = json.loads((task_dir / "meta.json").read_text(encoding="utf-8"))
         self.assertEqual(updated["status"], "queued")

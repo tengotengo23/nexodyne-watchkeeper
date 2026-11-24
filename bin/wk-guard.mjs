@@ -5,10 +5,12 @@ import fs from 'node:fs';
 import path from 'node:path';
 import os from 'node:os';
 import { createRequire } from 'node:module';
-import { gates, stdin, glob2re, logBlock, laneOn, laneRoots, scanPII, inLaneRoots, policyFile, realPath, killOn, killFile, quarantineEnv, quarantineAgent, gatedCheck,
+import { gates, stdin, glob2re, logBlock, laneOn, laneRoots, scanPII, inLaneRoots, policyFile, realPath, killOn, killFile, quarantineEnv, quarantineAgent, gatedCheck, touchTaskHeartbeat,
   policyPin, pinFile, READ_ONLY, PIN_MSG, LANE_PIN_MSG, policyShellCheck, proj } from './lib.mjs';
 process.on('uncaughtException', e => { logBlock('policy', 'guard error: ' + e.message); console.error('watchkeeper guard error, failing closed: ' + e.message); process.exit(2); });
 const ev = stdin(), ti = ev.tool_input || {};
+// P2-276: a call inside a task worktree is a sign of life for that task (never fails, never blocks)
+try { touchTaskHeartbeat(ev.cwd, ['file_path', 'path', 'notebook_path'].map(k => ti[k])); } catch {}
 const block = (rule, msg) => { logBlock(rule, msg); console.error(`watchkeeper blocked (${rule}): ${msg}`); process.exit(2); };
 // quarantine first: it needs no policy and allows nothing
 if (quarantineEnv()) block('quarantine', `${ev.tool_name || 'tool'} refused: a quarantined worker may use no tools. Answer from the text you were given; your output is treated as data.`);

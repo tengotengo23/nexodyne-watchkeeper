@@ -620,6 +620,168 @@ def _claim_pid(tdir: Path) -> int | None:
     return pid if pid > 1 else None
 
 
+def task_heartbeat_ms(home: Path, tid: str) -> int | None:
+    """P2-276: mtime of WK_HOME/tasks/<id>/heartbeat, touched by the guard hooks on each tool call
+    inside the task's worktree. None when missing, a symlink or unreadable."""
+    hb = home / "tasks" / tid / "heartbeat"
+    try:
+        if hb.is_symlink():
+            return None
+        return int(hb.stat().st_mtime * 1000)
+    except OSError:
+        return None
+
+
+# P2-276: automatic recovery of dead tasks. A clean dead task is requeued at once; one with changes
+# waits 3 x the stale window, is backed up (verified) and then requeued. After this many automatic
+# requeues the owner decides again (pending removal), as before.
+AUTO_REQUEUE_CAP = 3
+DIRTY_WAIT_FACTOR = 3
+# P2-276 review: an automatic requeue counts only quiet time the watcher itself saw. Passes more
+# than QUIET_PASS_GAP_MS apart (a sleeping Mac, a stopped watcher) reset the count, so wall-clock
+# idle alone never requeues a task. Clean tasks need 2 x the stale window, tasks with changes 3 x.
+CLEAN_WAIT_FACTOR = 2
+QUIET_PASS_GAP_MS = 120_000
+# P2-276 round 2: a failed automatic backup is tried again no sooner than this, and after this many
+# failures Watchkeeper stops trying and the owner decides (one notice). A good backup clears the count.
+BACKUP_RETRY_MS = 60 * 60 * 1000
+BACKUP_FAIL_CAP = 3
+TASK_LOCK_STALE_MS = 15 * 60 * 1000
+
+
+class _TaskLock:
+    """P2-276 review: the per-task lock shared with bin/wk-task.mjs (take and done).
+
+    Same protocol as withLock in bin/gemini-lib.mjs: create WK_HOME/watchdog/task_<id>.lock with
+    O_EXCL and a token "pid ms hex"; take over a lock older than TASK_LOCK_STALE_MS or whose pid is
+    gone; on release remove the file only while it still holds our token. Raises TimeoutError.
+    """
+
+    def __init__(self, home: Path, tid: str, wait_s: float = 15.0) -> None:
+        self.path = home / "watchdog" / f"task_{tid}.lock"
+        self.wait_s = wait_s
+        self.token = ""
+
+    def __enter__(self) -> "_TaskLock":
+        _ensure_private_dir(self.path.parent)
+        self.token = f"{os.getpid()} {int(time.time() * 1000)} {uuid.uuid4().hex[:8]}"
+        deadline = time.monotonic() + max(0.05, self.wait_s)
+        while True:
+            try:
+                fd = os.open(str(self.path), os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o600)
+                try:
+                    os.write(fd, (self.token + "\n").encode("ascii"))
+                finally:
+                    os.close(fd)
+                return self
+            except FileExistsError:
+                stale = False
+                try:
+                    st = self.path.lstat()
+                    stale = (time.time() * 1000 - st.st_mtime * 1000) > TASK_LOCK_STALE_MS
+                    if not stale:
+                        first = self.path.read_text(encoding="utf-8", errors="ignore").split()
+                        if first and first[0].isdigit() and int(first[0]) > 1 and not _pid_alive(int(first[0])):
+                            stale = True
+                except FileNotFoundError:
+                    continue
+                except OSError:
+                    pass
+                if stale:
+                    try:
+                        self.path.unlink()
+                    except OSError:
+                        pass
+                    continue
+                if time.monotonic() >= deadline:
+                    raise TimeoutError(f"task lock held: {self.path.name}")
+                time.sleep(0.04)
+
+    def __exit__(self, *exc: Any) -> None:
+        try:
+            if self.path.read_text(encoding="utf-8", errors="ignore").strip() == self.token:
+                self.path.unlink()
+        except OSError:
+            pass
+
+
+def _task_lock(home: Path, tid: str, wait_s: float = 15.0) -> _TaskLock:
+    return _TaskLock(home, tid, wait_s)
+
+
+_WT_NAME_RE = re.compile(r"^(?P<tid>.+?)(?:\.a(?P<n>[2-9]|[1-9]\d{1,3}))?$")
+
+
+def _task_worktree(home: Path, tid: str, meta: dict[str, Any] | None) -> Path:
+    """The task's worktree: meta.worktree when it sits directly in WK_HOME/worktrees and is named
+    <tid> or <tid>.a<n> (attempt n >= 2); otherwise WK_HOME/worktrees/<tid>."""
+    default = home / "worktrees" / tid
+    raw = str((meta or {}).get("worktree") or "").strip() if isinstance(meta, dict) else ""
+    if not raw:
+        return default
+    try:
+        cand = Path(raw)
+        if not cand.is_absolute():
+            return default
+        if cand.parent.resolve() != (home / "worktrees").resolve():
+            return default
+        m = _WT_NAME_RE.match(cand.name)
+        if not m or m.group("tid") != tid:
+            return default
+        return (home / "worktrees") / cand.name
+    except (OSError, ValueError):
+        return default
+
+
+def _task_quiet_file(home: Path) -> Path:
+    return home / "watchdog" / "task-quiet.json"
+
+
+def _update_task_quiet(home: Path, items: list[dict[str, Any]], now: int) -> dict[str, int]:
+    """Track per task how long the watcher has seen it quiet (quiet_since, quiet_ms).
+
+    A pass more than QUIET_PASS_GAP_MS after the previous one (or the first pass, or a clock going
+    back) restarts every count at now: only quiet time seen pass by pass counts. A new attempt restarts
+    the count too. Returns {task_id: quiet_ms}.
+    """
+    raw = read_json_safe(_task_quiet_file(home), None)
+    raw = raw if isinstance(raw, dict) else {}
+    try:
+        last_pass = int(raw.get("last_pass_ms") or 0)
+    except (TypeError, ValueError):
+        last_pass = 0
+    prev = raw.get("tasks") if isinstance(raw.get("tasks"), dict) else {}
+    gap = now - last_pass if last_pass else None
+    continuous = gap is not None and 0 <= gap <= QUIET_PASS_GAP_MS
+    tasks: dict[str, Any] = {}
+    out: dict[str, int] = {}
+    for it in items:
+        if it.get("surface") != "task":
+            continue
+        tid = str(it.get("id") or "")
+        if not tid:
+            continue
+        attempt = int(it.get("attempt") or 1)
+        if it.get("active_owner") or it.get("pid_alive") or float(it.get("cpu_pct") or 0.0) >= ACTIVE_CPU_THRESHOLD:
+            sign = now
+        else:
+            sign = now - int(it.get("idle_ms") or 0)
+        old = prev.get(tid) if isinstance(prev.get(tid), dict) else None
+        if continuous and old is not None and int(old.get("attempt") or 1) == attempt:
+            try:
+                since = max(int(old.get("quiet_since") or now), sign)
+            except (TypeError, ValueError):
+                since = now
+        else:
+            since = now
+        since = min(since, now)
+        tasks[tid] = {"quiet_since": since, "attempt": attempt}
+        out[tid] = max(0, now - since)
+    _ensure_private_dir(home / "watchdog")
+    atomic_write_json(_task_quiet_file(home), {"last_pass_ms": now, "tasks": tasks})
+    return out
+
+
 def _pid_cpu_pct(pid: int | None) -> float:
     """CPU of one pid via ``ps -o %cpu=`` (0.0 when gone or unreadable)."""
     if not _pid_alive(pid):
@@ -649,7 +811,7 @@ def task_liveness(
     stale = int(stale_ms or _env_int("WK_TASK_STALE_MS", DEFAULT_TASK_STALE_MS))
     meta = meta if isinstance(meta, dict) else {}
     tdir = home / "tasks" / tid
-    wt = home / "worktrees" / tid
+    wt = _task_worktree(home, tid, meta)
 
     candidates: list[int] = []
     for raw in [*(registered_pids or []), meta.get("pid"), meta.get("runner_pid"), _claim_pid(tdir)]:
@@ -679,8 +841,11 @@ def task_liveness(
         int(worktree_mtime_ms or 0),
         int(_parse_ts_ms(meta.get("last_activity_at")) or 0),
         int(_parse_ts_ms(meta.get("last_output_at")) or 0),
+        int(_parse_ts_ms(meta.get("taken_at")) or 0),   # a task just taken counts as fresh output
     ) or None
     recent_output = bool(last_output_ms and now - last_output_ms < stale)
+    hb_ms = task_heartbeat_ms(home, tid)
+    recent_heartbeat = bool(hb_ms and now - hb_ms < stale)
     signs: list[str] = []
     if pid_alive:
         signs.append("pid_alive")
@@ -688,6 +853,8 @@ def task_liveness(
         signs.append("cpu")
     if recent_output:
         signs.append("recent_output")
+    if recent_heartbeat:
+        signs.append("heartbeat")
     return {
         "alive": bool(signs),
         "signs": signs,
@@ -696,6 +863,7 @@ def task_liveness(
         "cpu_pct": round(cpu_pct, 1),
         "last_output_at": _iso_utc(last_output_ms) if last_output_ms else None,
         "last_output_ms": last_output_ms,
+        "heartbeat_at": _iso_utc(hb_ms) if hb_ms else None,
     }
 
 
@@ -743,11 +911,36 @@ def _record_pending_removal(home: Path, it: dict[str, Any], now: int) -> tuple[d
                 if until and now >= until:
                     entry["decision"] = None
                     entry["later_until"] = None
+                    entry["owner_decided"] = True   # an expired "later" asks the owner again; no automatic requeue
                     entry["notified_at"] = _iso_utc(now)
                     notify = True
         items[tid] = entry
         _save_pending_removals(home, data)
     return entry, notify
+
+
+def _verify_worktree_backup(wt: Path, backup_dir: Path, tar_members: int, commits_after_base: bool) -> None:
+    """P2-276: check the backup is complete before anything is removed; raise on any gap."""
+    import tarfile
+
+    patch = backup_dir / "changes.patch"
+    for f in (patch, backup_dir / "untracked.tar", backup_dir / "backup.json"):
+        if not f.is_file():
+            raise RuntimeError(f"backup file missing: {f.name}")
+    if commits_after_base and not (backup_dir / "commits.patch").is_file():
+        raise RuntimeError("backup file missing: commits.patch")
+    with tarfile.open(backup_dir / "untracked.tar", "r") as tf:
+        if len(tf.getmembers()) != tar_members:
+            raise RuntimeError("untracked.tar is incomplete")
+    info = read_json_safe(backup_dir / "backup.json", None)
+    if not isinstance(info, dict) or not info.get("task_id"):
+        raise RuntimeError("backup.json unreadable")
+    # Tracked changes present means the patch must not be empty.
+    r_q = run_in_group(["git", "-C", str(wt), "diff", "HEAD", "--quiet"], timeout=30.0, register=False)
+    if r_q.returncode not in (0, 1):
+        raise RuntimeError("git diff --quiet failed")
+    if r_q.returncode == 1 and patch.stat().st_size == 0:
+        raise RuntimeError("changes.patch is empty but the worktree has changes")
 
 
 def decide_pending_removal(
@@ -789,6 +982,7 @@ def decide_pending_removal(
                 return out(False, None, "No pending removal for this task.")
             entry["decision"] = dec
             entry["decided_at"] = _iso_utc(now)
+            entry["owner_decided"] = True
             entry["later_until"] = _iso_utc(now + LATER_HIDE_MS) if dec == "later" else None
             data["items"][tid] = entry
             _save_pending_removals(home, data)
@@ -802,78 +996,156 @@ def decide_pending_removal(
     if is_kill_switch_active(home):
         return out(False, None, "Stop switch is on; nothing was removed.")
 
-    with file_lock(home / "watchdog" / f"task_{tid}.lock"):
+    try:
+        tlock = _task_lock(home, tid)
+        tlock.__enter__()
+    except TimeoutError:
+        return out(False, None, "The task is busy (being taken or finished); try again in a minute.", busy=True)
+    try:
         data = load_pending_removals(home)
         entry = data["items"].get(tid)
         if not isinstance(entry, dict):
             return out(False, None, "No pending removal for this task.")
-        if entry.get("removed_at"):
-            return out(True, "approved", "Already removed.", backup=entry.get("backup"))
+        if entry.get("removed_at") and not entry.get("removing"):
+            return out(True, "approved", "Already removed.", backup=entry.get("backup"), requeued=False)
         tdir = home / "tasks" / tid
         mpath = tdir / "meta.json"
         meta = read_json_safe(mpath, None)
         meta = meta if isinstance(meta, dict) else {}
-        wt = home / "worktrees" / tid
+        wt = _task_worktree(home, tid, meta)
 
-        reg_pids: list[int] = []
-        raw_p = read_json_safe(_processes_file(home), {"processes": {}})
-        procs = raw_p.get("processes") if isinstance(raw_p, dict) and isinstance(raw_p.get("processes"), dict) else {}
-        for e in procs.values():
-            if isinstance(e, dict) and str(e.get("task_id") or "") == tid:
-                try:
-                    reg_pids.append(int(e.get("pid")))
-                except (TypeError, ValueError):
-                    pass
-        life = task_liveness(home, tid, meta, now_ms=now, stale_ms=stale_ms, registered_pids=reg_pids)
-        with file_lock(_pending_removals_lock(home)):
-            data = load_pending_removals(home)
-            entry = data["items"].get(tid) or entry
-            entry["pid"] = life["pid"]
-            entry["pid_alive"] = life["pid_alive"]
-            entry["cpu_pct"] = life["cpu_pct"]
-            entry["last_output_at"] = life["last_output_at"]
-            data["items"][tid] = entry
-            _save_pending_removals(home, data)
-        if life["alive"]:
-            return out(False, None, "Still working (" + ", ".join(life["signs"]) + "); nothing was removed.", signs=life["signs"])
-
+        # P2-276 review: a removal interrupted by a kill resumes here. The backup was made and
+        # recorded before anything was removed, so finish with that backup and make no new one.
+        resuming = bool(meta.get("removing") or entry.get("removing"))
         backup_dir: Path | None = None
-        if wt.is_dir() and not wt.is_symlink():
-            stamp = dt.datetime.now(dt.timezone.utc).strftime("%Y%m%d-%H%M%S")
-            backup_dir = home / "backups" / "worktrees" / f"{tid}-{stamp}"
-            try:
-                _ensure_private_dir(home / "backups")
-                _ensure_private_dir(home / "backups" / "worktrees")
-                _ensure_private_dir(backup_dir)
-                patch = backup_dir / "changes.patch"
-                r_d = run_in_group(
-                    ["git", "-C", str(wt), "diff", "HEAD", "--binary", "--no-ext-diff", "--no-textconv", "--no-color", f"--output={patch}"],
-                    timeout=30.0,
-                    register=False,
-                )
-                if r_d.returncode != 0:
-                    raise RuntimeError("git diff HEAD failed")
-                r_u = run_in_group(["git", "-C", str(wt), "ls-files", "--others", "--exclude-standard", "-z"], timeout=30.0, register=False)
-                if r_u.returncode != 0:
-                    raise RuntimeError("git ls-files failed")
-                import tarfile
+        if resuming:
+            pend = str(meta.get("removal_backup_pending") or entry.get("backup") or "").strip()
+            backup_dir = Path(pend) if pend else None
+        else:
+            reg_pids: list[int] = []
+            raw_p = read_json_safe(_processes_file(home), {"processes": {}})
+            procs = raw_p.get("processes") if isinstance(raw_p, dict) and isinstance(raw_p.get("processes"), dict) else {}
+            for e in procs.values():
+                if isinstance(e, dict) and str(e.get("task_id") or "") == tid:
+                    try:
+                        reg_pids.append(int(e.get("pid")))
+                    except (TypeError, ValueError):
+                        pass
 
-                untracked = [u for u in (r_u.stdout or "").split("\0") if u]
-                with tarfile.open(backup_dir / "untracked.tar", "w") as tf:
-                    for rel in untracked:
-                        src = wt / rel
-                        if src.is_file() or src.is_symlink():
-                            tf.add(str(src), arcname=rel, recursive=False)
-                atomic_write_json(backup_dir / "backup.json", {
-                    "task_id": tid,
-                    "worktree": str(wt),
-                    "repo": str(meta.get("repo") or entry.get("repo") or ""),
-                    "base": meta.get("base"),
-                    "untracked_files": len(untracked),
-                    "made_at": _iso_utc(now),
-                })
-            except Exception as exc:  # never remove without a complete backup
-                return out(False, None, f"Backup failed ({type(exc).__name__}); nothing was removed.")
+            def _alive_now() -> dict[str, Any]:
+                lv = task_liveness(home, tid, meta, now_ms=_now_ms(None) if now_ms is None else now, stale_ms=stale_ms, registered_pids=reg_pids)
+                with file_lock(_pending_removals_lock(home)):
+                    d2 = load_pending_removals(home)
+                    e2 = d2["items"].get(tid) or entry
+                    e2["pid"] = lv["pid"]
+                    e2["pid_alive"] = lv["pid_alive"]
+                    e2["cpu_pct"] = lv["cpu_pct"]
+                    e2["last_output_at"] = lv["last_output_at"]
+                    d2["items"][tid] = e2
+                    _save_pending_removals(home, d2)
+                return lv
+
+            life = _alive_now()
+            if life["alive"]:
+                return out(False, None, "Still working (" + ", ".join(life["signs"]) + "); nothing was removed.", signs=life["signs"])
+
+            if wt.is_dir() and not wt.is_symlink():
+                if not (wt / ".git").exists():
+                    return out(False, None, "This folder is not a git worktree (no .git); nothing was backed up or removed.")
+                stamp = dt.datetime.now(dt.timezone.utc).strftime("%Y%m%d-%H%M%S")
+                backup_dir = home / "backups" / "worktrees" / f"{tid}-{stamp}"
+                n = 1
+                while backup_dir.exists():
+                    n += 1
+                    backup_dir = home / "backups" / "worktrees" / f"{tid}-{stamp}-{n}"
+                try:
+                    _ensure_private_dir(home / "backups")
+                    _ensure_private_dir(home / "backups" / "worktrees")
+                    _ensure_private_dir(backup_dir)
+                    patch = backup_dir / "changes.patch"
+                    r_d = run_in_group(
+                        ["git", "-C", str(wt), "diff", "HEAD", "--binary", "--no-ext-diff", "--no-textconv", "--no-color", f"--output={patch}"],
+                        timeout=30.0,
+                        register=False,
+                    )
+                    if r_d.returncode != 0:
+                        raise RuntimeError("git diff HEAD failed")
+                    r_u = run_in_group(["git", "-C", str(wt), "ls-files", "--others", "--exclude-standard", "-z"], timeout=30.0, register=False)
+                    if r_u.returncode != 0:
+                        raise RuntimeError("git ls-files failed")
+                    import tarfile
+
+                    untracked = [u for u in (r_u.stdout or "").split("\0") if u]
+                    added = 0
+                    with tarfile.open(backup_dir / "untracked.tar", "w") as tf:
+                        for rel in untracked:
+                            src = wt / rel
+                            if src.is_file() or src.is_symlink():
+                                tf.add(str(src), arcname=rel, recursive=False)
+                                added += 1
+                    # P2-276: the worktree is detached, so commits made after the base would go with it;
+                    # keep them as a patch (base..HEAD) and record HEAD.
+                    head = ""
+                    r_h = run_in_group(["git", "-C", str(wt), "rev-parse", "HEAD"], timeout=15.0, register=False)
+                    if r_h.returncode == 0:
+                        head = (r_h.stdout or "").strip()
+                    base_ref = str(meta.get("base") or "").strip()
+                    commits_after_base = bool(base_ref and head and head != base_ref)
+                    if commits_after_base:
+                        cpatch = backup_dir / "commits.patch"
+                        r_c = run_in_group(
+                            ["git", "-C", str(wt), "diff", "--binary", "--no-ext-diff", "--no-textconv", "--no-color", f"--output={cpatch}", base_ref, "HEAD"],
+                            timeout=30.0,
+                            register=False,
+                        )
+                        if r_c.returncode != 0 or not cpatch.is_file():
+                            raise RuntimeError("git diff base..HEAD failed")
+                    atomic_write_json(backup_dir / "backup.json", {
+                        "task_id": tid,
+                        "worktree": str(wt),
+                        "repo": str(meta.get("repo") or entry.get("repo") or ""),
+                        "base": meta.get("base"),
+                        "head": head or None,
+                        "commits_after_base": commits_after_base,
+                        "untracked_files": len(untracked),
+                        "made_at": _iso_utc(now),
+                    })
+                    _verify_worktree_backup(wt, backup_dir, added, commits_after_base)
+                except Exception as exc:  # never remove without a complete backup
+                    # Remove the partial backup folder this pass created (its name did not exist before).
+                    shutil.rmtree(backup_dir, ignore_errors=True)
+                    fails = int(meta.get("removal_backup_failures") or 0) + 1
+                    next_try = now + BACKUP_RETRY_MS
+                    if meta:
+                        meta["removal_backup_failed_at"] = now
+                        meta["removal_backup_failed_error"] = type(exc).__name__
+                        meta["removal_backup_failures"] = fails
+                        atomic_write_json(mpath, meta)
+                    return out(False, None, f"Backup failed ({type(exc).__name__}); nothing was removed.",
+                               backup_failed=True, backup_failures=fails, next_try_at=_iso_utc(next_try))
+                # A complete, verified backup clears earlier failures.
+                for k in ("removal_backup_failed_at", "removal_backup_failed_error", "removal_backup_failures"):
+                    meta.pop(k, None)
+
+                # The backup took time: check every sign of life once more just before removing.
+                life = _alive_now()
+                if life["alive"]:
+                    return out(False, None, "Still working (" + ", ".join(life["signs"]) + "); backup kept, nothing was removed.",
+                               signs=life["signs"], backup=str(backup_dir))
+
+            # Record the intent before removing anything, so a kill from here on is resumed (above).
+            if meta:
+                meta["removing"] = True
+                meta["removal_backup_pending"] = str(backup_dir) if backup_dir else None
+                atomic_write_json(mpath, meta)
+            with file_lock(_pending_removals_lock(home)):
+                d3 = load_pending_removals(home)
+                e3 = d3["items"].get(tid) or entry
+                e3["removing"] = True
+                e3["backup"] = str(backup_dir) if backup_dir else None
+                d3["items"][tid] = e3
+                _save_pending_removals(home, d3)
+                entry = e3
 
         repo = str(meta.get("repo") or entry.get("repo") or "")
         if wt.is_dir() and not wt.is_symlink():
@@ -894,23 +1166,40 @@ def decide_pending_removal(
             return out(False, None, "Worktree could not be removed; backup kept.", backup=str(backup_dir) if backup_dir else None)
 
         sug_id = str(meta.get("stalled_suggestion_id") or "") if meta else ""
-        if meta and str(meta.get("status") or "") == "taken":
-            try:
-                (tdir / "claim").unlink()
-            except OSError:
-                pass
-            meta["status"] = "queued"
-            meta["taken_at"] = None
-            meta["worktree"] = None
-            meta["base"] = None
-            meta["stalled_at"] = None
-            meta["stall_note"] = None
-            # Where the removed worktree went (undo); its own field so the stall fields clear as before.
-            meta["removal_backup"] = str(backup_dir) if backup_dir else None
-            meta["stalled_suggestion_id"] = None
-            meta["last_activity_at"] = None
-            meta["requeue_count"] = int(meta.get("requeue_count") or 0) + 1
-            meta["last_recovered_at"] = now
+        requeued = False
+        if meta:
+            if str(meta.get("status") or "") == "taken":
+                try:
+                    (tdir / "claim").unlink()
+                except OSError:
+                    pass
+                meta["status"] = "queued"
+                meta["taken_at"] = None
+                meta["worktree"] = None
+                meta["base"] = None
+                meta["stalled_at"] = None
+                meta["stall_note"] = None
+                meta["claim_nonce"] = None
+                # Where removed worktrees went (undo): every backup is kept in removal_backups; the
+                # latest also stays in removal_backup so older readers keep working.
+                backups = meta.get("removal_backups") if isinstance(meta.get("removal_backups"), list) else []
+                if not backups and meta.get("removal_backup"):
+                    backups = [str(meta.get("removal_backup"))]
+                backups = [str(b) for b in backups if b]
+                if backup_dir:
+                    backups.append(str(backup_dir))
+                meta["removal_backups"] = backups
+                meta["removal_backup"] = str(backup_dir) if backup_dir else None
+                meta["stalled_suggestion_id"] = None
+                meta["last_activity_at"] = None
+                meta["requeue_count"] = int(meta.get("requeue_count") or 0) + 1
+                # The next take works in a fresh folder (worktrees/<id>.a<n>); work from an earlier
+                # attempt can no longer be handed in as this one.
+                meta["attempt"] = int(meta.get("attempt") or 1) + 1
+                meta["last_recovered_at"] = now
+                requeued = True
+            meta.pop("removing", None)
+            meta.pop("removal_backup_pending", None)
             atomic_write_json(mpath, meta)
 
         with file_lock(_pending_removals_lock(home)):
@@ -921,11 +1210,14 @@ def decide_pending_removal(
             entry["later_until"] = None
             entry["backup"] = str(backup_dir) if backup_dir else None
             entry["removed_at"] = _iso_utc(now)
+            entry.pop("removing", None)
             data["items"][tid] = entry
             _save_pending_removals(home, data)
-    done_msg = "Worktree removed and task requeued." + (f" Backup: {backup_dir}" if backup_dir else "")
+    finally:
+        tlock.__exit__(None, None, None)
+    done_msg = ("Worktree removed and task requeued." if requeued else "Worktree removed.") + (f" Backup: {backup_dir}" if backup_dir else "")
     _append_suggestion_event(home, sug_id, "ok", now, done_msg)   # the panel's question is answered
-    return out(True, "approved", done_msg, backup=str(backup_dir) if backup_dir else None)
+    return out(True, "approved", done_msg, backup=str(backup_dir) if backup_dir else None, requeued=requeued, resumed=resuming)
 
 
 def scan_hanging_tasks(
@@ -1170,9 +1462,9 @@ def scan_hanging_tasks(
                 continue
 
             taken_ms = _parse_ts_ms(meta.get("taken_at")) or _parse_ts_ms(meta.get("created_at")) or now
-            wt = home / "worktrees" / tid
+            wt = _task_worktree(home, tid, meta)
             wt_info = _scan_worktree_state(wt, str(meta.get("base") or ""))
-            last_act = max(taken_ms, wt_info["latest_mtime_ms"] or 0, _parse_ts_ms(meta.get("last_activity_at")) or 0)
+            last_act = max(taken_ms, wt_info["latest_mtime_ms"] or 0, _parse_ts_ms(meta.get("last_activity_at")) or 0, task_heartbeat_ms(home, tid) or 0)
             idle_ms = max(0, now - last_act)
             elapsed_ms = max(0, now - taken_ms)
 
@@ -1210,6 +1502,8 @@ def scan_hanging_tasks(
                 "pid_alive": life["pid_alive"],
                 "cpu_pct": life["cpu_pct"],
                 "last_output_at": life["last_output_at"],
+                "attempt": int(meta.get("attempt") or 1),
+                "active_owner": bool(has_active_owner),
             })
 
     counts = {"active": 0, "warning": 0, "hung": 0}
@@ -1319,9 +1613,29 @@ def recover_hanging_tasks(
     task_stale_ms: int | None = None,
     chat_stall_ms: int | None = None,
     proc_stall_ms: int | None = None,
+    surface: str | None = None,
+    owner: bool = False,
+    _locked: bool = False,
 ) -> dict[str, Any]:
-    """Dynamically recover hanging Watchkeeper jobs, tasks, chat turns, and tracked processes safely."""
+    """Dynamically recover hanging Watchkeeper jobs, tasks, chat turns, and tracked processes safely.
+
+    surface limits the pass to one kind ("task", "job", "chat_turn", "process"); wk-watch uses
+    "task" so it never touches jobs or processes. owner=True is the owner's own path (wk heal):
+    the old rules, not the watched quiet time.
+    """
     home = resolve_wk_home(wk_home)
+    if not dry_run and not _locked:
+        # P2-276 review: one recover pass at a time (wk-watch, the daemon and wk heal may overlap).
+        try:
+            with file_lock(home / "watchdog" / "recover.lock", timeout_s=300):
+                return recover_hanging_tasks(
+                    home, now_ms=now_ms, dry_run=False, record_learning=record_learning, grace_ms=grace_ms,
+                    job_stall_ms=job_stall_ms, task_stale_ms=task_stale_ms, chat_stall_ms=chat_stall_ms,
+                    proc_stall_ms=proc_stall_ms, surface=surface, owner=owner, _locked=True,
+                )
+        except TimeoutError:
+            return {"ok": False, "killed": False, "busy": True, "dry_run": False, "recovered": [],
+                    "reason": "Another recover pass is running."}
     now = _now_ms(now_ms)
     if is_kill_switch_active(home):
         return {
@@ -1342,7 +1656,10 @@ def recover_hanging_tasks(
         write_summary=False,
     )
     hung_items = [it for it in scan.get("items") or [] if it.get("classification") == "hung"]
+    if surface:
+        hung_items = [it for it in hung_items if it.get("surface") == surface]
     recovered: list[dict[str, Any]] = []
+    t_stale = max(50, int(task_stale_ms if task_stale_ms is not None else _env_int("WK_TASK_STALE_MS", DEFAULT_TASK_STALE_MS)))
 
     if dry_run:
         return {
@@ -1353,6 +1670,22 @@ def recover_hanging_tasks(
             "would_recover": hung_items,
             "recovered": [],
         }
+
+    quiet: dict[str, int] = {}
+    if surface in (None, "task"):
+        quiet = _update_task_quiet(home, [it for it in scan.get("items") or [] if it.get("surface") == "task"], now)
+        # P2-276 review: a removal cut short by a kill is finished first, with its recorded backup.
+        tasks_dir = home / "tasks"
+        if tasks_dir.is_dir():
+            for td in sorted(tasks_dir.iterdir()):
+                m = read_json_safe(td / "meta.json", None)
+                if isinstance(m, dict) and m.get("removing"):
+                    res = decide_pending_removal(td.name, "approve-remove", wk_home=home, now_ms=now, stale_ms=t_stale)
+                    if res.get("ok"):
+                        recovered.append({"surface": "task", "id": td.name, "action": "removal_resumed",
+                                          "backup": res.get("backup"), "requeued": bool(res.get("requeued"))})
+        done_ids = {r["id"] for r in recovered}
+        hung_items = [it for it in hung_items if not (it.get("surface") == "task" and str(it.get("id")) in done_ids)]
 
     for it in hung_items:
         surf = it.get("surface")
@@ -1399,62 +1732,176 @@ def recover_hanging_tasks(
             tid = str(it["id"])
             tdir = home / "tasks" / tid
             mpath = tdir / "meta.json"
-            wt = home / "worktrees" / tid
+            meta0 = read_json_safe(mpath, None)
+            meta0 = meta0 if isinstance(meta0, dict) else {}
+            wt = _task_worktree(home, tid, meta0)
             wt_present = wt.is_dir() and not wt.is_symlink()
-            if reason == "hung_dirty" or wt_present:
+            rq = int(meta0.get("requeue_count") or 0)
+            idle_ms_i = int(it.get("idle_ms") or 0)
+            quiet_i = int(quiet.get(tid, 0))
+            pend0 = load_pending_removals(home)["items"].get(tid)
+            pend0 = pend0 if isinstance(pend0, dict) and not pend0.get("removed_at") else {}
+            # An owner's answer (keep, later, or a "later" that ran out) means the owner decides from now on.
+            owner_hold = str(pend0.get("decision") or "") in ("kept", "later") or bool(pend0.get("owner_decided"))
+            if reason == "hung_dirty" or wt_present or rq >= AUTO_REQUEUE_CAP or owner_hold:
                 # P2-272: one notice per hung task, and never a removal by wall-clock alone.
-                # The task is only recorded in pending-removals.json; the owner approves removal.
+                # P2-276 review: a dead task is recovered automatically only after the watcher itself
+                # saw it quiet, pass after pass, for CLEAN_WAIT_FACTOR x the stale window (clean) or
+                # DIRTY_WAIT_FACTOR x (with changes); a sleeping Mac resets the count. Always through
+                # decide_pending_removal (it re-checks every sign of life, backs up and verifies before
+                # removing). After AUTO_REQUEUE_CAP automatic requeues, or once the owner answered,
+                # the owner decides. The owner's own paths (wk heal) keep the old rule.
                 pend, notify = _record_pending_removal(home, it, now)
-                if not notify:
+                owner_hold = owner_hold or str(pend.get("decision") or "") in ("kept", "later") or bool(pend.get("owner_decided"))
+                # P2-276 round 2: failed automatic backups wait BACKUP_RETRY_MS between tries; after
+                # BACKUP_FAIL_CAP failures the owner decides.
+                bf_n = int(meta0.get("removal_backup_failures") or 0)
+                try:
+                    bf_at = int(meta0.get("removal_backup_failed_at") or 0)
+                except (TypeError, ValueError):
+                    bf_at = 0
+                backup_gave_up = bf_n >= BACKUP_FAIL_CAP
+                owner_hold = owner_hold or backup_gave_up
+                if owner:
+                    due = reason == "hung_clean" or idle_ms_i >= DIRTY_WAIT_FACTOR * t_stale
+                else:
+                    due = quiet_i >= (CLEAN_WAIT_FACTOR if reason == "hung_clean" else DIRTY_WAIT_FACTOR) * t_stale
+                auto_ok = wt_present and not owner_hold and rq < AUTO_REQUEUE_CAP and due
+                auto_refused = False
+                if auto_ok and bf_n and now - bf_at < BACKUP_RETRY_MS:
+                    recovered.append({
+                        "surface": "task",
+                        "id": tid,
+                        "action": "auto_recovery_waiting",
+                        "reason": reason,
+                        "message": f"Backup failed {bf_n} of {BACKUP_FAIL_CAP} times; next try after {_iso_utc(bf_at + BACKUP_RETRY_MS)}.",
+                        "next_try_at": _iso_utc(bf_at + BACKUP_RETRY_MS),
+                    })
                     continue
-                sug_id = ""
-                with file_lock(home / "watchdog" / f"task_{tid}.lock"):
-                    meta = read_json_safe(mpath, None)
-                    if not isinstance(meta, dict):
+                if auto_ok:
+                    with file_lock(_pending_removals_lock(home)):
+                        pdata = load_pending_removals(home)
+                        pe = pdata["items"].get(tid)
+                        if isinstance(pe, dict):
+                            pe["auto"] = True
+                            _save_pending_removals(home, pdata)
+                    res = decide_pending_removal(tid, "approve-remove", wk_home=home, now_ms=now, stale_ms=t_stale)
+                    if res.get("ok") and res.get("requeued"):
+                        title = str(meta0.get("title") or tid)[:120]
+                        bk = res.get("backup")
+                        quiet_min = round((idle_ms_i if owner else quiet_i) / 60000.0, 1)
+                        detail = (
+                            f"Task {tid} showed no sign of life for {quiet_min} minutes, so Watchkeeper "
+                            + ("backed up its changes, " if reason == "hung_dirty" else "")
+                            + "removed its worktree and put it back in the queue (automatic requeue "
+                            + f"{rq + 1} of {AUTO_REQUEUE_CAP})."
+                            + (f" Backup: {bk}." if bk else "")
+                            + " Nothing to do; the next agent that takes it is told where the backup is."
+                        )
+                        info_id = _append_suggestion_line(home, title=f'Task "{title}" requeued automatically', detail=detail, now_ms=now)
+                        recovered.append({
+                            "surface": "task",
+                            "id": tid,
+                            "action": "auto_requeued",
+                            "reason": reason,
+                            "backup": bk,
+                            "requeue_count": rq + 1,
+                            "suggestion_id": info_id,
+                        })
                         continue
-                    diff_path = tdir / "change.diff"
-                    if reason == "hung_dirty" and wt_present and not diff_path.is_file():
-                        base = str(meta.get("base") or "").strip()
-                        _ensure_private_dir(tdir)
-                        diff_args = ["-C", str(wt), "diff", "--binary", "--no-renames", "--no-ext-diff", "--no-textconv", "--no-relative", "--no-color", f"--output={diff_path}"]
-                        if base:
-                            diff_args.append(base)
-                        try:
-                            dr = run_in_group(["git", *diff_args], timeout=6.0, register=False)
-                            if dr.returncode != 0 or (diff_path.is_file() and diff_path.stat().st_size == 0):
-                                diff_path.unlink(missing_ok=True)
-                            elif os.name == "posix" and diff_path.is_file():
-                                os.chmod(diff_path, 0o600)
-                        except Exception:
+                    if res.get("ok"):
+                        # Removed, but the task had already left "taken" (finished meanwhile): nothing requeued.
+                        recovered.append({"surface": "task", "id": tid, "action": "worktree_removed", "reason": reason, "backup": res.get("backup")})
+                        continue
+                    bf_now = int(res.get("backup_failures") or 0) if res.get("backup_failed") else 0
+                    retry = bool(bf_now) and bf_now < BACKUP_FAIL_CAP
+                    recovered.append({
+                        "surface": "task",
+                        "id": tid,
+                        "action": "auto_recovery_refused",
+                        "reason": reason,
+                        "message": str(res.get("message") or "")
+                        + (f" Next try after {res.get('next_try_at')}." if retry else "")
+                        + (f" Backup failed {bf_now} times; Watchkeeper stopped trying and the owner decides." if bf_now >= BACKUP_FAIL_CAP else ""),
+                        **({"next_try_at": res.get("next_try_at")} if retry else {}),
+                    })
+                    if res.get("signs") or res.get("busy"):
+                        continue   # it came back to life (or is being taken/finished) meanwhile: leave it alone
+                    if retry:
+                        continue   # tried again after BACKUP_RETRY_MS; no notice yet
+                    if bf_now >= BACKUP_FAIL_CAP:
+                        owner_hold = backup_gave_up = True
+                    auto_refused = True
+                # A clean task on its way to an automatic requeue gets no question: the requeue sends one
+                # info notice (one notice per task). If the automatic path is refused (for example the
+                # backup failed), the owner is asked after all.
+                auto_coming = (reason == "hung_clean" and not owner and wt_present and not owner_hold
+                               and rq < AUTO_REQUEUE_CAP and not auto_refused)
+                if auto_coming:
+                    continue
+                if not notify:
+                    m_chk = read_json_safe(mpath, None)
+                    if not (auto_refused and isinstance(m_chk, dict) and not m_chk.get("stalled_suggestion_id")):
+                        continue
+                sug_id = ""
+                try:
+                    with _task_lock(home, tid):
+                        meta = read_json_safe(mpath, None)
+                        if not isinstance(meta, dict):
+                            continue
+                        diff_path = tdir / "change.diff"
+                        if reason == "hung_dirty" and wt_present and not diff_path.is_file():
+                            base = str(meta.get("base") or "").strip()
+                            _ensure_private_dir(tdir)
+                            diff_args = ["-C", str(wt), "diff", "--binary", "--no-renames", "--no-ext-diff", "--no-textconv", "--no-relative", "--no-color", f"--output={diff_path}"]
+                            if base:
+                                diff_args.append(base)
                             try:
-                                diff_path.unlink(missing_ok=True)
-                            except OSError:
-                                pass
-                    idle_min = round(int(it.get("idle_ms") or 0) / 60000.0, 1)
-                    meta["stalled_at"] = _iso_utc(now)
-                    if reason == "hung_dirty":
-                        meta["stall_note"] = f"Stalled dirty task preserved after {idle_min}m without progress."
-                    else:
-                        meta["stall_note"] = f"Stalled task quiet for {idle_min}m; worktree kept until the owner approves its removal."
-                    sug_id = str(meta.get("stalled_suggestion_id") or "").strip()
-                    if not sug_id:
-                        title = str(meta.get("title") or tid)[:120]
+                                dr = run_in_group(["git", *diff_args], timeout=6.0, register=False)
+                                if dr.returncode != 0 or (diff_path.is_file() and diff_path.stat().st_size == 0):
+                                    diff_path.unlink(missing_ok=True)
+                                elif os.name == "posix" and diff_path.is_file():
+                                    os.chmod(diff_path, 0o600)
+                            except Exception:
+                                try:
+                                    diff_path.unlink(missing_ok=True)
+                                except OSError:
+                                    pass
+                        idle_min = round(int(it.get("idle_ms") or 0) / 60000.0, 1)
+                        meta["stalled_at"] = _iso_utc(now)
                         if reason == "hung_dirty":
-                            sug_id = _append_suggestion_line(
-                                home,
-                                title=f'Stalled task "{title}" has unsaved changes',
-                                detail=f"Task {tid} stopped updating while holding changes in {wt}. Watchkeeper preserved the worktree and saved change.diff; inspect, finish with wk-task done {tid}, or approve removal in the W panel (wk watchdog approve-remove {tid}; a backup is made first).",
-                                now_ms=now,
-                            )
+                            meta["stall_note"] = f"Stalled dirty task preserved after {idle_min}m without progress."
                         else:
-                            sug_id = _append_suggestion_line(
-                                home,
-                                title=f'Stalled task "{title}": remove its worktree?',
-                                detail=f"Task {tid} shows no sign of life (no live process, no CPU, no recent output). Nothing was deleted. Press OK in the W panel (wk watchdog approve-remove {tid}) to back up, remove the worktree and requeue the task; or choose later or keep.",
-                                now_ms=now,
-                            )
-                        meta["stalled_suggestion_id"] = sug_id
-                    atomic_write_json(mpath, meta)
+                            meta["stall_note"] = f"Stalled task quiet for {idle_min}m; worktree kept until the owner approves its removal."
+                        sug_id = str(meta.get("stalled_suggestion_id") or "").strip()
+                        gave_up_note = (
+                            f" Automatic backup failed {int(meta.get('removal_backup_failures') or 0)} times"
+                            f" ({meta.get('removal_backup_failed_error') or 'error'}), so Watchkeeper stopped trying; you decide."
+                            if int(meta.get("removal_backup_failures") or 0) >= BACKUP_FAIL_CAP else ""
+                        )
+                        if not sug_id:
+                            title = str(meta.get("title") or tid)[:120]
+                            auto_note = not owner_hold and rq < AUTO_REQUEUE_CAP
+                            if reason == "hung_dirty":
+                                sug_id = _append_suggestion_line(
+                                    home,
+                                    title=f'Stalled task "{title}" has unsaved changes',
+                                    detail=f"Task {tid} stopped updating while holding changes in {wt}. Watchkeeper preserved the worktree and saved change.diff; inspect, finish with wk-task done {tid}, or approve removal in the W panel (wk watchdog approve-remove {tid}; a backup is made first)."
+                                    + (f" If Watchkeeper sees it stay quiet for {DIRTY_WAIT_FACTOR} x the stale window ({round(DIRTY_WAIT_FACTOR * t_stale / 60000.0, 1)} minutes, counted while the Mac is awake), it backs it up and requeues it by itself." if auto_note else "") + gave_up_note,
+                                    now_ms=now,
+                                )
+                            else:
+                                sug_id = _append_suggestion_line(
+                                    home,
+                                    title=f'Stalled task "{title}": remove its worktree?',
+                                    detail=f"Task {tid} shows no sign of life (no live process, no CPU, no recent output). Nothing was deleted. Press OK in the W panel (wk watchdog approve-remove {tid}) to back up, remove the worktree and requeue the task; or choose later or keep."
+                                    + (f" If Watchkeeper sees it stay quiet for {CLEAN_WAIT_FACTOR} x the stale window ({round(CLEAN_WAIT_FACTOR * t_stale / 60000.0, 1)} minutes, counted while the Mac is awake), it does this by itself." if auto_note else "") + gave_up_note,
+                                    now_ms=now,
+                                )
+                            meta["stalled_suggestion_id"] = sug_id
+                        atomic_write_json(mpath, meta)
+                except TimeoutError:
+                    continue
                 recovered.append({
                     "surface": "task",
                     "id": tid,
@@ -1463,41 +1910,51 @@ def recover_hanging_tasks(
                     "suggestion_id": sug_id,
                 })
             else:
-                # Clean task whose worktree is already gone: nothing to delete, just requeue it.
-                with file_lock(home / "watchdog" / f"task_{tid}.lock"):
-                    meta = read_json_safe(mpath, None)
-                    if not isinstance(meta, dict):
-                        continue
-                    claim = tdir / "claim"
-                    try:
-                        claim.unlink()
-                    except FileNotFoundError:
-                        pass
-                    except OSError:
-                        pass
-                    if wt.is_symlink():
+                # Clean task whose worktree is already gone: nothing to delete, just requeue it, after
+                # the same watched quiet time as a clean task with a worktree (the owner's heal: at once).
+                if not owner and quiet_i < CLEAN_WAIT_FACTOR * t_stale:
+                    continue
+                requeued = False
+                try:
+                    with _task_lock(home, tid):
+                        meta = read_json_safe(mpath, None)
+                        if not isinstance(meta, dict) or str(meta.get("status") or "") != "taken":
+                            continue
+                        if int(meta.get("requeue_count") or 0) >= AUTO_REQUEUE_CAP and not owner:
+                            continue
+                        claim = tdir / "claim"
                         try:
-                            wt.unlink()
+                            claim.unlink()
                         except OSError:
                             pass
-                    meta["status"] = "queued"
-                    meta["taken_at"] = None
-                    meta["worktree"] = None
-                    meta["base"] = None
-                    meta["stalled_at"] = None
-                    meta["stall_note"] = None
-                    meta["stalled_suggestion_id"] = None
-                    meta["last_activity_at"] = None
-                    meta["requeue_count"] = int(meta.get("requeue_count") or 0) + 1
-                    meta["last_recovered_at"] = now
-                    atomic_write_json(mpath, meta)
-                recovered.append({
-                    "surface": "task",
-                    "id": tid,
-                    "action": "requeued_clean_task",
-                    "reason": reason,
-                })
-
+                        if wt.is_symlink():
+                            try:
+                                wt.unlink()
+                            except OSError:
+                                pass
+                        meta["status"] = "queued"
+                        meta["taken_at"] = None
+                        meta["worktree"] = None
+                        meta["base"] = None
+                        meta["stalled_at"] = None
+                        meta["stall_note"] = None
+                        meta["stalled_suggestion_id"] = None
+                        meta["last_activity_at"] = None
+                        meta["claim_nonce"] = None
+                        meta["requeue_count"] = int(meta.get("requeue_count") or 0) + 1
+                        meta["attempt"] = int(meta.get("attempt") or 1) + 1
+                        meta["last_recovered_at"] = now
+                        atomic_write_json(mpath, meta)
+                        requeued = True
+                except TimeoutError:
+                    continue
+                if requeued:
+                    recovered.append({
+                        "surface": "task",
+                        "id": tid,
+                        "action": "requeued_clean_task",
+                        "reason": reason,
+                    })
         elif surf == "chat_turn":
             sid = str(it.get("session_id") or "")
             tid = str(it.get("turn_id") or "")
@@ -1576,6 +2033,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("action", nargs="?", default="scan", choices=["scan", "status", "recover", "register", "heartbeat", "unregister"])
     parser.add_argument("--wk-home", default="")
     parser.add_argument("--dry-run", action="store_true")
+    parser.add_argument("--surface", default="", choices=["", "task", "job", "chat_turn", "process"])
     parser.add_argument("--json", action="store_true")
     parser.add_argument("--pid", type=int, default=0)
     parser.add_argument("--pgid", type=int, default=0)
@@ -1589,7 +2047,7 @@ def main(argv: list[str] | None = None) -> int:
     if ns.action in ("scan", "status"):
         out = scan_hanging_tasks(home, write_summary=(ns.action == "scan"))
     elif ns.action == "recover":
-        out = recover_hanging_tasks(home, dry_run=ns.dry_run)
+        out = recover_hanging_tasks(home, dry_run=ns.dry_run, surface=(ns.surface or None))
     elif ns.action == "register":
         out = register_process(ns.pid, pgid=ns.pgid or None, kind=ns.kind, label=ns.label, cwd=ns.cwd, task_id=ns.task_id, wk_home=home)
     elif ns.action == "heartbeat":

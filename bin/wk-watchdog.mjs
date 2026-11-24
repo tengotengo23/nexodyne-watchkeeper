@@ -313,18 +313,22 @@ c.on('close', code => finish(code));
   };
 }
 
-export function runWatchdogCli(argv = process.argv.slice(2)) {
+export function runWatchdogCli(argv = process.argv.slice(2), opts = {}) {
   const py = findPython() || 'python3';
   const script = path.join(ROOT, 'core', 'watchdog.py');
   // P2-272: explicit 30 s limit (WK_WATCHDOG_CLI_TIMEOUT_MS overrides); exit 124 on timeout.
-  const timeoutMs = Math.max(1000, Number(process.env.WK_WATCHDOG_CLI_TIMEOUT_MS) || 30000);
+  // P2-276 review: a caller may pass a longer limit and a gentler signal (wk-watch's recover backs up worktrees:
+  // 10 minutes, SIGTERM, so watchdog.py can stop between steps; an interrupted removal resumes on the next pass).
+  const envMs = Number(process.env.WK_WATCHDOG_CLI_TIMEOUT_MS);
+  const timeoutMs = Math.max(1000, envMs > 0 ? envMs : (Number(opts.timeoutMs) > 0 ? Number(opts.timeoutMs) : 30000));
+  const killSignal = opts.killSignal === 'SIGTERM' ? 'SIGTERM' : 'SIGKILL';
   const r = spawnSync(py, [script, ...argv], {
     cwd: ROOT,
     env: { ...process.env, PYTHONPATH: ROOT },
     encoding: 'utf8',
     stdio: ['ignore', 'pipe', 'pipe'],
     timeout: timeoutMs,
-    killSignal: 'SIGKILL',
+    killSignal,
   });
   if (r.stdout) process.stdout.write(r.stdout);
   if (r.stderr) process.stderr.write(r.stderr);

@@ -22,7 +22,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
-import { gates, glob2re } from './lib.mjs';
+import { gates, glob2re, touchTaskHeartbeat } from './lib.mjs';
 import { detectPass } from './antigravity-lib.mjs';
 
 const HERE_FILE = fileURLToPath(import.meta.url);
@@ -167,6 +167,8 @@ export function main(raw) {
   try { ev = JSON.parse(raw || '{}'); } catch { return deny('Watchkeeper could not read the hook input, so it refused the call.'); }
   if (!ev || typeof ev !== 'object' || Array.isArray(ev)) return deny('Watchkeeper could not read the hook input, so it refused the call.');
   const g = toGuard(ev);
+  // P2-276: a call inside a task worktree is a sign of life for that task (never fails, never blocks)
+  try { touchTaskHeartbeat(g.cwd, pathsIn(callOf(ev).args)); } catch {}
   {
     const call = callOf(ev), conv = convOf(ev), work = isWkWork(ev, call, g.cwd);
     let guarded = work;

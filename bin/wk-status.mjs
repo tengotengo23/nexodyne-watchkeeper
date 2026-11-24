@@ -14,6 +14,7 @@ import { graphifyStatus } from './wk-graphify.mjs';
 import { state as readWkState } from './wk-state.mjs';
 import { readSyncStatus } from './wk-skill-sync.mjs';
 import { statusLine } from './wk-handoff.mjs';
+import { statusLine as watchLine } from './wk-watch.mjs';
 import { loadConfig, loadProjects, upkeepReading, meterFile, nowMs } from './steward-lib.mjs';
 import { resolveDataDir } from './rp-dir.mjs';
 
@@ -240,6 +241,7 @@ export function buildUnifiedStatus(opts = {}) {
     skill_sync: readSyncStatus(),
     learning,
     watchdog,
+    watch: readJSON(path.join(wkHome, 'watch.json'), null),
     orchestrator: pySub.orchestrator,
     pipeline_stages: [
       { stage: 1, name: 'Hook Multiplexer Bus', detail: 'core/hook_bus.py topological dispatcher + PreToolUse/Stop guards' },
@@ -251,7 +253,7 @@ export function buildUnifiedStatus(opts = {}) {
     commands: {
       claude_code: ['/wk', '/wk-status', '/re-prompt', '/orchestrate', '/optimise', '/spend'],
       antigravity: ['/wk', '/wk-status', '/re-prompt', '/duo-orchestrator', '/profession-skill-vault', '/graphify', '/wk-take-task', '/wk-add-task', '/wk-suggest', '/ask-claude'],
-      cli: ['wk.mjs', 'wk-status.mjs', 'wk-skill-sync.mjs', 'wk-antigravity.mjs', 'wk-graphify.mjs', 'wk-pin.mjs', 'wk-task.mjs', 'wk-suggest.mjs', 'wk-state.mjs', 'wk-watchdog.mjs'],
+      cli: ['wk.mjs', 'wk-status.mjs', 'wk-skill-sync.mjs', 'wk-antigravity.mjs', 'wk-graphify.mjs', 'wk-pin.mjs', 'wk-task.mjs', 'wk-suggest.mjs', 'wk-state.mjs', 'wk-watchdog.mjs', 'wk-watch.mjs'],
     },
   };
 }
@@ -277,6 +279,7 @@ function formatText(rep) {
     `  Skill Vault : indexed=${Boolean(sv?.indexed)} | skills=${sv?.skill_count ?? 0} | daily_sync=${Boolean(ss.scheduled_daily)} (last=${ss.last_sync_at || 'never'})`,
     `  Learning DB : snippets=${rep.learning?.snippetCount ?? 0} (${rep.learning?.verifiedCount ?? 0} verified) | corrections=${rep.learning?.correctionCount ?? 0} | heuristics=${rep.learning?.heuristicCount ?? 0}`,
     `  Watchdog    : hung=${rep.watchdog?.hungCount ?? 0} | warning=${rep.watchdog?.warningCount ?? 0} | active=${rep.watchdog?.activeCount ?? 0}`,
+    `  Task watch  : ${watchLine(rep.watch)}`,
     `  Orchestrator: status=${or?.overall_status || 'unknown'} | gemini=queued for Antigravity | claude_savings=$${Number(or?.claude_savings_usd || 0).toFixed(4)}`,
     `  Runtime v2.0: hook_bus=active | brain=Claude Code here; Gemini work queued for Antigravity (wk-task) | /wk doctor ready`,
   ];

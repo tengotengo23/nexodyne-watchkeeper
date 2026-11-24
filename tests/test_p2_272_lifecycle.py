@@ -76,7 +76,7 @@ class _TempHome(unittest.TestCase):
                 os.environ[k] = v
         self._tmp.cleanup()
 
-    def make_taken_task(self, tid: str, pid: int, *, dirty: bool = False) -> Path:
+    def make_taken_task(self, tid: str, pid: int, *, dirty: bool = False, requeue_count: int = 0) -> Path:
         wt = self.wk_home / "worktrees" / tid
         wt.parent.mkdir(parents=True, exist_ok=True)
         _git(self.repo, "worktree", "add", "--detach", str(wt), self.base_sha)
@@ -89,6 +89,7 @@ class _TempHome(unittest.TestCase):
         (tdir / "meta.json").write_text(json.dumps({
             "id": tid, "title": "Lifecycle test", "status": "taken", "repo": str(self.repo),
             "base": self.base_sha, "worktree": str(wt), "taken_at": "2020-01-01T00:00:00+00:00",
+            **({"requeue_count": requeue_count} if requeue_count else {}),
         }), encoding="utf-8")
         return wt
 
@@ -147,22 +148,38 @@ class PendingRemovalTests(_TempHome):
     def future(self) -> int:
         return int(time.time() * 1000) + 3 * DAY_MS
 
-    def test_quiet_dead_task_is_recorded_once_and_nothing_deleted(self) -> None:
+    def test_quiet_dead_task_is_requeued_once_with_one_info_notice(self) -> None:
+        # P2-276 replaces the P2-272 rule (a dead clean task waited for the owner's OK): a clean task with no
+        # sign of life is backed up, removed and requeued automatically, with one info-only notice; a second
+        # pass changes nothing and adds no notice.
         wt = self.make_taken_task(self.TID, _dead_pid())
+        # P2-276 review: only quiet time the watcher itself saw counts (2 x the stale window for a clean
+        # task, passes at most 120 s apart), so it takes three passes one stale window apart.
+        stale = 60_000
         now = self.future()
-        r1 = recover_hanging_tasks(self.wk_home, now_ms=now, record_learning=False)
-        acts = [x for x in r1.get("recovered", []) if x.get("id") == self.TID]
+        for early in (now - 2 * stale, now - stale):
+            r0 = recover_hanging_tasks(self.wk_home, now_ms=early, task_stale_ms=stale, record_learning=False)
+            self.assertNotIn("auto_requeued", [x["action"] for x in r0.get("recovered", []) if x.get("id") == self.TID], r0)
+            self.assertTrue(wt.exists())
+        r1 = recover_hanging_tasks(self.wk_home, now_ms=now, task_stale_ms=stale, record_learning=False)
+        acts = [x for x in r1.get("recovered", []) if x.get("id") == self.TID and x["action"] != "recorded_pending_removal"]
         self.assertEqual(len(acts), 1, r1)
-        self.assertEqual(acts[0]["action"], "recorded_pending_removal")
+        self.assertEqual(acts[0]["action"], "auto_requeued")
+        self.assertEqual(acts[0]["requeue_count"], 1)
         items = load_pending_removals(self.wk_home)["items"]
-        self.assertIn(self.TID, items)
-        first_notice = items[self.TID]["notified_at"]
-        r2 = recover_hanging_tasks(self.wk_home, now_ms=now + 60_000, record_learning=False)
-        self.assertEqual([x for x in r2.get("recovered", []) if x.get("id") == self.TID and x.get("suggestion_id") and x.get("suggestion_id") != acts[0].get("suggestion_id")], [])
-        self.assertEqual(load_pending_removals(self.wk_home)["items"][self.TID]["notified_at"], first_notice)
-        sugs = (self.wk_home / "suggestions.jsonl").read_text(encoding="utf-8").strip().splitlines()
-        self.assertEqual(sum(1 for s in sugs if self.TID in s), 1, "one notice per hung task")
-        self.assertTrue(wt.exists(), "the worktree is never deleted without the owner")
+        self.assertTrue(items[self.TID]["removed_at"])
+        self.assertFalse(wt.exists())
+        m = self.meta(self.TID)
+        self.assertEqual(m["status"], "queued")
+        self.assertEqual(m["requeue_count"], 1)
+        self.assertFalse((self.wk_home / "tasks" / self.TID / "claim").exists())
+        r2 = recover_hanging_tasks(self.wk_home, now_ms=now + 60_000, task_stale_ms=stale, record_learning=False)
+        self.assertEqual([x for x in r2.get("recovered", []) if x.get("id") == self.TID], [])
+        self.assertEqual(self.meta(self.TID)["requeue_count"], 1)
+        rows = [json.loads(l) for l in (self.wk_home / "suggestions.jsonl").read_text(encoding="utf-8").splitlines() if l.strip()]
+        mine = [r for r in rows if "title" in r and self.TID in json.dumps(r)]
+        self.assertEqual(len(mine), 1, "one notice per requeued task")
+        self.assertEqual(mine[0]["action"], {"type": "none"})
 
     def test_live_pid_means_alive_and_approve_is_refused(self) -> None:
         proc = subprocess.Popen(["/bin/sleep", "30"])
@@ -216,7 +233,8 @@ class PendingRemovalTests(_TempHome):
         self.assertEqual(load_pending_removals(self.wk_home)["items"][self.TID]["decision"], "kept")
 
     def test_kill_switch_refuses_approve(self) -> None:
-        wt = self.make_taken_task(self.TID, _dead_pid())
+        # P2-276: requeue_count at the cap (3), so the task takes the owner's pending-removal path this test covers.
+        wt = self.make_taken_task(self.TID, _dead_pid(), requeue_count=3)
         now = self.future()
         recover_hanging_tasks(self.wk_home, now_ms=now, record_learning=False)
         (self.wk_home / "KILL").write_text("stop\n", encoding="utf-8")

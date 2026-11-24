@@ -440,7 +440,7 @@ def cmd_heal(ws: Path, store: StateStore, apply: bool = False) -> tuple[int, dic
             "error": "Stop switch (~/.wk/KILL) is on. Heal --apply refused.",
         }
     actions_taken: dict[str, Any] = {}
-    actions_taken["watchdog"] = recover_hanging_tasks(dry_run=False)
+    actions_taken["watchdog"] = recover_hanging_tasks(dry_run=False, owner=True)
     refreshed = build_skills_manifest(workspace_dir=ws, store=store, force_reload=True)
     actions_taken["skills_reloaded"] = len(refreshed.get("skills") or [])
     if findings["graph_exists"]:

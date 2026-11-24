@@ -5,7 +5,7 @@
 //   wk-task add --repo <abs> --title "<t>" [--kind <k>] [--model <m>] [--allow <glob>]... [--test "<cmd>"] [--from claude|owner|gemini]
 //               [--text "<t>" | stdin]                              -> prints the new id
 //   wk-task take [--id <id>] [--model-used <m>]                     -> claims the next task, makes its worktree, prints the brief
-//   wk-task done <id> [--note "<t>"] [--model-used <m>]             -> diff, scope check, test, commit in the worktree, a suggestion
+//   wk-task done <id> [--attempt <n>] [--note "<t>"] [--model-used <m>] -> diff, scope check, test, commit in the worktree, a suggestion
 //   wk-task merge <id>                                              -> merges a verified task into its repo (never pushes)
 //   wk-task discard <id>                                            -> removes the worktree, keeps change.diff
 //   wk-task sweep [--recover] [--json]                              -> scans or recovers hung tasks via watchdog
@@ -18,7 +18,7 @@ import os from 'node:os';
 import path from 'node:path';
 import crypto from 'node:crypto';
 import { spawnSync } from 'node:child_process';
-import { gates, killOn, killFile, glob2re, globBody } from './lib.mjs';
+import { gates, killOn, killFile, glob2re, globBody, earlierWorkLines } from './lib.mjs';
 import { wkHome, tasksDir, worktreesDir, config, kinds, guessKind, oneLine, multiLine, stamp, slug, ensureDir, writeFile, readJSON,
   withLock, git, readTask, listTasks, addSuggestion, TASK_ID, FROM_TASK, MAX_TITLE, MAX_NOTE, MAX_TEXT } from './gemini-lib.mjs';
 import { runDetachedCommandSync, runWatchdogCli } from './wk-watchdog.mjs';
@@ -31,7 +31,7 @@ const fail = m => { throw new Stop(1, m); };
 export function parseArgs(argv) {
   if (argv.includes('--help') || argv.includes('-h')) return { cmd: 'help', id: null, allow: [], json: false, recover: false };
   const o = { cmd: argv[0] || '', id: null, allow: [], json: false, recover: false };
-  const VAL = { '--repo': 'repo', '--title': 'title', '--kind': 'kind', '--model': 'model', '--test': 'test', '--from': 'from', '--text': 'text', '--id': 'id', '--model-used': 'modelUsed', '--note': 'note', '--base': 'base' };
+  const VAL = { '--repo': 'repo', '--title': 'title', '--kind': 'kind', '--model': 'model', '--test': 'test', '--from': 'from', '--text': 'text', '--id': 'id', '--model-used': 'modelUsed', '--note': 'note', '--base': 'base', '--attempt': 'attempt' };
   const a = argv.slice(1);
   while (a.length) {
     const x = a.shift();
@@ -61,10 +61,48 @@ const literal = f => `:(literal)${f}`;
 // Every diff Watchkeeper reads or shows: no rename detection (a rename would hide the deletion of its old path), and no
 // external diff, text conversion or relative setting (the repository's config never changes what the owner sees).
 const DIFF = ['--no-renames', '--no-ext-diff', '--no-textconv', '--no-relative', '--no-color'];
-// The worktree is always <data folder>/worktrees/<id>; meta.json is a plain file Gemini could rewrite, so its "worktree"
-// field is written for readers but never used for git or file work. A symlink in its place is never followed.
-const wtOf = m => path.join(worktreesDir(), m.id);
+// The worktree is always <data folder>/worktrees/<id> (attempt 1) or <id>.a<n> (attempt n >= 2, P2-276 review: a requeued
+// task starts in a fresh folder, so an earlier attempt's agent can never hand its work in as the new one). meta.json is a
+// plain file Gemini could rewrite, so its "worktree" field is written for readers but never used for git or file work;
+// only the attempt number is read, and only as a small whole number. A symlink in its place is never followed.
+export const attemptOf = m => { const n = Number(m && m.attempt); return Number.isInteger(n) && n >= 1 && n <= 9999 ? n : 1; };
+const wtName = m => (attemptOf(m) >= 2 ? `${m.id}.a${attemptOf(m)}` : m.id);
+const wtOf = m => path.join(worktreesDir(), wtName(m));
 function liveWt(m) { const wt = wtOf(m); try { return fs.lstatSync(wt).isDirectory() ? wt : null; } catch { return null; } }
+// P2-276 review: take and done hold <data folder>/watchdog/task_<id>.lock, the same lock the watchdog holds while it backs
+// up and removes a dead task's worktree, so a removal never runs in the middle of a take or a done. Same protocol as
+// core/watchdog.py _TaskLock: O_EXCL file with a "pid ms hex" token, taken over when older than 15 minutes or its pid is
+// gone, removed on release only while it still holds our token.
+const TASK_LOCK_STALE_MS = 15 * 60 * 1000;
+const pidGone = pid => { if (!(pid > 1)) return false; try { process.kill(pid, 0); return false; } catch (e) { return e.code === 'ESRCH'; } };
+export function withTaskLock(id, fn, { waitMs = 15000 } = {}) {
+  const dir = path.join(wkHome(), 'watchdog'); ensureDir(dir);
+  const file = path.join(dir, `task_${id}.lock`);
+  const token = `${process.pid} ${Date.now()} ${crypto.randomBytes(4).toString('hex')}`;
+  const until = Date.now() + waitMs;
+  for (;;) {
+    try { const fd = fs.openSync(file, 'wx', 0o600); fs.writeSync(fd, token + '\n'); fs.closeSync(fd); break; }
+    catch (e) {
+      if (e.code !== 'EEXIST') throw e;
+      let stale = false;
+      try {
+        const st = fs.lstatSync(file);
+        stale = Date.now() - st.mtimeMs > TASK_LOCK_STALE_MS || pidGone(parseInt(fs.readFileSync(file, 'utf8').split(/\s+/)[0], 10));
+      } catch (e2) { if (e2.code === 'ENOENT') continue; }
+      if (stale) { try { fs.rmSync(file, { force: true }); } catch {} continue; }
+      if (Date.now() > until) fail(`task ${id} is busy (the watchdog or another command is working on it); try again in a minute`);
+      Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 40);
+    }
+  }
+  try { return fn(); } finally {
+    try { if (fs.readFileSync(file, 'utf8').trim() === token) fs.rmSync(file, { force: true }); } catch {}
+  }
+}
+// The backup of the newest earlier attempt (removal_backups, non-empty entries), for the "requeued" refusal.
+const lastBackup = m => {
+  const l = (Array.isArray(m.removal_backups) ? m.removal_backups : []).filter(b => typeof b === 'string' && b);
+  return l.length ? l[l.length - 1] : (typeof m.removal_backup === 'string' && m.removal_backup ? m.removal_backup : null);
+};
 const sha256 = b => crypto.createHash('sha256').update(b).digest('hex');
 const SHA = /^[0-9a-f]{40}([0-9a-f]{24})?$/;
 
@@ -173,12 +211,19 @@ export function takeTask(o, now = new Date()) {
     if (o.id) { m = metaOf(o.id); if (m.status !== 'queued') fail(`task ${m.id} is ${m.status}, not queued`); }
     else { m = all.find(t => t.status === 'queued'); if (!m) throw new Stop(5, 'Nothing is queued. Stop here.'); }
     // the claim file is made once ('wx'): two sessions can never take the same task, even with the lock taken over
+    return withTaskLock(m.id, () => {
+    m = metaOf(m.id);   // read again under the task lock: the watchdog may have changed it meanwhile
+    if (m.status !== 'queued') fail(`task ${m.id} is ${m.status}, not queued`);
     const claim = path.join(taskDir(m.id), 'claim');
-    try { const fd = fs.openSync(claim, 'wx', 0o600); fs.writeSync(fd, `${process.pid} ${now.toISOString()}\n`); fs.closeSync(fd); }
+    const nonce = crypto.randomBytes(8).toString('hex');
+    try { const fd = fs.openSync(claim, 'wx', 0o600); fs.writeSync(fd, `${process.pid} ${now.toISOString()} ${nonce}\n`); fs.closeSync(fd); }
     catch (e) { if (e.code === 'EEXIST') fail(`task ${m.id} was already taken`); throw e; }
-    const wt = path.join(worktreesDir(), m.id);
+    const attempt = attemptOf(m);
+    const wt = wtOf(m);
     let wtAdded = false;
     try {
+      let pre = null; try { pre = fs.lstatSync(wt); } catch {}
+      if (pre) fail(`the folder for attempt ${attempt} of ${m.id} already exists (${wt}); nothing was taken`);
       if (!fs.existsSync(m.repo)) fail(`the repository ${m.repo} is gone`);
       let base = git(m.repo, ['rev-parse', '--verify', 'HEAD']).trim();
       if (m.start_base !== undefined && m.start_base !== null) {
@@ -189,7 +234,7 @@ export function takeTask(o, now = new Date()) {
       ensureDir(worktreesDir());
       git(m.repo, ['worktree', 'add', '--detach', wt, base]);
       wtAdded = true;
-      Object.assign(m, { status: 'taken', taken_at: now.toISOString(), worktree: wt, base, ...(o.modelUsed ? { model_used: oneLine(o.modelUsed).slice(0, 80) } : {}) });
+      Object.assign(m, { status: 'taken', taken_at: now.toISOString(), worktree: wt, base, attempt, claim_nonce: nonce, ...(o.modelUsed ? { model_used: oneLine(o.modelUsed).slice(0, 80) } : {}) });
       saveMeta(m);
       return m;
     } catch (e) {
@@ -200,6 +245,7 @@ export function takeTask(o, now = new Date()) {
       fs.rmSync(claim, { force: true });
       throw e;
     }
+    });
   });
 }
 
@@ -212,6 +258,7 @@ export function brief(m) {
     `Kind: ${m.kind}. Suggested model: ${m.model}${m.fallback ? ` (fallback ${m.fallback})` : ''}. Antigravity's model menu sets the model; if yours differs, say so with --model-used on done.`,
     `Allowed files: ${m.allow.join(', ')}`,
     `Test: ${m.test || 'none set'}`,
+    ...earlierWorkLines(m, wkHome()),
     '',
     'Rules:',
     '- Work only inside the worktree above. Never touch the main folder of the repository.',
@@ -219,7 +266,7 @@ export function brief(m) {
     '- Never push, deploy, publish, send mail or buy anything. Never skip permissions.',
     '- Run the test yourself before you finish. Do not commit; done does that after its checks.',
     '- If you need the owner, post a suggestion (/wk-suggest) instead of asking in chat.',
-    `- When you are finished: ${node} ${bin} done ${m.id} --model-used "<the model you used>" --note "<what you did, in two or three lines>"`,
+    `- When you are finished: ${node} ${bin} done ${m.id}${attemptOf(m) >= 2 ? ` --attempt ${attemptOf(m)}` : ''} --model-used "<the model you used>" --note "<what you did, in two or three lines>"`,
     '',
     '--- the task ---',
     text,
@@ -256,7 +303,30 @@ function guardSays(cmd, cwd) {
 const tail = (s, n) => String(s || '').replace(/\s+$/, '').split('\n').slice(-n).join('\n');
 
 export function doneTask(o, now = new Date()) {
+  metaOf(o.id);
+  return withTaskLock(o.id, () => doneLocked(o, now));
+}
+// P2-276 review: an agent from an earlier attempt (its task was requeued after it went quiet) must not hand in its work as
+// the new attempt's: from attempt 2 on, done needs --attempt with the current number.
+function requeuedRefusal(m, o) {
+  const cur = attemptOf(m);
+  const given = o.attempt === undefined ? null : (/^\d{1,4}$/.test(String(o.attempt)) ? Number(o.attempt) : NaN);
+  if (given !== null && Number.isNaN(given)) bad('--attempt needs a whole number');
+  const stale = given !== null ? given !== cur : cur >= 2;
+  const gone = m.status === 'queued' && Number(m.requeue_count || 0) > 0;
+  if (!stale && !gone) return null;
+  const bk = lastBackup(m);
+  const saved = bk || `${diffFile(m)} (if any; no worktree backup was needed)`;
+  // No --attempt on a taken task at attempt 2+: it may be the current attempt's own worker.
+  if (given === null && m.status === 'taken' && cur >= 2) {
+    return `this task is on attempt ${cur}. If your brief named attempt ${cur}, run done again with --attempt ${cur}. If your brief named an earlier attempt, stop: the task was requeued and your earlier work is saved at ${saved}.`;
+  }
+  return `this task was requeued; your earlier work is saved at ${bk || `${diffFile(m)} (if any; no worktree backup was needed)`}. Stop here: the task is ${m.status === 'taken' ? `now attempt ${cur}` : 'back in the queue'}.`;
+}
+function doneLocked(o, now) {
   const m = metaOf(o.id);
+  const rq = requeuedRefusal(m, o);
+  if (rq) fail(rq);
   if (!['taken', 'failed', 'out-of-scope'].includes(m.status)) fail(`task ${m.id} is ${m.status}; done needs a taken task`);
   const wt = liveWt(m);
   if (!wt) fail(`the worktree of ${m.id} is gone`);
@@ -391,7 +461,7 @@ function show(o) {
     m.note ? `Note: ${m.note}` : null].filter(Boolean).join('\n'));
 }
 
-const isMain = process.argv[1] && fs.realpathSync(process.argv[1]) === fs.realpathSync(new URL(import.meta.url).pathname);
+const isMain = (() => { try { return !!process.argv[1] && fs.realpathSync(process.argv[1]) === fs.realpathSync(new URL(import.meta.url).pathname); } catch { return false; } })();
 if (isMain) {
   const USAGE = 'usage: wk-task add|take|done|merge|discard|sweep|list|show (see the top of bin/wk-task.mjs)';
   let code = 0;

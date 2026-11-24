@@ -38,6 +38,7 @@ const HELP = `Watchkeeper /wk command family
   /wk go                    turn the Stop switch off
   /wk task "<text>"         queue a task as a file; starts nothing
   /wk take-task [id]        take the next queued task or the latest handoff
+  /wk watch [check|install|uninstall|status]   the 30 s checker: notifies, starts no agent
 
 Old names still work: /wk-status, /wk-take-task, /wk-add-task, /wk-suggest, and the
 subcommands overview, heal, tasks, handoff, watchdog, learn, mode, brain, skills, doctor.
@@ -105,6 +106,8 @@ const table = {
   'wk-add-task': () => task(rest),
   'take-task': () => takeTask(rest),
   'wk-take-task': () => takeTask(rest),
+  watch: () => script('wk-watch.mjs', rest),
+  'wk-watch': () => script('wk-watch.mjs', rest),
   status: () => script('wk-status.mjs', rest),
   'wk-status': () => script('wk-status.mjs', rest),
   suggest: () => script('wk-suggest.mjs', rest),

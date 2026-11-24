@@ -75,13 +75,16 @@ const WHERE = {
   // P2-272 4B: the task splitter's plan card
   // P2-277 Bridge
   bridgeOpenClaude: 'bridge', bridgeOpenAntigravity: 'bridge',
+  // P2-278 API drive: the keys card
+  apiKeySave: 'apikeys', apiKeyCheck: 'apikeys', apiKeyRemove: 'apikeys',
   dagRun: 'reprompt', dagNotNow: 'reprompt', dagStop: 'reprompt', dagMerge: 'reprompt', dagMergeNo: 'reprompt', dagCheck: 'reprompt',
 };
 
 // The commands that run a program (the plugin's scripts, nx, or Re-Prompt/Orchestrator CLI execution). While the window's folder is not trusted, none of them runs:
 // the panel says why, and the page shows these buttons as off.
 const RUNS = new Set(['bridgeOpenClaude', 'bridgeOpenAntigravity', 'answerQuestion', 'decideSuggestion', 'addTask', 'installAsk', 'jobStart', 'jobReply', 'jobStop', 'removal', 'watchdogScan', 'watchdogRecover', 'trustKey', 'rejectKey', 'remoteOn', 'remoteOff',
-  'repromptRewrite', 'repromptSend', 'orchestrateRun', 'skillsSync', 'skillApprove', 'skillReject', 'graphRefresh', 'chatDraft', 'chatConfirm', 'chatSendToIde', 'chatContinueFromClaude', 'chatTakeTask', 'chatHandoffToClaude', 'dagRun', 'dagStop', 'dagMerge', 'dagCheck']);
+  'repromptRewrite', 'repromptSend', 'orchestrateRun', 'skillsSync', 'skillApprove', 'skillReject', 'graphRefresh', 'chatDraft', 'chatConfirm', 'chatSendToIde', 'chatContinueFromClaude', 'chatTakeTask', 'chatHandoffToClaude', 'dagRun', 'dagStop', 'dagMerge', 'dagCheck',
+  'apiKeySave', 'apiKeyCheck', 'apiKeyRemove']);
 const UNTRUSTED = 'This folder is not trusted, so Watchkeeper runs nothing from this window. Trust the folder (Manage Workspace Trust), then try again. Nothing was run.';
 const trusted = () => vscode.workspace.isTrusted === true;
 // P2-277: the folder watch.json names for the first handoff waiting for Claude (an absolute folder that exists), or ''.
@@ -914,6 +917,8 @@ class Panel {
       if (!D.pluginInstalled(paths.pluginPath)) { this.reply(false, 'This needs the Watchkeeper plugin. Nothing was changed.'); return; }
       if (RUNS.has(m.cmd) && !trusted()) { this.reply(false, UNTRUSTED, false, WHERE[m.cmd]); return; }
       if (m.cmd === 'send') return this.answer(A.send(paths, m));
+      // P2-278: the key goes from the box to the key store and nowhere else; the answer carries only provider, saved and the last four characters
+      if (m.cmd === 'apiKeySave' || m.cmd === 'apiKeyCheck' || m.cmd === 'apiKeyRemove') return this.answer(await A.apiKey(paths, m));
       if (m.cmd === 'openAdvice') {
         const f = D.adviceFile(paths.dataDir, m.id, m.which);
         if (!f) { this.reply(false, 'That file is not there any more.'); return; }

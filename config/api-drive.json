@@ -1,0 +1,31 @@
+{
+  "_comment": "API drive (P2-278): models, list prices and caps for wk-ask. Public, no secrets. Prices are US$ per million tokens (input / output / cached input), from the providers' price pages, checked on the date below; an entry with \"from\" or \"until\" (YYYY-MM-DD, UTC) applies on those dates only. Your own overrides go in ~/.wk/api-drive.json (same keys; \"enabled\": false switches the drive off).",
+  "checked": "2026-11-24",
+  "enabled": true,
+  "daily_cap_usd": { "gemini": 2.0, "claude": 2.0 },
+  "hourly_calls": 30,
+  "max_out": 4096,
+  "max_files_kb": 400,
+  "timeout_s": 120,
+  "default_model": { "gemini": "flash", "claude": "sonnet" },
+  "aliases": {
+    "gemini": { "flash": "gemini-3.5-flash-lite", "mid": "gemini-4-hydrogen", "pro": "gemini-4-carbon" },
+    "claude": { "haiku": "claude-haiku-5-5", "sonnet": "claude-sonnet-5-5", "opus": "claude-opus-5-5" }
+  },
+  "claude_cache_min_tokens": 512,
+  "claude_cache_write_multiplier": 1.25,
+  "prices": {
+    "gemini-3.5-flash-lite": [{ "input": 0.30, "output": 2.50, "cached": 0.03 }],
+    "gemini-4-hydrogen": [{ "input": 1.50, "output": 7.50, "cached": 0.075 }],
+    "gemini-4-carbon": [
+      { "until": "2026-11-30", "input": 2.00, "output": 10.00, "cached": 0.10 },
+      { "from": "2026-12-01", "input": 4.00, "output": 20.00, "cached": 0.20 }
+    ],
+    "claude-haiku-5-5": [
+      { "prompt_up_to": 100000, "input": 0.10, "output": 0.50, "cached": 0.01 },
+      { "prompt_over": 100000, "input": 0.50, "output": 2.50, "cached": 0.05 }
+    ],
+    "claude-sonnet-5-5": [{ "input": 2.00, "output": 10.00, "cached": 0.10 }],
+    "claude-opus-5-5": [{ "input": 4.00, "output": 20.00, "cached": 0.20 }]
+  }
+}

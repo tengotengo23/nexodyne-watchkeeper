@@ -21,6 +21,8 @@ export const TOOLS = {
   'wk-bridge': ['node', 'bin/wk-bridge.mjs'],
   'wk-remote': ['node', 'bin/wk-remote.mjs'],
   'wk-ask-claude': ['node', 'bin/wk-ask-claude.mjs'],
+  'wk-ask': ['node', 'bin/wk-ask.mjs'],
+  'wk-keys': ['node', 'bin/wk-keys.mjs'],
   'wk-skill-sync': ['node', 'bin/wk-skill-sync.mjs'],
   'wk-skill-vault': ['python', 'reprompt/scripts/skill_vault.py'],
   'wk-orchestrate': ['python', 'reprompt/scripts/orchestrate.py'],

@@ -97,6 +97,7 @@ export async function buildModel(remote, now = Date.now(), { freeMbFn = freeMb }
   const m = await D.collect({ pluginPath: p.pluginPath, dataDir: p.dataDir, claudeDir: p.claudeDir, orchestrationDir: p.orchestrationDir }, now, { home: p.home });
   delete m.host;   // each host sets its own when it renders
   delete m.paths;  // the Mac's folders are not the phone's business
+  delete m.apiKeys;  // P2-278: the API keys card (saved or not, last four characters) stays on the Mac
   m.jobs = (Array.isArray(m.jobs) ? m.jobs : []).map(j => { const { tail, ...rest } = j; return rest; });   // the web fetches events itself
   const ph = m.phone || {};
   m.phone = { enabled: remote.enabled, login: remote.login, trusted: ph.trusted || [], pending: ph.pending || [] };

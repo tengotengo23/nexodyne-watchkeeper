@@ -9,6 +9,8 @@ description: >-
 
 # Ask Claude for the owner's answer
 
+For hard reasoning, careful code or a review (not the owner's decisions), use the ask-api skill instead when the W panel shows a saved Claude API key: it answers in seconds and shows its cost.
+
 The owner has told you to ask Claude when you need their decision. Claude Code works in the owner's main project (the folder Watchkeeper is set to), knows their rules, memory and past decisions, and answers as the owner would. It thinks hard (the newest top model the owner's plan has, maximum effort), so ask about real decisions, not facts you can look up yourself.
 
 ## When to ask

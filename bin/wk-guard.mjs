@@ -7,6 +7,7 @@ import os from 'node:os';
 import { createRequire } from 'node:module';
 import { gates, stdin, glob2re, logBlock, laneOn, laneRoots, scanPII, inLaneRoots, policyFile, realPath, killOn, killFile, quarantineEnv, quarantineAgent, gatedCheck, touchTaskHeartbeat,
   policyPin, pinFile, READ_ONLY, PIN_MSG, LANE_PIN_MSG, policyShellCheck, proj } from './lib.mjs';
+import { keyGuard } from './api-drive-lib.mjs';
 process.on('uncaughtException', e => { logBlock('policy', 'guard error: ' + e.message); console.error('watchkeeper guard error, failing closed: ' + e.message); process.exit(2); });
 const ev = stdin(), ti = ev.tool_input || {};
 // P2-276: a call inside a task worktree is a sign of life for that task (never fails, never blocks)
@@ -15,6 +16,8 @@ const block = (rule, msg) => { logBlock(rule, msg); console.error(`watchkeeper b
 // quarantine first: it needs no policy and allows nothing
 if (quarantineEnv()) block('quarantine', `${ev.tool_name || 'tool'} refused: a quarantined worker may use no tools. Answer from the text you were given; your output is treated as data.`);
 if (typeof ev.tool_name !== 'string' || !ev.tool_name) block('input', 'hook input without a tool name; failing closed.');
+// P2-278 (the review's M1, M2, S2, S5): the API keys and the API drive's caps, by any spelling, link, glob, search root or shell route
+{ const kg = keyGuard({ tool: ev.tool_name, input: ti, cwd: ev.cwd || proj() }); if (kg) block('keys', kg); }
 const g = gates({ allowMismatch: true });   // throws on a missing or broken policy: the handler above denies
 // integrity pin: the policy must hash to the owner's pin (env WK_POLICY_SHA256, else ~/.wk/policy.sha256). A changed policy cannot be
 // trusted to say what is safe, so only the fixed read-only set runs. Lane mode with no pin at all refuses everything.

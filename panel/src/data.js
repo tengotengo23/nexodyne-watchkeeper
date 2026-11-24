@@ -40,7 +40,9 @@ const COMMANDS = ['ready', 'refresh', 'send', 'kill', 'unkill', 'openAdvice', 'i
   // P2-272 (P3-B): archive a finished session (✓ Done or /done) and reopen one from Archived (N)
   'chatDone', 'chatReopen',
   // P2-272 (P3 fixes, M1): delete an archived session for good, only with confirmed: true from the confirm line
-  'chatPurge'];
+  'chatPurge',
+  // P2-278 (E): the API drive's key card. Save carries the key once; check and remove carry the provider only.
+  'apiKeySave', 'apiKeyCheck', 'apiKeyRemove'];
 // P2-272 (B): a skill source's slug or owner/repo; never starts with '-' (it becomes a CLI argument).
 const SOURCE_REF = /^[A-Za-z0-9_][A-Za-z0-9._-]{0,99}(\/[A-Za-z0-9_][A-Za-z0-9._-]{0,99})?$/;
 const RP_TARGETS = ['auto', 'antigravity', 'claude', 'general'];
@@ -980,6 +982,19 @@ function validateMessage(m) {
   }
   if (m.cmd === 'jobStop') return typeof m.job === 'string' && JOB_ID.test(m.job) ? { ok: true, msg: { cmd: 'jobStop', job: m.job } } : { ok: false, error: 'unknown job' };
   if (m.cmd === 'skillApprove' || m.cmd === 'skillReject') return typeof m.slug === 'string' && SOURCE_REF.test(m.slug) ? { ok: true, msg: { cmd: m.cmd, slug: m.slug } } : { ok: false, error: 'unknown skill source' };
+  // P2-278 (E): errors never echo the key; the key goes on only to the key store.
+  if (m.cmd === 'apiKeySave' || m.cmd === 'apiKeyCheck' || m.cmd === 'apiKeyRemove') {
+    if (!API_PROVIDERS.includes(m.provider)) return { ok: false, error: 'Pick Gemini or Claude.' };
+    if (m.cmd !== 'apiKeySave') return { ok: true, msg: { cmd: m.cmd, provider: m.provider } };
+    if (typeof m.key !== 'string') return { ok: false, error: 'Paste the key first.' };
+    if (m.key.length > 4096) return { ok: false, error: 'That is too long for an API key (256 characters at most).' };
+    const key = m.key.trim();
+    if (!key) return { ok: false, error: 'Paste the key first.' };
+    if (key.length > 256) return { ok: false, error: 'That is too long for an API key (256 characters at most).' };
+    if (/\s/.test(key)) return { ok: false, error: 'The key has a space or line break inside. Paste it again.' };
+    if (!/^[\x21-\x7e]+$/.test(key)) return { ok: false, error: 'The key has characters an API key never has. Paste it again.' };
+    return { ok: true, msg: { cmd: 'apiKeySave', provider: m.provider, key } };
+  }
   if (m.cmd === 'trustKey' || m.cmd === 'rejectKey') return typeof m.id === 'string' && CRED_ID.test(m.id) ? { ok: true, msg: { cmd: m.cmd, id: m.id } } : { ok: false, error: 'unknown phone key' };
   if (m.cmd === 'send') {
     if (!KINDS.includes(m.kind)) return { ok: false, error: 'unknown kind' };
@@ -1469,7 +1484,8 @@ async function collect(cfg = {}, now = Date.now(), opts = {}) {
       carbon: { claudeExhausted: false, agyReady: false, model: 'gemini-4-carbon-high' },
       usage: { found: false, fetchedAt: 0, windows: {} }, account: { state: 'no-plugin', email: '' }, geminiUsage: { label: '', tracked: false, today: null, cooldownUntil: 0, cooldownReason: '', weekTasks: null },
       archivedChatSessions: [],
-      bridge: { ...EMPTY_BRIDGE }
+      bridge: { ...EMPTY_BRIDGE },
+      apiKeys: { available: false }
     };
   }
   const later = safe(() => readPanelState(p.dataDir).later, {});
@@ -1516,7 +1532,31 @@ async function collect(cfg = {}, now = Date.now(), opts = {}) {
     geminiUsage: safe(() => readGeminiUsage(p.home, { now, env: opts.env || process.env, label: cfg.geminiLabel, dataDir: p.dataDir }), { label: '', tracked: false, today: null, cooldownUntil: 0, cooldownReason: '', weekTasks: null }),
     archivedChatSessions: safe(() => listArchivedChatSessions(p.dataDir), []),
     bridge: safe(() => readBridge(p.dataDir), { ...EMPTY_BRIDGE }),
+    apiKeys: await apiKeysState(p.pluginPath, now).catch(() => ({ available: false })),
   };
+}
+
+// P2-278 (E): the API drive's key card. The panel loads the plugin's own lib (bin/api-drive-lib.mjs), so the key store, its rules
+// and the status file live in one place. Only saved or not, the last four characters, the last check and today's spend reach the model.
+const API_PROVIDERS = ['gemini', 'claude'];
+async function apiDriveLib(pluginPath) {
+  if (!pluginPath) return null;
+  const file = path.join(pluginPath, 'bin', 'api-drive-lib.mjs');
+  if (!fs.existsSync(file)) return null;
+  return import(require('url').pathToFileURL(file).href);
+}
+async function apiKeysState(pluginPath, now = Date.now()) {
+  const L = await apiDriveLib(pluginPath);
+  if (!L) return { available: false };
+  const st = L.status(), sp = L.spendSummary(new Date(now));
+  const out = { available: true, enabled: sp.enabled !== false };
+  for (const p of API_PROVIDERS) {
+    const s = st[p] || {}, c = sp[p] || {};
+    const tail = s.saved && typeof s.tail === 'string' ? s.tail.slice(-4) : null;
+    out[p] = { saved: !!s.saved, tail, line: L.statusLine(s), ok: s.ok === true ? true : s.ok === false ? false : null,
+      today_usd: Number.isFinite(c.today_usd) ? c.today_usd : 0, cap_usd: Number.isFinite(c.cap_usd) ? c.cap_usd : 2 };
+  }
+  return out;
 }
 
 // P2-277 Bridge: the panel reads watch.json only (wk-watch writes it every 30 s and on each crossing). Nothing is run from here.
@@ -1554,6 +1594,8 @@ function readBridge(dataDir) {
 
 module.exports = {
   readBridge, EMPTY_BRIDGE, waitWords, taskHeld,
+  // P2-278
+  API_PROVIDERS, apiDriveLib, apiKeysState,
   pluginInstalled, HEAD_TAIL, MAX_TEXT, expandHome, resolvePaths, readPace, readStatusLine, readHeadTail, parseLines, decodeProject, modelName,
   cleanText, userText, sessionInfo, readMembers, listSessions, readClaudeTranscript, readLedger, readLocks, appendInbox, readInbox, inboxFile,
   killFilePath, killState, setKill, validateMessage, collect, readAdvice, adviceFile, askState, installAsk, readUpdate,

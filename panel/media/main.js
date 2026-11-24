@@ -443,7 +443,7 @@
     keepField(t);
   });
 
-  const RUNS = /^(okQuestion|sendAnswer|decide|removal|installAsk|jobStart|jobReply|jobStop|watchdogScan|watchdogRecover|trustKey|rejectKey|remoteOn|remoteOff|addTask|repromptRewrite|repromptSend|orchestrateRun|skillsSync|graphRefresh|chatDraft|chatConfirm|chatSendToIde|chatContinueFromClaude|chatTakeTask|chatHandoffToClaude|skillApprove|skillReject|dagRun|dagStop|dagMerge|dagCheck|bridgeOpenClaude|bridgeOpenAntigravity)$/;
+  const RUNS = /^(apiKeySave|apiKeyCheck|apiKeyRemove|okQuestion|sendAnswer|decide|removal|installAsk|jobStart|jobReply|jobStop|watchdogScan|watchdogRecover|trustKey|rejectKey|remoteOn|remoteOff|addTask|repromptRewrite|repromptSend|orchestrateRun|skillsSync|graphRefresh|chatDraft|chatConfirm|chatSendToIde|chatContinueFromClaude|chatTakeTask|chatHandoffToClaude|skillApprove|skillReject|dagRun|dagStop|dagMerge|dagCheck|bridgeOpenClaude|bridgeOpenAntigravity)$/;
   window.addEventListener('message', e => {
     const m = e.data;
     if (!m || typeof m !== 'object') return;
@@ -524,7 +524,10 @@
       setMerging(m.id, !!m.on);
     } else if (m.type === 'result') {
       if (m.where === 'waiting') for (const id of Object.keys(merging)) setMerging(id, false);
-      const where = m.where === 'gemini' ? diffWhere : (typeof m.where === 'string' ? m.where : '');
+      // P2-278 (the review's N3): a key answer shows under its own provider's row
+      const where = m.where === 'gemini' ? diffWhere
+        : (m.where === 'apikeys' && (m.provider === 'gemini' || m.provider === 'claude')) ? 'apikeys-' + m.provider
+        : (typeof m.where === 'string' ? m.where : '');
       if (typeof m.removal === 'string') {
         // P2-272: the answer to a worktree row shows directly under that row (no overlay)
         const p = document.querySelector('[data-removal-msg]' + attr('data-removal-msg', m.removal));
@@ -552,6 +555,16 @@
       if (!text) { say('Write something first.', false); note.focus(); return; }
       if (text.length > MAX) { say('That is over 4,000 characters. Please shorten it.', false); return; }
       vscode.postMessage({ cmd: 'send', kind, text });
+    } else if (cmd === 'apiKeySave' || cmd === 'apiKeyCheck' || cmd === 'apiKeyRemove') {
+      // P2-278: the key is read from the box, posted once and the box is cleared at once; it never goes into state
+      const provider = b.getAttribute('data-provider');
+      if (cmd === 'apiKeySave') {
+        const box = document.getElementById('apikey-' + provider);
+        const key = box ? box.value : '';
+        if (box) box.value = '';
+        if (!key.trim()) { say('Paste the key first.', false, 'apikeys-' + provider); if (box) box.focus(); return; }
+        vscode.postMessage({ cmd, provider, key });
+      } else vscode.postMessage({ cmd, provider });
     } else if (cmd === 'openAdvice') {
       vscode.postMessage({ cmd, id, which: b.getAttribute('data-which') });
     } else if (cmd === 'removal') {

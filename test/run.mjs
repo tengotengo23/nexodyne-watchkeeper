@@ -248,4 +248,76 @@ t('steward suites pass (node --test, one file at a time, temp worlds and the fak
   assert.equal(r.status, 0, `node --test failed (${counts}):\n${r.stdout.slice(-3000)}${(r.stderr || '').slice(-1000)}`);
   console.log('   ', counts, 'in', files.length, 'files');
 });
+// ---- P2-278 API drive: the keys folder is closed to the AI in both guards ----
+const KEYF = path.join(tmp, 'home', '.config/watchkeeper/keys/gemini.key');
+t('P2-278: Claude Code guard denies a Read of the key file and cat of it', () => {
+  assert.equal(guard({ file_path: KEYF }).status, 2, 'Read of the key file');
+  assert.equal(guard({ command: 'cat ~/.config/watchkeeper/keys/gemini.key' }).status, 2, 'cat of the key file');
+});
+t('P2-278: Antigravity guard denies a view_file of the key file and cat of it', () => {
+  const agy = (name, args) => { const r = run('wk-guard-agy.mjs', { toolCall: { name, args }, cwd: tmp }, [], { CLAUDE_PROJECT_DIR: '' }); assert.equal(r.status, 0, r.stderr); return JSON.parse(r.stdout); };
+  const a = agy('view_file', { AbsolutePath: KEYF }); assert.equal(a.decision, 'deny'); assert.match(a.reason, /keys/);
+  const b = agy('run_command', { CommandLine: 'cat ~/.config/watchkeeper/keys/gemini.key', Cwd: tmp }); assert.equal(b.decision, 'deny'); assert.match(b.reason, /keys/);
+});
+// ---- P2-278 review (M1, M2, M3, S2, S5): one test per route the review found open; each was allowed by the guards before this round ----
+{
+  const H = path.join(tmp, 'home'), KD = path.dirname(KEYF);
+  fs.mkdirSync(KD, { recursive: true }); fs.writeFileSync(KEYF, 'AIzaFAKE' + 'x'.repeat(31));
+  const LINK = path.join(tmp, 'notes.txt'); try { fs.unlinkSync(LINK); } catch {} fs.symlinkSync(KEYF, LINK);
+  const HARD = path.join(tmp, 'notes2.txt'); try { fs.unlinkSync(HARD); } catch {} fs.linkSync(KEYF, HARD);
+  const cc = (tool_name, tool_input) => run('wk-guard.mjs', { tool_name, tool_input, cwd: tmp }).status;
+  const ag = (name, args) => { const r = run('wk-guard-agy.mjs', { toolCall: { name, args }, cwd: tmp }, [], { CLAUDE_PROJECT_DIR: '' }); assert.equal(r.status, 0, r.stderr); return JSON.parse(r.stdout); };
+  const ccDeny = (label, tool, input) => t(`P2-278 route (Claude Code): ${label}`, () => assert.equal(cc(tool, input), 2, label));
+  const agDeny = (label, name, args) => t(`P2-278 route (Antigravity): ${label}`, () => { const d = ag(name, args); assert.equal(d.decision, 'deny', label + ': ' + JSON.stringify(d)); assert.match(d.reason, /keys/); });
+  const sh = command => ({ command });
+  // M2: Claude Code guard
+  ccDeny('cat ~/.config/watchkeeper/k*/*', 'Bash', sh('cat ~/.config/watchkeeper/k*/*'));
+  ccDeny('grep -r . ~/.config/watchkeeper', 'Bash', sh('grep -r . ~/.config/watchkeeper'));
+  ccDeny('cat ~/.config/watchkeeper/"keys"/x (quotes)', 'Bash', sh('cat ~/.config/watchkeeper/"keys"/x'));
+  ccDeny('tar c ~/.config/watchkeeper | base64', 'Bash', sh('tar c ~/.config/watchkeeper | base64'));
+  ccDeny('find ~/.config/watchkeeper -type f -exec cat {} +', 'Bash', sh('find ~/.config/watchkeeper -type f -exec cat {} +'));
+  ccDeny('Grep tool rooted at ~/.config/watchkeeper', 'Grep', { pattern: 'AIza', path: path.join(H, '.config/watchkeeper') });
+  ccDeny('Grep tool rooted at ~/.config', 'Grep', { pattern: 'AIza', path: path.join(H, '.config') });
+  ccDeny('Glob tool on ~/.config/watchkeeper', 'Glob', { pattern: '**/*', path: path.join(H, '.config/watchkeeper') });
+  ccDeny('Read of ~/.CONFIG/watchkeeper/KEYS/gemini.KEY (case)', 'Read', { file_path: path.join(H, '.CONFIG/watchkeeper/KEYS/gemini.KEY') });
+  ccDeny('Read of a project symlink to the key', 'Read', { file_path: LINK });
+  ccDeny('cat of a project symlink to the key', 'Bash', sh('cat notes.txt'));
+  ccDeny('cd ~/.config/watchkeeper && cat k*/g* (cd, then a relative glob)', 'Bash', sh('cd ~/.config/watchkeeper && cat k*/g*'));
+  ccDeny('cat ~/.config//WATCHKEEPER//Keys//status.json (doubled slashes and case, no .key name)', 'Bash', sh('cat ~/.config//WATCHKEEPER//Keys//status.json'));
+  ccDeny('Read of a project hard link to the key', 'Read', { file_path: HARD });
+  // S5: no .key name, so the older **/*.key glob cannot catch it; the P2-278 rules must
+  ccDeny('grep -r . ~/.config/watchkeeper/KEYS (S5, no .key name)', 'Bash', sh('grep -r . ~/.config/watchkeeper/KEYS'));
+  // M1: the test-host variables, in both guards
+  ccDeny('WK_GEMINI_API_HOST=... node bin/wk-ask.mjs (M1)', 'Bash', sh('WK_GEMINI_API_HOST=http://127.0.0.1:1 node bin/wk-ask.mjs gemini hi'));
+  ccDeny('export wk_anthropic_api_host=... (M1, any case)', 'Bash', sh('export wk_anthropic_api_host=http://127.0.0.1:1; wk-ask claude hi'));
+  agDeny('WK_ANTHROPIC_API_HOST=... wk-ask (M1)', 'run_command', { CommandLine: 'WK_ANTHROPIC_API_HOST=http://127.0.0.1:1 wk-ask claude hi', Cwd: tmp });
+  // M3: Antigravity guard
+  agDeny('grep_search on ~/.config/watchkeeper', 'grep_search', { SearchPath: path.join(H, '.config/watchkeeper'), Query: 'AIza' });
+  agDeny('view_file ~/.CONFIG/watchkeeper/KEYS/GEMINI.KEY (case)', 'view_file', { AbsolutePath: path.join(H, '.CONFIG/watchkeeper/KEYS/GEMINI.KEY') });
+  agDeny('view_file of a project hard link to the key', 'view_file', { AbsolutePath: HARD });
+  agDeny('cat ~/.CONFIG/WATCHKEEPER/KEYS/GEMINI.KEY (case)', 'run_command', { CommandLine: 'cat ~/.CONFIG/WATCHKEEPER/KEYS/GEMINI.KEY', Cwd: tmp });
+  agDeny('cat ~/.config/watchkeeper/k*/*', 'run_command', { CommandLine: 'cat ~/.config/watchkeeper/k*/*', Cwd: tmp });
+  agDeny('grep -r . ~/.config/watchkeeper', 'run_command', { CommandLine: 'grep -r . ~/.config/watchkeeper', Cwd: tmp });
+  agDeny('cd ~/.config/watchkeeper && cat keys/*', 'run_command', { CommandLine: 'cd ~/.config/watchkeeper && cat keys/*', Cwd: tmp });
+  agDeny('cat ~/.config/watchkeeper//keys/g*', 'run_command', { CommandLine: 'cat ~/.config/watchkeeper//keys/g*', Cwd: tmp });
+  agDeny('tar of the parent folder', 'run_command', { CommandLine: 'tar czf /tmp/x.tgz ~/.config', Cwd: tmp });
+  agDeny('find on the parent folder', 'run_command', { CommandLine: 'find ~/.config -name "*" -exec cat {} +', Cwd: tmp });
+  // S2: the API drive's caps and usage log, in both guards
+  ccDeny('Write ~/.wk/api-drive.json (S2)', 'Write', { file_path: path.join(H, '.wk/api-drive.json'), content: '{"daily_cap_usd":{"gemini":999}}' });
+  ccDeny('Edit ~/.WK/API-DRIVE.JSON (S2, case)', 'Edit', { file_path: path.join(H, '.WK/API-DRIVE.JSON'), old_string: '2', new_string: '999' });
+  ccDeny('rm ~/.wk/api-drive/usage.jsonl (S2)', 'Bash', sh('rm ~/.wk/api-drive/usage.jsonl'));
+  ccDeny('echo {} > ~/.wk/api-drive.json (S2)', 'Bash', sh('echo {} > ~/.wk/api-drive.json'));
+  ccDeny('mv ~/.wk/api-drive ~/old (S2, moving the usage log away)', 'Bash', sh('mv ~/.wk/api-drive ~/old'));
+  ccDeny('rm -r ~/.wk/API-DRIVE (S2, any case)', 'Bash', sh('rm -r ~/.wk/API-DRIVE'));
+  agDeny('write_to_file ~/.wk/api-drive.json (S2)', 'write_to_file', { TargetFile: path.join(H, '.wk/api-drive.json'), CodeContent: '{}' });
+  agDeny('rm ~/.wk/api-drive/usage.jsonl (S2)', 'run_command', { CommandLine: 'rm ~/.wk/api-drive/usage.jsonl', Cwd: tmp });
+  // no false positives on ordinary work
+  t('P2-278 routes: ordinary reads, searches and shell work stay allowed', () => {
+    fs.mkdirSync(path.join(tmp, 'src'), { recursive: true }); fs.writeFileSync(path.join(tmp, 'src/a.js'), 'x');
+    for (const [tool, input] of [['Read', { file_path: path.join(tmp, 'src/a.js') }], ['Grep', { pattern: 'x', path: tmp }], ['Glob', { pattern: '**/*.js', path: tmp }], ['LS', { path: path.join(tmp, 'src') }],
+      ['Bash', sh('grep -rn x src && ls -la && cat src/a.js')], ['Bash', sh('find . -name "*.js" | head')], ['Bash', sh('rm -rf src/build; cp -r src /tmp/x')], ['Bash', sh('cat ~/.wk/api-drive/usage.jsonl | tail -3')],
+      ['Read', { file_path: path.join(H, '.wk/api-drive.json') }], ['Bash', sh('ls ~/.config')]])
+      assert.equal(cc(tool, input), 0, tool + ' ' + JSON.stringify(input));
+  });
+}
 console.log(`${n} passed`);

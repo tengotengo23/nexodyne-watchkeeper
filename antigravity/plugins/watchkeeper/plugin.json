@@ -1,7 +1,7 @@
 {
   "name": "watchkeeper",
   "displayName": "Watchkeeper",
-  "version": "3.4.1",
+  "version": "3.5.0",
   "description": "Unified full-IDE Watchkeeper control plane: fail-closed guards, kill switch, Graphify codebase graph, Re-Prompt studio (rp:* / raw:), daily trending GitHub Skills Library sync (+skill:/-skill:), and a task queue for Antigravity when Claude limits run out.",
   "logo": "assets/logo.svg",
   "homepage": "https://github.com/tengotengo23/nexodyne-watchkeeper",

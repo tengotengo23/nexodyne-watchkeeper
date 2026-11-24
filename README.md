@@ -1,4 +1,4 @@
-# Watchkeeper · v3.4.1
+# Watchkeeper · v3.5.0
 
 **Watchkeeper is an open-source (MIT), local-first AI coding control plane and full-IDE workspace for Claude Code and Google Antigravity.** It unifies fail-closed tool & secret guards, test-verified completion gates (`done` evidence), an integrated **Re-Prompt** prompt-normalization studio, a **Running Tasks** cockpit, an auto-updating **Skills Library** that discovers trending GitHub agent skills daily, and a Claude-limit handover (the Gemini lane by quota, or the task queue for Antigravity) so work is not lost when Claude Code plan or rate limits run out. Everything stays in local files on your machine — zero Nexodyne servers, zero accounts, and zero telemetry.
 
@@ -135,6 +135,19 @@ Bridge carries work between Antigravity (Gemini) and Claude Code without startin
 - **Reads and writes:** reads the tasks and `~/.wk/shared-workspace.json`; writes only under `~/.wk/bridge/` (claims, chain counts, the crossings log). It starts no agent and uses no network.
 - **Off:** the kill switch or `wk-bridge off` stops all of it.
 - **Phone control is now `wk-remote`.** `wk-bridge run` only points to `wk-remote run`; `wk-remote install` moves the old phone agent to `~/.wk/backups/` and installs the new one.
+
+### API drive (optional)
+
+Claude Code can hand one task to Gemini, and Antigravity's Gemini can hand one task to Claude, through the official APIs and your own keys. It is off until you save a key.
+
+- **The two boxes:** the W panel's *API keys* card (on the Mac only) has a box for a paid Gemini API key and one for a Claude API key, with Save, Check and Remove. The box is cleared as soon as you press Save; the panel shows only the last four characters, the last check and today's spend. In a terminal: `wk-keys set gemini` reads the key from stdin (never as an argument); `wk-keys status`, `check` and `remove`.
+- **The keys** live in `~/.config/watchkeeper/keys/` (folder 0700, files 0600). Both guards deny the known ways for the AI to reach this folder (reads, searches, links and shell commands, in any spelling or letter case), and no command prints a key.
+- **Use:** `/wk-ask gemini <task>` in Claude Code, the `ask-api` skill in Antigravity, or the MCP tools `ask_gemini` and `ask_claude` (they run in the open project; where the IDE names none, pass `project`, the project's git root). One call, one answer; the calling agent reviews and applies it.
+- **Caps:** US$2.00 a day for each provider and 30 calls an hour by default; change them in `~/.wk/api-drive.json` (`"enabled": false` switches the drive off); the AI cannot change that file or the usage log. Each answer shows its tokens and about what it cost.
+- **Stop switch:** while `~/.wk/KILL` exists, no call is made.
+- **What is sent to whom:** the task and the files you name (only inside the current git root) go to Google or Anthropic, with your key in a header. Nothing goes to Nexodyne. The usage log `~/.wk/api-drive/usage.jsonl` keeps tokens and cost, never the prompt, the answer or a key.
+- **The honest limit.** The guards block the known ways for the AI to read the keys (file reads, searches, links and shell commands, in any spelling or letter case) and to change or delete the caps file `~/.wk/api-drive.json` and the usage log in `~/.wk/api-drive/`, and the AI never receives a key. But an AI that can run commands as your user could still find another way to reach a file your user can read or write. The stop switch, the caps and the guards make that hard and visible; they are not a sandbox.
+- **The terms, in plain words.** Use your own keys only, each billed to you. Never use a Claude Pro or Max login, or your Google login, for scripted calls: only API keys. You must be 18 or over and in a country where each API is offered. Use a paid Gemini key: with a free one, Google uses what you send and what it answers to improve its products, and people at Google may read it; in the European Economic Area, Switzerland and the United Kingdom only a paid key is allowed. Do not use the drive to skip a step where a person must confirm something. Do not use the answers to train or distil a model that competes with Gemini or Claude.
 
 ## What the plugin does
 

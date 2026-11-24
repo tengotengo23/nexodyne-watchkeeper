@@ -290,7 +290,9 @@ const RUN_MESSAGES = [{ cmd: 'answerQuestion', n: '3', useRecommended: true }, {
   { cmd: 'watchdogScan' }, { cmd: 'watchdogRecover' }, { cmd: 'bridgeOpenClaude', repo: '/tmp' }, { cmd: 'bridgeOpenAntigravity', taskId: '20261124-202000-fix-login' }, { cmd: 'graphRefresh' }, { cmd: 'removal', id: 'wt-1', choice: 'ok' },
   { cmd: 'skillApprove', slug: 'some-source' }, { cmd: 'skillReject', slug: 'owner/repo' },
   { cmd: 'dagRun', sessionId: 'WKS-20261122-120000-abcd', turnId: 'T-123456' }, { cmd: 'dagStop', sessionId: 'WKS-20261122-120000-abcd', turnId: 'T-123456' },
-  { cmd: 'dagMerge', sessionId: 'WKS-20261122-120000-abcd', turnId: 'T-123456' }, { cmd: 'dagCheck', sessionId: 'WKS-20261122-120000-abcd', turnId: 'T-123456' }];
+  { cmd: 'dagMerge', sessionId: 'WKS-20261122-120000-abcd', turnId: 'T-123456' }, { cmd: 'dagCheck', sessionId: 'WKS-20261122-120000-abcd', turnId: 'T-123456' },
+  // P2-278: the API keys box (save, check, remove) runs something too, so an untrusted folder refuses it
+  { cmd: 'apiKeySave', provider: 'gemini', key: 'AIza' + 'FAKE' + 'x'.repeat(31) }, { cmd: 'apiKeyCheck', provider: 'claude' }, { cmd: 'apiKeyRemove', provider: 'gemini' }];
 
 // Copy review must 7: a workspace's own orchestration/nx is never run, and its questions are not listed; only remote.json names that folder.
 test('a workspace that ships orchestration/nx: its questions are not listed and its nx never runs', async () => {

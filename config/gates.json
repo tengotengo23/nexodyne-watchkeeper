@@ -1,7 +1,7 @@
 {
   "_comment": "Policy as code: the one policy file every Watchkeeper hook reads. If it does not parse or lacks a key, every tool is refused (fail closed). Project override: .wk/gates.json may only append to the deny lists and claim/test lists; it can never touch standing_approvals, gated, kill_switch, quarantine, lane or evidence. Tightening is free; loosening waits for the owner, who edits this file by hand (the guard refuses edits to it).",
-  "denyPathGlobs": ["**/.env", "**/.env.*", "**/*.pem", "**/*.key", "**/id_rsa*", "**/id_ed25519*", "**/.ssh/**", "**/.aws/credentials", "**/keys/**", "**/.wk/gates.json", "**/Developer/keys/**", "**/.wk/evidence/**"],
-  "denyBash": ["git\\s+reset\\s+--hard", "git\\s+clean\\s+-[a-z]*f", "git\\s+push\\s+.*--force", "git\\s+push\\s+-f\\b", "rm\\s+-rf\\s+(/|~|\\$HOME)(\\s|$)", "git\\s+branch\\s+-D", "\\.wk/evidence\\b"],
+  "denyPathGlobs": ["**/.env", "**/.env.*", "**/*.pem", "**/*.key", "**/id_rsa*", "**/id_ed25519*", "**/.ssh/**", "**/.aws/credentials", "**/keys/**", "**/.wk/gates.json", "**/Developer/keys/**", "**/.wk/evidence/**", "**/.config/watchkeeper/keys/**"],
+  "denyBash": ["git\\s+reset\\s+--hard", "git\\s+clean\\s+-[a-z]*f", "git\\s+push\\s+.*--force", "git\\s+push\\s+-f\\b", "rm\\s+-rf\\s+(/|~|\\$HOME)(\\s|$)", "git\\s+branch\\s+-D", "\\.wk/evidence\\b", "\\.config/watchkeeper/keys\\b", "\\b(gemini|anthropic)\\.key\\b"],
   "secretPatterns": ["sk-ant-[A-Za-z0-9_-]{20,}", "sk_live_[A-Za-z0-9]{16,}", "AKIA[0-9A-Z]{16}", "ghp_[A-Za-z0-9]{30,}", "-----BEGIN [A-Z ]*PRIVATE KEY-----"],
   "claimWords": ["all tests pass", "tests pass", "\\bdone\\b", "\\bLIVE\\b", "\\bdeployed\\b", "\\bverified\\b", "\\bfixed\\b"],
   "testCommands": ["npm\\s+(run\\s+)?test", "node\\s+--test", "pytest", "go\\s+test", "cargo\\s+test", "swift\\s+test", "xcodebuild.*test", "\\bvitest\\b", "\\bjest\\b", "wk-run"],

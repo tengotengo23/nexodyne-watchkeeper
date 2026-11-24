@@ -4,7 +4,7 @@
 // In:  stdin {toolCall: {name, args}, conversationId, cwd, workspacePaths, ...}   (camelCase; antigravity.google/docs/hooks)
 // hooks.json matches every tool (matcher ""), so the hook sees every call in Antigravity, the owner's own chats too.
 // Watchkeeper's rules apply only to the conversations that do Watchkeeper work: from the first call that runs a
-// Watchkeeper script (wk-task, wk-suggest, wk-state, wk-ask-claude), names the data folder, or has a cwd, workspace or
+// Watchkeeper script (wk-task, wk-suggest, wk-state, wk-ask-claude, wk-ask, wk-keys), names the data folder, or has a cwd, workspace or
 // path in it, until the conversation ends. That call marks the conversation in <data>/gemini/guarded.jsonl and meets the
 // rules itself. Without a conversationId, each call is judged alone. Your own chats are not changed: no rule, no kill
 // switch, no log, only the pass decision below.
@@ -23,6 +23,7 @@ import path from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { gates, glob2re, touchTaskHeartbeat } from './lib.mjs';
+import { keyGuard } from './api-drive-lib.mjs';
 import { detectPass } from './antigravity-lib.mjs';
 
 const HERE_FILE = fileURLToPath(import.meta.url);
@@ -128,8 +129,26 @@ export function skillWrite(name, args, cwd) {
   return null;
 }
 
+// P2-278: the API drive's keys (~/.config/watchkeeper/keys or $WK_KEYS_DIR) are invisible to Gemini in every
+// conversation, the owner's own chats too: no file tool may touch the folder (links resolved first), and no command may
+// name it or a key file. Checked before anything else, so no pass decision ever lets a key through.
+const keysHome = () => path.resolve(process.env.WK_KEYS_DIR || path.join(os.homedir(), '.config', 'watchkeeper', 'keys'));
+const KEY_CMD = [/\.config\/watchkeeper\/keys\b/, /\b(gemini|anthropic)\.key\b/, /\$\{?WK_KEYS_DIR\b/];
+export function keyTouch(call, cwd) {
+  const dir = keysHome(), real = realish(dir);
+  for (const raw of pathsIn(call.args)) {
+    const abs = path.resolve(cwd || os.homedir(), raw.replace(/^~(?=\/|$)/, os.homedir()));
+    if (under(abs, dir) || under(realish(abs), real) || KEY_CMD.slice(0, 2).some(r => r.test(abs))) return raw;
+  }
+  if (call.name === 'run_command') {
+    const text = JSON.stringify(call.args);
+    if (KEY_CMD.some(r => r.test(text)) || text.includes(dir) || text.includes(real)) return 'the command';
+  }
+  return null;
+}
+
 // ---------------------------------------------------------------- which conversations do Watchkeeper work
-const WK_SCRIPT = /(^|[^A-Za-z0-9_-])wk-(task|suggest|state|ask-claude)(\.mjs)?(?![A-Za-z0-9_-])/;
+const WK_SCRIPT = /(^|[^A-Za-z0-9_-])wk-(task|suggest|state|ask-claude|ask|keys)(\.mjs)?(?![A-Za-z0-9_-])/;
 const guardedFile = () => path.join(wkHome(), 'gemini', 'guarded.jsonl');
 const convOf = ev => (ev && typeof ev.conversationId === 'string' && ev.conversationId && ev.conversationId.length <= 200 ? ev.conversationId : null);
 export function isWkWork(ev, call, cwd) {
@@ -169,6 +188,9 @@ export function main(raw) {
   const g = toGuard(ev);
   // P2-276: a call inside a task worktree is a sign of life for that task (never fails, never blocks)
   try { touchTaskHeartbeat(g.cwd, pathsIn(callOf(ev).args)); } catch {}
+  { const kt = keyTouch(callOf(ev), g.cwd); if (kt) return deny(`watchkeeper blocked (keys): ${kt === 'the command' ? 'the command names' : 'the call touches'} the API key folder. The AI never reads the keys; ask the other model with wk-ask.`); }
+  // P2-278 (the review's M1, M3, S2, S5): one rule set with the Claude Code guard
+  { const kg = keyGuard({ tool: g.tool_name, input: g.tool_input, cwd: g.cwd, paths: pathsIn(callOf(ev).args) }); if (kg) return deny('watchkeeper blocked (keys): ' + kg); }
   {
     const call = callOf(ev), conv = convOf(ev), work = isWkWork(ev, call, g.cwd);
     let guarded = work;

@@ -40,6 +40,8 @@ Nothing here talks to Google or runs `agy`: Gemini reads and writes these files 
 | `jobs/<id>/` (meta.json, prompt-<n>.txt, events.jsonl, pushed.json) | `wk-job` (pushed.json: `wk-remote run`) | the panel, `wk-remote` (to the server), `wk-job list/show` |
 | `model-pick.json`, `model-audit.jsonl` | `bin/model-pick.mjs` (from `wk-job` and `wk-ask-claude`) | `model-pick.mjs`, `node bin/model-pick.mjs [lane] [--json]` |
 | `projects.json` | `wk-projects scan` (first run or `--write`); you may edit it | `wk-job`, the panel, `wk-remote` |
+| `api-drive/usage.jsonl` (0600, folder 0700; the last 5,000 lines) | `wk-ask` (P2-278) | `wk-ask` (caps), `wk-keys status`, the panel's API keys card |
+| `api-drive.json` (optional) | you: overrides of `config/api-drive.json` (`enabled`, `daily_cap_usd`, `hourly_calls`, …) | `wk-ask`, `wk-keys`, the panel |
 
 ### `tasks/<id>/meta.json`
 ```
@@ -97,6 +99,12 @@ Existing kinds `recommendation` and `rule` (`{at, kind, text, status}`, written 
 - watch.json gains `held` (ids of held tasks in every state) and `bridge`: `{on, counts: {queued_for_gemini, waiting_for_claude, in_flight, done_24h, stalled}, stalled_ids, routes: {claude_wait: {alive, pid}, hooks, last_automation_run}, last_crossings}`. `wk-watch check --json` also reports `pruned` (claim and chain files removed this pass).
 - `bridge/claims/<sha256(id) cut to 32>` (0600): made with O_EXCL, so one session takes a handoff; a claim older than 15 minutes may be taken over only by the holder of the O_EXCL lock `<claim>.steal`. The checker removes claims older than 1 day, `.steal` locks older than 1 hour and chain files with no stamp inside the hour. `bridge/chains/<session>`: the stamps of that session's continuations (at most 3 an hour). `stalled` means taken, with no heartbeat or take within `WK_TASK_STALE_MS` (45 minutes by default).
 - The Claude Code Stop hook answers `{"decision":"block","reason":"Bridge: a handoff from Gemini waits: <title>. Run /wk-take-task --handoff --cwd \"<repo>\" to take it."}` only when a handoff for Claude waits, it claimed it, and the session's chain cap allows (claim first, then the chain slot; at the cap the claim is released); the handoff for the session's own cwd comes first; a repo with a quote, `$`, backtick, backslash or newline is left out of the text (`Run /wk-take-task --handoff to take it.`); never under the kill switch or `bridge/off`. The Antigravity Stop hook keeps answering `{}`.
+
+### API drive (P2-278)
+- Keys: `~/.config/watchkeeper/keys/` (`WK_KEYS_DIR` overrides it in tests), folder 0700; `gemini.key` and `anthropic.key`, 0600, written atomically (a temp file, then rename). Written only by the panel's API keys card and `wk-keys set`; read only by `wk-ask` and `wk-keys check`. Both guards deny the known ways for the AI to reach the folder: tool calls and shell commands that name it in any spelling or letter case, globs, search roots above it and links to a key. They also deny writing, moving or deleting `~/.wk/api-drive.json` and `~/.wk/api-drive/`. This is not a sandbox: a command run as your user could still find another way.
+- `status.json` in the same folder: per provider `{saved, tail, checked_at, ok}`; the last four characters only, never a key.
+- `api-drive/usage.jsonl`: one line per call, `{"time", "provider", "model", "caller", "in", "cached", "cache_write", "out", "cost", "cap_cost", "ms", "ok"}`; `caller` is `claude_code`, `antigravity` or `terminal` (plus `status`, the HTTP status, when a call failed). Never the prompt, the answer or a key.
+- What leaves the computer: only when `wk-ask` (or `wk-keys check`) runs. The task, the optional system text and the named files (inside the current git root, 400 KB at most) go to `generativelanguage.googleapis.com` or `api.anthropic.com`, with the key in a header (`x-goog-api-key` or `x-api-key`), never in the URL. Nothing goes to Nexodyne or anywhere else.
 
 ### Questions
 Open lines in `<orchestration>/QUESTIONS.md`: `- [ ] Q<n> (<date time>, tab <x>): <text>`, often with "Recommended: …" near the end. Never edited directly: `nx answer` ticks the line and appends to `DECISIONS.md`.

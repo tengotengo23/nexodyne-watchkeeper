@@ -53,7 +53,8 @@ test('page landmarks: drawer, waiting panel, rail, composer bar', () => {
   assert.doesNotMatch(last.match(/^<details[^>]*>/)[0], /\sopen\b/, 'Overrides is closed by default');
   // the sections that need the plugin are all still there (nothing cut)
   assert.equal((html.match(/data-needs="plugin"/g) || []).length, 7); // P2-272 P3: 6 to 7, the usage card is one more plugin section; nothing cut
-  assert.equal((html.match(/data-needs="/g) || []).length, 14); // P2-272 P3: the usage card adds one; P2-277: the Bridge section adds one
+  assert.equal((html.match(/data-needs="/g) || []).length, 15); // P2-272 P3: the usage card adds one; P2-277: the Bridge section adds one; P2-278: the API keys section adds one
+  assert.match(html, /data-needs="apikeys"/, 'P2-278: the API keys section is there');
   // no inline handlers
   assert.doesNotMatch(html, /\son[a-z]+=/i);
 });

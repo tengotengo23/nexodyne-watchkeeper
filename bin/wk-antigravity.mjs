@@ -42,7 +42,7 @@ function install(o) {
   if (o.json) { console.log(JSON.stringify(r)); return 0; }
   const words = { current: 'already up to date', installed: 'installed', updated: 'updated', 'would-install': 'would be installed', 'would-update': 'would be updated' };
   console.log(`Antigravity plugin ${words[r.state]}: ${tilde(r.target)} (${r.files.length} files)${r.backup ? `; the old copy is in ${tilde(r.backup)}` : ''}.`);
-  if (r.state === 'installed' || r.state === 'updated') console.log('Gemini sees the skills (/wk-take-task, /wk-add-task, /wk-suggest, /ask-claude, /graphify, /re-prompt, /duo-orchestrator, /profession-skill-vault, /wk-status), the agents, the rules, the MCP server and the hooks in its next conversation.');
+  if (r.state === 'installed' || r.state === 'updated') console.log('Gemini sees the skills (/wk-take-task, /wk-add-task, /wk-suggest, /ask-claude, /ask-api, /graphify, /re-prompt, /duo-orchestrator, /profession-skill-vault, /wk-status), the agents, the rules, the MCP server and the hooks in its next conversation.');
   if (r.pass) console.log(passWords(r.pass));
   return 0;
 }

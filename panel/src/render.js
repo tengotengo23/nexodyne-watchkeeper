@@ -1222,8 +1222,31 @@ function renderBridge(m) {
   return status + heldLine + svg + towers + list + buttons;
 }
 
+// P2-278 API drive: the keys card, the Mac's panel only. The model carries saved or not, the last four characters, the last check and today's spend; never a key.
+const GEMINI_FREE_NOTICE = 'With a free Gemini API key, Google uses what you send and what it answers to improve its products, and people at Google may read it. Do not send confidential or personal information, or use a paid key. In the European Economic Area, Switzerland and the United Kingdom, use a paid key.';
+const usd2 = v => (Number.isFinite(v) ? v : 0).toFixed(2);
+function renderApiKeyStatus(m, provider) {
+  const k = m && m.apiKeys;
+  if (!k || !k.available) return '<p class="empty">Update the Watchkeeper plugin to use API keys.</p>';
+  const s = k[provider] || {};
+  const tone = s.ok === false ? ' wait-msg-error' : '';
+  return `<p class="hint${tone}">${esc(s.line || 'Not set')}</p><p class="hint">Today US$${usd2(s.today_usd)} of ${usd2(s.cap_usd)}</p>`;
+}
+function renderApiKeysFoot(m) {
+  const k = m && m.apiKeys;
+  if (!k || !k.available) return '';
+  const g = usd2(k.gemini && k.gemini.cap_usd), c = usd2(k.claude && k.claude.cap_usd);
+  const cap = g === c ? `Daily cap US$${g} each.` : `Daily cap US$${g} for Gemini and US$${c} for Claude.`;
+  return `<p class="hint">Used only when Claude or Gemini asks the other through Watchkeeper. ${cap} The AI never sees these keys.</p>`
+    + (k.enabled ? '' : '<p class="hint">The API drive is switched off in <code>~/.wk/api-drive.json</code>, so no call is made even with a key saved.</p>');
+}
+function renderApiKeys(m) {
+  return { gemini: renderApiKeyStatus(m, 'gemini'), claude: renderApiKeyStatus(m, 'claude'), foot: renderApiKeysFoot(m) };
+}
+
 function renderSections(m, open) {
   const lite = sessionsOnly(m), local = isLocal(m), untrusted = local && !lite && m.untrusted === true;
+  const keys = (lite || !local) ? { gemini: '', claude: '', foot: '' } : renderApiKeys(m);
   return {
     mode: lite ? 'sessions' : 'full', untrusted, about: local ? renderAbout(m) : renderAboutWeb(m), status: (local ? renderStatus(m) : webStatus(m)) + (untrusted ? UNTRUSTED_NOTE : ''), pace: renderPace(m), spend: renderSpend(m), sessions: renderSessions(m, open), advice: renderAdvice(m), inbox: renderInbox(m), controls: renderControls(m), version: renderUpdate(m) + (local && !lite ? renderChannelUpdate(m) : ''),
     updated: `Updated ${when(m.now, m.now).replace('today ', '')}`,
@@ -1240,12 +1263,14 @@ function renderSections(m, open) {
     limits: lite ? '' : limitsLabel(m),
     // P2-272 (P3-B): the usage card carries the account email, so only the Mac's panel gets it, never the phone page
     usage: (lite || !local) ? '' : renderUsage(m),
+    // P2-278: the API keys card, the Mac's panel only (never the phone page)
+    apikeyGemini: keys.gemini, apikeyClaude: keys.claude, apikeysFoot: keys.foot,
     // P2-272 (P3-C): the developer's signed messages (the Mac's panel only) and the graph, once, in the drawer
     messages: (lite || !local) ? '' : renderChannel(m),
     graph: lite ? '' : graphBadge(m.graphify),
     skillDomains: lite ? [] : ((m.skillLibrary && m.skillLibrary.domains) || []).map(d => d.domain),
     rail: lite ? '' : renderRail(m),
-    show: { waiting: !lite, bridge: !lite, gemini: !lite, jobs: !lite, projects: !lite, phone: !lite }
+    show: { waiting: !lite, bridge: !lite, gemini: !lite, jobs: !lite, projects: !lite, phone: !lite, apikeys: !lite && local }
   };
 }
 
@@ -1343,6 +1368,35 @@ ${styleUris.map(u => `<link rel="stylesheet" href="${esc(u)}">`).join('\n')}
   <section aria-labelledby="h-spend" data-needs="plugin" hidden><h2 id="h-spend">Spend, last 7 days</h2><div class="slot" data-slot="spend"></div></section>
   <section aria-labelledby="h-advice" data-needs="plugin" hidden><h2 id="h-advice">Answered for you</h2><div class="slot" data-slot="advice"></div></section>
   </details>
+  <details class="ops-group" id="ops-keys" data-id="ops-keys" data-ops-group><summary>API keys</summary>
+  <section aria-labelledby="h-apikeys" data-needs="apikeys" hidden><h2 id="h-apikeys">API keys</h2>
+    <div class="apikey-row">
+      <label for="apikey-gemini" class="label">Gemini API key (paid)</label>
+      <input type="password" id="apikey-gemini" class="apikey-input" autocomplete="off" spellcheck="false" maxlength="256" aria-describedby="apikey-status-gemini">
+      <div class="actions">
+        <button type="button" class="btn" data-cmd="apiKeySave" data-provider="gemini">Save</button>
+        <button type="button" class="btn btn-secondary" data-cmd="apiKeyCheck" data-provider="gemini">Check</button>
+        <button type="button" class="btn btn-secondary" data-cmd="apiKeyRemove" data-provider="gemini">Remove</button>
+      </div>
+      <div class="slot" id="apikey-status-gemini" data-slot="apikeyGemini"></div>
+      <p class="feedback" id="feedback-apikeys-gemini" aria-live="polite"></p>
+      <p class="hint">${esc(GEMINI_FREE_NOTICE)}</p>
+    </div>
+    <div class="apikey-row">
+      <label for="apikey-claude" class="label">Claude API key</label>
+      <input type="password" id="apikey-claude" class="apikey-input" autocomplete="off" spellcheck="false" maxlength="256" aria-describedby="apikey-status-claude">
+      <div class="actions">
+        <button type="button" class="btn" data-cmd="apiKeySave" data-provider="claude">Save</button>
+        <button type="button" class="btn btn-secondary" data-cmd="apiKeyCheck" data-provider="claude">Check</button>
+        <button type="button" class="btn btn-secondary" data-cmd="apiKeyRemove" data-provider="claude">Remove</button>
+      </div>
+      <div class="slot" id="apikey-status-claude" data-slot="apikeyClaude"></div>
+      <p class="feedback" id="feedback-apikeys-claude" aria-live="polite"></p>
+    </div>
+    <div class="slot" data-slot="apikeysFoot"></div>
+    <p class="feedback" id="feedback-apikeys" aria-live="polite"></p>
+  </section>
+  </details>
   <details class="ops-group" id="ops-notes" data-id="ops-notes" data-ops-group><summary>Notes and messages</summary>
   <section aria-labelledby="h-inbox" data-needs="plugin" hidden><h2 id="h-inbox">Recommendations and rules</h2>
     <label for="note" class="label">Your note to the company</label>
@@ -1428,4 +1482,4 @@ ${styleUris.map(u => `<link rel="stylesheet" href="${esc(u)}">`).join('\n')}
 </html>`;
 }
 
-module.exports = { renderBridge, BRIDGE_TONE, dagCard, renderChannel, renderChannelUpdate, statusLineText, renderUsage, resetLine, promptBadge, repromptDrawer, ICONS, geminiLabelOf, renderStatusBar, waitingCount, renderSkillReview, limitsLabel, isArchivedWk, graphBadgeText, renderJobs, renderProjects, renderPhone, renderOrchestrator, renderSkills, renderRail, renderChatThread, eventLine, isLocal, LOCAL_LINE, JOB_WORDS, renderWaiting, renderGemini, renderRoutes, expandable, sessionsOnly, renderAbout, esc, when, ago, span, pct, usd, tok, lockSince, reasonWords, status, paceSentence, renderStatus, renderPace, renderSpend, renderSessions, renderAdvice, renderUpdate, renderInbox, renderControls, renderSections, renderPage };
+module.exports = { renderApiKeys, GEMINI_FREE_NOTICE, renderBridge, BRIDGE_TONE, dagCard, renderChannel, renderChannelUpdate, statusLineText, renderUsage, resetLine, promptBadge, repromptDrawer, ICONS, geminiLabelOf, renderStatusBar, waitingCount, renderSkillReview, limitsLabel, isArchivedWk, graphBadgeText, renderJobs, renderProjects, renderPhone, renderOrchestrator, renderSkills, renderRail, renderChatThread, eventLine, isLocal, LOCAL_LINE, JOB_WORDS, renderWaiting, renderGemini, renderRoutes, expandable, sessionsOnly, renderAbout, esc, when, ago, span, pct, usd, tok, lockSince, reasonWords, status, paceSentence, renderStatus, renderPace, renderSpend, renderSessions, renderAdvice, renderUpdate, renderInbox, renderControls, renderSections, renderPage };

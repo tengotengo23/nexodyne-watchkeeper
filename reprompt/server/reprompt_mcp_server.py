@@ -570,6 +570,58 @@ TOOLS: list[dict[str, Any]] = [
         },
         "annotations": {"readOnlyHint": False},
     },
+    # P2-278 API drive: one model asks the other through the official API with the user's own key (wk-ask).
+    {
+        "name": "ask_gemini",
+        "title": "Ask Gemini (API drive)",
+        "description": (
+            "Hand one easy, bulky or long-context task to Gemini through the user's own Gemini API key "
+            "(default model: Gemini Flash, the cheapest). Good for: summarizing or searching long files, "
+            "first drafts, boilerplate, bulk renames, test data. One-shot: Gemini cannot run tools; it "
+            "returns text (an answer, a plan or a unified diff) that you review and apply yourself. "
+            "Files must be inside the project; key files and anything gates.json denies are refused. "
+            "Every call shows its cost and counts towards a daily cap. Do not send confidential or "
+            "personal information. If no key is saved, tell the user to paste one in the W panel's API keys card."
+        ),
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "task": {"type": "string", "description": "The task, complete and self-contained."},
+                "files": {"type": "array", "items": {"type": "string"}, "description": "Project files to include (paths relative to the project or absolute inside it)."},
+                "model": {"type": "string", "description": "flash (default), mid, pro, or a full gemini- model id."},
+                "max_out": {"type": "integer", "minimum": 1, "maximum": 64000, "description": "Maximum output tokens (default 4096)."},
+                "project": {"type": "string", "description": "The project folder (a git repository root). Needed only when the IDE does not tell Watchkeeper the project (no CLAUDE_PROJECT_DIR or WK_WORKSPACE); / and the home folder are refused."},
+            },
+            "required": ["task"],
+            "additionalProperties": False,
+        },
+        "annotations": {"readOnlyHint": False, "openWorldHint": True},
+    },
+    {
+        "name": "ask_claude",
+        "title": "Ask Claude (API drive)",
+        "description": (
+            "Hand one hard task to Claude through the user's own Claude API key (default model: Sonnet): "
+            "hard reasoning, careful code, a second opinion or a review of a plan or diff. One-shot: Claude "
+            "cannot run tools; it returns text (an answer, a plan or a unified diff) that you review and apply "
+            "yourself. Files must be inside the project; key files and anything gates.json denies are refused. "
+            "Every call shows its cost and counts towards a daily cap. If no key is saved, tell the user to "
+            "paste one in the W panel's API keys card."
+        ),
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "task": {"type": "string", "description": "The task, complete and self-contained."},
+                "files": {"type": "array", "items": {"type": "string"}, "description": "Project files to include (paths relative to the project or absolute inside it)."},
+                "model": {"type": "string", "description": "sonnet (default), haiku, opus, or a full claude- model id."},
+                "max_out": {"type": "integer", "minimum": 1, "maximum": 64000, "description": "Maximum output tokens (default 4096)."},
+                "project": {"type": "string", "description": "The project folder (a git repository root). Needed only when the IDE does not tell Watchkeeper the project (no CLAUDE_PROJECT_DIR or WK_WORKSPACE); / and the home folder are refused."},
+            },
+            "required": ["task"],
+            "additionalProperties": False,
+        },
+        "annotations": {"readOnlyHint": False, "openWorldHint": True},
+    },
 ]
 
 
@@ -587,6 +639,104 @@ def _tool_err(message: str) -> dict[str, Any]:
         "structuredContent": {"error": message},
         "isError": True,
     }
+
+
+def _real(p: str) -> Path:
+    return Path(os.path.realpath(os.path.expanduser(p)))
+
+
+def _fold(p: Path) -> str:
+    # macOS and Windows folders are case-insensitive by default: compare case-folded
+    return str(p).casefold()
+
+
+def _is_root_or_home(p: Path) -> bool:
+    homes = {_fold(_real(h)) for h in (os.environ.get("HOME") or "", os.path.expanduser("~")) if h}
+    return p == Path(p.anchor) or _fold(p) in homes
+
+
+def _inside(p: Path, root: Path) -> bool:
+    a, b = _fold(p), _fold(root)
+    return a == b or a.startswith(b.rstrip(os.sep) + os.sep)
+
+
+def _ask_project_dir(args: dict[str, Any]) -> tuple[Path | None, str]:
+    """The review's S1: wk-ask runs in the project folder, never in the server's own folder.
+
+    Known roots are the ones the IDE names: CLAUDE_PROJECT_DIR (Claude Code), then WK_WORKSPACE (the workspace root).
+    A ``project`` argument must lie inside a known root; with no known root it must be a git repository root.
+    / and the home folder are refused either way. Returns (folder, "") or (None, reason).
+    """
+    known = []
+    for var in ("CLAUDE_PROJECT_DIR", "WK_WORKSPACE"):
+        v = (os.environ.get(var) or "").strip()
+        if v:
+            r = _real(v)
+            if _is_root_or_home(r):
+                return None, f"{var} is / or the home folder, so wk-ask does not run there; open a project folder."
+            if r.is_dir():
+                known.append(r)
+    arg = args.get("project")
+    if arg not in (None, ""):
+        if not isinstance(arg, str):
+            return None, "project must be a folder path."
+        p = _real(arg)
+        if _is_root_or_home(p):
+            return None, "project is / or the home folder; pass the project folder itself."
+        if not p.is_dir():
+            return None, f"project {arg} is not a folder."
+        if known:
+            if not any(_inside(p, k) for k in known):
+                return None, "project is outside the project this IDE has open, so it is refused."
+        elif not (p / ".git").exists():
+            return None, "project must be a git repository root (a folder with .git) when the IDE names no project."
+        return p, ""
+    if known:
+        return known[0], ""
+    return None, "Watchkeeper does not know the project folder here; pass project (the project's git root)."
+
+
+def _ask_api(provider: str, args: dict[str, Any]) -> dict[str, Any]:
+    """P2-278: run bin/wk-ask.mjs with the request as JSON on stdin. No key in argv or env; wk-ask reads it from the key store."""
+    task = args.get("task")
+    if not isinstance(task, str) or not task.strip():
+        return _tool_err("Missing required parameter: task")
+    files = args.get("files") or []
+    if not isinstance(files, list) or not all(isinstance(f, str) for f in files):
+        return _tool_err("files must be a list of paths.")
+    req: dict[str, Any] = {"task": task, "files": files}
+    if args.get("model") not in (None, ""):
+        req["model"] = str(args.get("model"))
+    if args.get("max_out") not in (None, ""):
+        req["max_out"] = args.get("max_out")
+    project, why = _ask_project_dir(args)
+    if project is None:
+        return _tool_err(why)
+    wk_ask = PLUGIN_ROOT.parent / "bin" / "wk-ask.mjs"
+    node_bin = find_executable("node", ["/opt/homebrew/bin/node", "/usr/local/bin/node", "/usr/bin/node"])
+    if not wk_ask.is_file() or not node_bin:
+        return _tool_err("wk-ask is not available in this install (Node.js or bin/wk-ask.mjs is missing).")
+    try:
+        proc = run_cli_isolated(
+            [node_bin, str(wk_ask), provider, "--stdin-json", "--json"],
+            timeout=300,
+            cwd=str(project),
+            input=json.dumps(req),
+            label=f"wk-ask {provider}",
+            kind="api-drive",
+        )
+    except subprocess.TimeoutExpired:
+        return _tool_err(f"wk-ask {provider}: no answer within 300 s.")
+    footer = (proc.stderr or "").strip().splitlines()
+    footer_line = footer[-1] if footer else ""
+    try:
+        payload = json.loads((proc.stdout or "").strip().splitlines()[-1])
+    except Exception:
+        return _tool_err(footer_line or f"wk-ask {provider} failed (exit {proc.returncode}).")
+    if not payload.get("ok"):
+        return _tool_err(str(payload.get("error") or footer_line or "wk-ask failed."))
+    payload["cost_line"] = footer_line
+    return _tool_ok(f"{payload.get('answer', '')}\n\n---\n{footer_line}", payload)
 
 
 def execute_tool(store: RePromptStore, name: str, args: dict[str, Any]) -> dict[str, Any]:
@@ -1056,6 +1206,9 @@ def execute_tool(store: RePromptStore, name: str, args: dict[str, Any]) -> dict[
             )
         return _tool_err(f"Unknown watchdog action: {act}")
 
+    if name in ("ask_gemini", "ask_claude"):
+        return _ask_api("gemini" if name == "ask_gemini" else "claude", args)
+
     raise KeyError(f"Unknown tool: {name}")
 
 
@@ -1161,6 +1314,8 @@ def handle_request(store: RePromptStore, executor: ThreadPoolExecutor, msg: dict
             "app_orchestrator_run",
             "wk_command",
             "wk_doctor",
+            "ask_gemini",
+            "ask_claude",
         ):
             executor.submit(_run_and_reply)
         else:

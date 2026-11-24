@@ -142,4 +142,39 @@ async function skillDecide(paths, verb, slug) {
 const skillApprove = (paths, slug) => skillDecide(paths, 'approve', slug);
 const skillReject = (paths, slug) => skillDecide(paths, 'reject', slug);
 
-module.exports = { bridgeOpen, MONEY_NOTE, question, suggestion, send, task, stopSwitch, installAsk, jobStart, jobReply, jobStop, phoneKey, phoneControl, skillsSync, skillApprove, skillReject };
+// P2-278 (E): the API keys card. The key comes in once (checked by data.validateMessage), goes to the key store through the plugin's
+// own lib and is never sent back, logged or kept here: the answer carries only the provider, saved and the last four characters.
+// m: { cmd: 'apiKeySave' | 'apiKeyCheck' | 'apiKeyRemove', provider, key? }
+async function apiKey(paths, m) {
+  const where = 'apikeys', provider = m && m.provider;
+  if (!D.API_PROVIDERS.includes(provider)) return res(false, 'Pick Gemini or Claude.', { where, refresh: false });
+  let L;
+  try { L = await D.apiDriveLib(paths.pluginPath); } catch { L = null; }
+  // the review's N3: every answer for a known provider names it, so the webview shows it under that provider's row
+  const extra = { provider };
+  if (!L) return res(false, 'Update the Watchkeeper plugin to use API keys.', { where, refresh: false, extra });
+  const label = L.PROVIDERS[provider].label;
+  try {
+    if (m.cmd === 'apiKeySave') {
+      const bad = L.keyProblem(m.key);
+      if (bad) return res(false, bad, { where, cleared: true, refresh: false, extra });
+      const r = L.saveKey(provider, m.key);
+      return res(true, `${label} key saved, ends in ${r.tail}.`, { where, cleared: true, extra: { provider, saved: true, tail: r.tail } });
+    }
+    if (m.cmd === 'apiKeyRemove') {
+      const r = L.removeKey(provider);
+      return res(true, r.removed ? `${label} key removed.` : `No ${label} key was saved.`, { where, extra: { provider, saved: false, tail: null } });
+    }
+    if (m.cmd === 'apiKeyCheck') {
+      const r = await L.checkKey(provider);
+      if (!r.saved) return res(false, `${label}: ${L.NO_KEY_MSG}`, { where, extra: { provider, saved: false, tail: null } });
+      const line = L.statusLine({ saved: true, tail: r.tail, checked: r.checked, ok: r.ok, text: r.text });
+      return res(r.ok === true, `${label}: ${line}`, { where, extra: { provider, saved: true, tail: r.tail } });
+    }
+  } catch {
+    return res(false, `${label}: that did not work. Nothing about the key was shown or logged.`, { where, extra });
+  }
+  return res(false, 'Unknown action.', { where, refresh: false, extra });
+}
+
+module.exports = { apiKey, bridgeOpen, MONEY_NOTE, question, suggestion, send, task, stopSwitch, installAsk, jobStart, jobReply, jobStop, phoneKey, phoneControl, skillsSync, skillApprove, skillReject };

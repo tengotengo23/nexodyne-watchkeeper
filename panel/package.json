@@ -2,7 +2,7 @@
   "name": "watchkeeper-panel",
   "displayName": "Watchkeeper",
   "description": "Full-IDE Watchkeeper workspace for Claude Code & Gemini: Re-Prompt studio, live Running Tasks & subagents, Skills Library with daily trending GitHub sync, Gemini work queued for Antigravity when Claude limits run out, and fail-closed safety guards. Local-only; zero telemetry.",
-  "version": "3.3.0",
+  "version": "3.4.0",
   "publisher": "nexodyne",
   "license": "MIT",
   "homepage": "https://github.com/tengotengo23/nexodyne-watchkeeper",
@@ -319,7 +319,7 @@
     }
   },
   "scripts": {
-    "test": "node --test test/data.test.js test/p3-data.test.js test/extension.test.js test/waiting.test.js test/remote.test.js test/reprompt.test.js test/chat-session.test.js test/learning-bridge.test.js test/watchdog.test.js test/removals.test.js test/audit-regressions.test.js test/settings-store.test.js test/frame.test.js test/channel-render.test.js test/p3-fixes.test.js test/dag-runner.test.js ../test/p2-272-app-page.test.mjs",
+    "test": "node --test test/data.test.js test/p3-data.test.js test/extension.test.js test/waiting.test.js test/remote.test.js test/reprompt.test.js test/chat-session.test.js test/learning-bridge.test.js test/watchdog.test.js test/removals.test.js test/audit-regressions.test.js test/settings-store.test.js test/frame.test.js test/channel-render.test.js test/p3-fixes.test.js test/dag-runner.test.js test/bridge.test.js ../test/p2-272-app-page.test.mjs",
     "render": "node test/render.mjs",
     "icon": "node scripts/icon.mjs",
     "package": "node scripts/package.mjs",

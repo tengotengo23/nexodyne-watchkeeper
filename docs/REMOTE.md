@@ -2,6 +2,8 @@
 
 Phone control needs a companion server that is not published yet. These notes describe the Mac side, which is off by default. README.md (Phone control) says the same in short.
 
+Renamed in P2-277: the phone link was `wk-bridge run`; it is now `wk-remote run`, and the name Bridge belongs to the Gemini and Claude handoffs. `wk-bridge run` only prints `phone control moved to wk-remote. Run: wk-remote run` and exits 2. `node bin/wk-remote.mjs install` moves the old LaunchAgent (one whose ProgramArguments end in `bin/wk-bridge.mjs run`) to `~/.wk/backups/` and installs the new one.
+
 The phone page shows the same status line as the panel (`statusLine`, `statusState` in the pushed state; they survive the bridge's size cut).
 
 With such a server, you can see the Watchkeeper panel on your phone (a page the server serves) and act on it: answer questions, decide suggestions, send notes, start and stop Claude jobs. The Mac is the judge. The server only stores and forwards; it never holds a phone key's trust and never runs anything.
@@ -9,11 +11,11 @@ With such a server, you can see the Watchkeeper panel on your phone (a page the 
 ```
 iPhone Safari --HTTPS, basic auth--> your server's phone page --files--> the server's bridge program (forced command of one ssh key)
                                                                                           ^ one long ssh link, opened by the Mac (outbound only)
-wk-bridge on the Mac (launchd) --> checks every signature --> panel/src/actions.js or wk-job --> pushes the state back
+wk-remote on the Mac (launchd) --> checks every signature --> panel/src/actions.js or wk-job --> pushes the state back
 ```
 
 ## The parts on the Mac
-- `bin/wk-bridge.mjs`: the protocol (hello, state, result, job, keys out; cmd, key in), the checks, the actions, the push, the CLI and the launchd agent.
+- `bin/wk-remote.mjs`: the protocol (hello, state, result, job, keys out; cmd, key in), the checks, the actions, the push, the CLI and the launchd agent.
 - `bin/bridge-link.mjs`: the transport only (spawning ssh, line framing, the 2 MB line limit, reconnect backoff from 5 s to 5 min). It knows no message types, so another transport could sit here later without touching the checks.
 - `bin/remote-lib.mjs`: canonical JSON, base64url, the passkey and grant checks, the allowlist, seen ids, the secret scan for anything pushed.
 - `bin/wk-job.mjs`: Claude jobs (`claude -p` in a project, its own process group). `bin/wk-projects.mjs`: the project list.
@@ -21,19 +23,19 @@ wk-bridge on the Mac (launchd) --> checks every signature --> panel/src/actions.
 
 ## One-time steps
 0. On the Mac: tell Watchkeeper your server. There is no built-in one; until this is set, `setup`, `install`, `run`, `enable` and the link refuse with "Phone control needs a companion server", and `status` says "Server: not set".
-   `node bin/wk-bridge.mjs config --origin https://panel.example.com --host 192.0.2.10 --user root` (also `--port N`, default 22, and `--rp-id DOMAIN`, default the origin's host name; it must be that name or a parent domain of it). The origin must be https. The command checks each value, writes `~/.wk/remote.json` and prints what it set. The phone page needs a companion server that is not published yet; phone control is off by default.
-   `server_command` in `remote.json` is the program your server runs for this key (the forced command in its `authorized_keys` line): set it with `node bin/wk-bridge.mjs config --server-command /usr/local/sbin/example-bridge` (an absolute path; letters, digits, dots, underscores, dashes and slashes only). It starts empty, and `setup` refuses until it is set.
-1. On the Mac: `node bin/wk-bridge.mjs setup`. It makes `~/.ssh/wk_bridge_ed25519` (once, 0600) and prints one line for the server. Add that line to the ssh user's `~/.ssh/authorized_keys` on the server.
-2. On the Mac: `node bin/wk-bridge.mjs install`. This starts the link (launchd agent `org.nexodyne.wk-bridge`). From now on the Mac pushes its state, so the phone page shows it; the Mac still acts on nothing from the phone.
+   `node bin/wk-remote.mjs config --origin https://panel.example.com --host 192.0.2.10 --user root` (also `--port N`, default 22, and `--rp-id DOMAIN`, default the origin's host name; it must be that name or a parent domain of it). The origin must be https. The command checks each value, writes `~/.wk/remote.json` and prints what it set. The phone page needs a companion server that is not published yet; phone control is off by default.
+   `server_command` in `remote.json` is the program your server runs for this key (the forced command in its `authorized_keys` line): set it with `node bin/wk-remote.mjs config --server-command /usr/local/sbin/example-bridge` (an absolute path; letters, digits, dots, underscores, dashes and slashes only). It starts empty, and `setup` refuses until it is set.
+1. On the Mac: `node bin/wk-remote.mjs setup`. It makes `~/.ssh/wk_bridge_ed25519` (once, 0600) and prints one line for the server. Add that line to the ssh user's `~/.ssh/authorized_keys` on the server.
+2. On the Mac: `node bin/wk-remote.mjs install`. This starts the link (launchd agent `org.nexodyne.wk-remote`). From now on the Mac pushes its state, so the phone page shows it; the Mac still acts on nothing from the phone.
 3. On the phone: open the phone page on your server and press **Set up this phone** (Face ID). The page names the key and the time.
-4. On the Mac: in the Watchkeeper panel's Phone section, press **Trust** next to that name and time (or `node bin/wk-bridge.mjs trust <id>`). Trust it only if you set up your phone just now. **Reject** drops a key you do not know.
-5. On the Mac: press **Switch phone control on** (or `node bin/wk-bridge.mjs enable`). Only the Mac can switch it on; the phone can only switch it off.
+4. On the Mac: in the Watchkeeper panel's Phone section, press **Trust** next to that name and time (or `node bin/wk-remote.mjs trust <id>`). Trust it only if you set up your phone just now. **Reject** drops a key you do not know.
+5. On the Mac: press **Switch phone control on** (or `node bin/wk-remote.mjs enable`). Only the Mac can switch it on; the phone can only switch it off.
 
-`node bin/wk-bridge.mjs status` shows the server, the link and the last push. `disable` switches phone control off; `uninstall` stops the link (the plist moves to `~/.wk/backups/`).
+`node bin/wk-remote.mjs status` shows the server, the link and the last push. `disable` switches phone control off; `uninstall` stops the link (the plist moves to `~/.wk/backups/`).
 
 ## Login: Face ID or the panel's own sign-in
-Default: every command carries a Face ID signature (below). If you do not want a second sign-in on top of your panel's own, run `node bin/wk-bridge.mjs login panel` **on the Mac** (the phone cannot do it; `login passkey` goes back). The Mac then accepts commands marked `{"via":"panel"}` without a signature, including job start and reply, and the panel page stops asking for Face ID. No phone key needs to be set up or trusted. The Mac still checks, in order: phone control is on, the command was not seen before, its age, the allowlist, valid arguments, the rate limits, the stop switch, and every job's own limits and permission checks (`FORBIDDEN`). A forged envelope in Face ID mode still counts nothing against the budget; in panel mode a command that passes counts like any other.
-The cost, plainly: the panel's sign-in and your server become the only locks. Anyone who has the panel password, or who controls your server, can start Claude jobs on the Mac in your projects (with Claude's permission checks on) until you run `wk-bridge login passkey` or `wk-bridge disable`. Use a strong panel password.
+Default: every command carries a Face ID signature (below). If you do not want a second sign-in on top of your panel's own, run `node bin/wk-remote.mjs login panel` **on the Mac** (the phone cannot do it; `login passkey` goes back). The Mac then accepts commands marked `{"via":"panel"}` without a signature, including job start and reply, and the panel page stops asking for Face ID. No phone key needs to be set up or trusted. The Mac still checks, in order: phone control is on, the command was not seen before, its age, the allowlist, valid arguments, the rate limits, the stop switch, and every job's own limits and permission checks (`FORBIDDEN`). A forged envelope in Face ID mode still counts nothing against the budget; in panel mode a command that passes counts like any other.
+The cost, plainly: the panel's sign-in and your server become the only locks. Anyone who has the panel password, or who controls your server, can start Claude jobs on the Mac in your projects (with Claude's permission checks on) until you run `wk-remote login passkey` or `wk-remote disable`. Use a strong panel password.
 
 ## What the Mac checks for every command
 In order, and the first failure is the answer (logged in `~/.wk/remote-log.jsonl`):
@@ -67,4 +69,4 @@ The panel's own model (`collect`), plus `mac`, `projects`, `jobs` (summaries), `
 `remote.json` (settings), `remote-keys.json` (trusted and rejected keys), `remote-pending.json` (keys waiting for Trust), `remote-seen.jsonl` (command ids and their answers, 7 days), `remote-log.jsonl`, `remote-status.json` (the link), `jobs/<id>/`, `projects.json`, `bridge.log` (launchd output). docs/DATA-CONTRACT.md has the formats.
 
 ## Tests
-`node --test test/remote.test.mjs test/job.test.mjs test/projects.test.mjs test/bridge.test.mjs` and `cd panel && npm test`. Temp HOME and WK_HOME; fake ssh (a fake server), ssh-keygen, launchctl and claude in `test/fixtures/`. Nothing reaches the server or the real home folder.
+`node --test test/remote.test.mjs test/job.test.mjs test/projects.test.mjs test/remote-link.test.mjs` and `cd panel && npm test`. Temp HOME and WK_HOME; fake ssh (a fake server), ssh-keygen, launchctl and claude in `test/fixtures/`. Nothing reaches the server or the real home folder.

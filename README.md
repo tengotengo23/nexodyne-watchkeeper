@@ -1,4 +1,4 @@
-# Watchkeeper · v3.3.0
+# Watchkeeper · v3.4.0
 
 **Watchkeeper is an open-source (MIT), local-first AI coding control plane and full-IDE workspace for Claude Code and Google Antigravity.** It unifies fail-closed tool & secret guards, test-verified completion gates (`done` evidence), an integrated **Re-Prompt** prompt-normalization studio, a **Running Tasks** cockpit, an auto-updating **Skills Library** that discovers trending GitHub agent skills daily, and a Claude-limit handover (the Gemini lane by quota, or the task queue for Antigravity) so work is not lost when Claude Code plan or rate limits run out. Everything stays in local files on your machine — zero Nexodyne servers, zero accounts, and zero telemetry.
 
@@ -124,6 +124,18 @@ With the plugin installed the panel also shows:
 
 The agents take the work themselves: in Antigravity, a Background automation set to **Hourly** with the prompt `/wk-take-task. If nothing is queued, stop.` (run it once by hand first, so its approvals are recorded); in Claude Code, `/loop 5m /wk-take-task`. With nothing queued, `/wk-take-task` stops after one short line.
 
+### Bridge: handoffs between Gemini and Claude (optional)
+
+Bridge carries work between Antigravity (Gemini) and Claude Code without starting either agent for you.
+
+- **In Claude Code**, `/wk-bridge` waits in the background with no time limit (no model turns while idle) and wakes the tab when Gemini hands over work: one model turn per handoff. When a Claude session stops and a handoff waits, the Stop hook asks it to run `/wk-take-task --handoff --cwd "<repo>"`. A handoff is claimed first, so only one session takes it, and each session chains at most 3 an hour. Antigravity's Stop hook still prints `{}`.
+- **Commands:** `wk-bridge status`, `wait`, `on`, `off`, `crossings` and `open`. `open --handoff <repo>` prints the line to start Claude in the repo, for you to run. `open --task` opens Antigravity on the repo and copies `/wk-take-task` for you to paste.
+- **Hold:** `wk-task hold <id> [--hours N]` keeps a task where it is, queued or taken. The checker and the watchdog never requeue a held task. `wk-task release <id>` ends the hold.
+- **Log:** each crossing (queued, taken, done, failed, requeued, written, consumed) is one line in `~/.wk/bridge/crossings.jsonl`. The checker's `watch.json` shows the counts, the held tasks and the last crossings. The panel reads them.
+- **Reads and writes:** reads the tasks and `~/.wk/shared-workspace.json`; writes only under `~/.wk/bridge/` (claims, chain counts, the crossings log). It starts no agent and uses no network.
+- **Off:** the kill switch or `wk-bridge off` stops all of it.
+- **Phone control is now `wk-remote`.** `wk-bridge run` only points to `wk-remote run`; `wk-remote install` moves the old phone agent to `~/.wk/backups/` and installs the new one.
+
 ## What the plugin does
 
 Four hooks run in every Claude Code session (`hooks/hooks.json`):
@@ -184,7 +196,7 @@ Aliases that still work: `/wk-status`, `/wk-take-task`, `/wk-add-task`, `/wk-sug
 - `claude -p` runs (the steward, jobs, ask-claude) use your own Claude Code login and count against your own plan;
 - the business snapshot (`bin/wk-snapshot.mjs`) reads totals from your own Stripe account, only when you set `STRIPE_RESTRICTED_KEY` in the environment, and keeps no customer data;
 - the clone route's updater (`bin/wk-update.mjs install`, macOS) fetches this repository's release tags (a copy from the public mirror also reads the signed `update.json` named above);
-- the phone link (`bin/wk-bridge.mjs`) is off by default and needs a companion server that is not published yet (docs/REMOTE.md); with one, the phone page shows the same status line as the panel; `wk-bridge config` sets a server of your own, and until then every remote command refuses.
+- the phone link (`bin/wk-remote.mjs`) is off by default and needs a companion server that is not published yet (docs/REMOTE.md); with one, the phone page shows the same status line as the panel; `wk-remote config` sets a server of your own, and until then every remote command refuses.
 - Continue prompts (`bin/wk-handoff.mjs`): when a session's context or the plan's usage runs high, W asks the session to write a continue file (`~/.wk/handoff/`), tells you to `/clear`, and the next session in that folder loads the file. It never types `/clear` for you. `node bin/wk-handoff.mjs install` shows what it would add to `~/.claude/settings.json` (dry run; `--apply` after a backup).
 
 ### Sync skills (`bin/wk-skill-sync.mjs`)
@@ -261,7 +273,7 @@ Run them with a temporary `HOME` and `WK_HOME`; the suites use fakes for ssh, la
 - The plugin: `/plugin uninstall watchkeeper@nexodyne`, then `/plugin marketplace remove nexodyne` (or stop passing `--plugin-dir`).
 - The panel: **Extensions → Watchkeeper → Uninstall**.
 - The Gemini plugin: delete `~/.gemini/config/plugins/watchkeeper`.
-- The phone link, if you set it up: `node <plugin>/bin/wk-bridge.mjs uninstall`, then delete `~/.ssh/wk_bridge_ed25519*` and its line in the server's `authorized_keys`.
+- The phone link, if you set it up: `node <plugin>/bin/wk-remote.mjs uninstall`, then delete `~/.ssh/wk_bridge_ed25519*` and its line in the server's `authorized_keys`.
 - The updater, if you installed it: `node <plugin>/bin/wk-update.mjs uninstall`.
 - The 30-second checker, if you installed it: `node <plugin>/bin/wk-watch.mjs uninstall`.
 - Your data: delete `~/.wk/` and the `.wk/` folder in each project.

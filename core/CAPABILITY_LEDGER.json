@@ -2,9 +2,9 @@
   "schema_version": "2.0.0",
   "generated_at": "2026-11-22T16:34:55.625868+00:00",
   "summary": {
-    "total_capabilities": 160,
+    "total_capabilities": 161,
     "watchkeeper_counts": {
-      "bin": 36,
+      "bin": 37,
       "hooks": 8,
       "commands": 6,
       "agents": 4,
@@ -316,9 +316,9 @@
       "verification_assertion": "file_exists('bin/wk-ask-claude.mjs')"
     },
     {
-      "id": "wk-bin-wk-bridge.mjs",
+      "id": "wk-bin-wk-remote.mjs",
       "origin_component": "watchkeeper",
-      "source_file": "bin/wk-bridge.mjs",
+      "source_file": "bin/wk-remote.mjs",
       "symbols_or_entrypoints": [
         "LABEL",
         "MAX_MODEL",
@@ -334,7 +334,27 @@
         "takeKey"
       ],
       "lifecycle_trigger": "CLI/Panel/Scheduler",
-      "target_unified_module": "bin/wk-bridge.mjs (preserved + unified)",
+      "target_unified_module": "bin/wk-remote.mjs (preserved + unified)",
+      "verification_assertion": "file_exists('bin/wk-remote.mjs')"
+    },
+    {
+      "id": "wk-bin-wk-bridge.mjs",
+      "origin_component": "watchkeeper",
+      "source_file": "bin/wk-bridge.mjs",
+      "symbols_or_entrypoints": [
+        "recordCrossing",
+        "readCrossings",
+        "holdOf",
+        "waitingFor",
+        "claimHandoff",
+        "claimedFresh",
+        "status",
+        "wait",
+        "openItem",
+        "main"
+      ],
+      "lifecycle_trigger": "CLI/Panel/Hook",
+      "target_unified_module": "bin/wk-bridge.mjs (P2-277 Bridge)",
       "verification_assertion": "file_exists('bin/wk-bridge.mjs')"
     },
     {

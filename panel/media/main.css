@@ -463,3 +463,32 @@ body.wk-full-ide main { padding: 1em 1.6em 3em; }
    also after a mouse click (the focus was moved by the panel, so the owner must see where it went). */
 .dag-card button:focus, .dag-card .dag-message:focus { outline: 0.125rem solid var(--vscode-focusBorder); outline-offset: 0.125rem; }
 .dag-card .dag-next { font-weight: 600; }
+
+/* P2-277 Bridge: two towers, a deck, and the last crossings as dots. Sizes in rem so the owner's 20 px font scales it. */
+.bridge-svg { display: block; width: 100%; max-width: 24rem; height: auto; margin: 0.5rem 0; }
+.bridge-tower { fill: none; stroke: var(--vscode-foreground); stroke-width: 2; opacity: 0.7; }
+.bridge-tower-label { fill: var(--vscode-foreground); font-size: 0.7rem; }
+.bridge-deck { fill: none; stroke: var(--vscode-foreground); stroke-width: 2; opacity: 0.5; }
+.bridge-arrow { fill: none; stroke: var(--vscode-foreground); stroke-width: 2; display: none; }
+.bridge-dot { transform-box: view-box; }
+.tone-amber { fill: var(--vscode-charts-yellow); border-color: var(--vscode-charts-yellow); }
+.tone-blue { fill: var(--vscode-charts-blue); border-color: var(--vscode-charts-blue); }
+.tone-green { fill: var(--vscode-charts-green); border-color: var(--vscode-charts-green); }
+.tone-red { fill: var(--vscode-charts-red); border-color: var(--vscode-charts-red); }
+.bridge-dot.ltr { animation: wk-bridge-ltr 4s ease-in-out infinite; }
+.bridge-dot.rtl { animation: wk-bridge-rtl 4s ease-in-out infinite; }
+.bridge-dot.d1 { animation-delay: 0.6s; } .bridge-dot.d2 { animation-delay: 1.2s; } .bridge-dot.d3 { animation-delay: 1.8s; } .bridge-dot.d4 { animation-delay: 2.4s; }
+@keyframes wk-bridge-ltr { 0% { transform: translateX(-1rem); opacity: 0; } 15% { opacity: 1; } 85% { opacity: 1; } 100% { transform: translateX(4rem); opacity: 0; } }
+@keyframes wk-bridge-rtl { 0% { transform: translateX(1rem); opacity: 0; } 15% { opacity: 1; } 85% { opacity: 1; } 100% { transform: translateX(-4rem); opacity: 0; } }
+.bridge-counts { display: flex; flex-wrap: wrap; gap: 0.75rem; justify-content: space-between; }
+.bridge-side { margin: 0; min-width: 6rem; }
+.bridge-side dt { font-weight: 600; }
+.bridge-side dd { margin: 0; }
+.bridge-stalled { color: var(--vscode-errorForeground); }
+.bridge-log { padding-left: 1.25rem; margin: 0.5rem 0; }
+.bridge-log li { margin: 0.25rem 0; overflow-wrap: anywhere; }
+.bridge-chip { display: inline-block; padding: 0 0.4rem; border: 1px solid; border-radius: 0.6rem; font-size: 0.85em; background: transparent; }
+@media (prefers-reduced-motion: reduce) {
+  .bridge-dot.ltr, .bridge-dot.rtl { animation: none; opacity: 1; transform: none; }
+  .bridge-arrow { display: inline; }
+}

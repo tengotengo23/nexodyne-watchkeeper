@@ -563,7 +563,7 @@ function renderGemini(m) {
     html += `<ul class="rows tasks">` + t.items.map(x => {
       const meta = [x.kind ? KIND_WORDS[x.kind] : '', x.model ? `suggested ${x.model}` : '', x.modelUsed ? `used ${x.modelUsed}` : '', ago(x.takenAt && x.status === 'taken' ? x.takenAt : x.at, now)].filter(Boolean).join(' · ');
       return `<li><span class="row-main task-title">${esc(x.title)}</span>`
-        + `<span class="row-meta">${SHAPES[TASK_SHAPE[x.status] || 'unknown']}<span class="badge">${esc(x.status === 'verified' && x.hasTest === false ? 'Checked: files only, no test set' : TASK_WORDS[x.status] || 'Unknown')}</span> ${esc(meta)}</span>`
+        + `<span class="row-meta">${SHAPES[TASK_SHAPE[x.status] || 'unknown']}<span class="badge">${esc(x.status === 'verified' && x.hasTest === false ? 'Checked: files only, no test set' : TASK_WORDS[x.status] || 'Unknown')}</span>${x.held ? ' <span class="bridge-chip tone-amber held-chip" title="On hold: the checker never requeues it. wk-task release lifts it.">held</span>' : ''} ${esc(meta)}</span>`
         + (x.note ? `<span class="row-meta clamp">${esc(x.note)}</span>` : '')
         + (x.status === 'queued' && isLocal(m) ? `<span class="row-action"><button type="button" class="btn btn-small" data-cmd="chatTakeTask" data-task-id="${esc(x.id)}">Take in Watchkeeper →</button></span>` : '')
         + (DIFF_STATES.includes(x.status) && x.hasDiff && isLocal(m) ? `<span class="row-action"><button type="button" class="btn btn-secondary btn-small" data-cmd="openTaskDiff" data-id="${esc(x.id)}">Show the change</button></span>` : '')
@@ -714,7 +714,7 @@ function renderPhone(m) {
   let html = ph.enabled ? `<p class="control-state">${SHAPES.running}Phone control is on.</p>`
     : `<p class="control-state">${SHAPES.stopped}Phone control is off. The Mac acts on nothing from the phone.</p>`;
   const noServer = local && !ph.enabled && !ph.origin;
-  if (noServer) html += `<p class="hint">Phone control needs a companion server, which is not published yet. If you run one, set it with <code>node &lt;plugin&gt;/bin/wk-bridge.mjs config</code>; the switch shows here after that.</p>`;
+  if (noServer) html += `<p class="hint">Phone control needs a companion server, which is not published yet. If you run one, set it with <code>node &lt;plugin&gt;/bin/wk-remote.mjs config</code>; the switch shows here after that.</p>`;
   else if (local) {
     html += ph.enabled ? `<button type="button" class="btn btn-secondary" data-cmd="remoteOff">Switch phone control off</button>`
       : `<button type="button" class="btn btn-secondary" data-cmd="remoteOn">Switch phone control on</button>`
@@ -1180,13 +1180,55 @@ function limitsLabel(m) {
 
 // An untrusted folder: the buttons that run a program are off (media/main.js), and this line says why.
 const UNTRUSTED_NOTE = '<p class="hint" data-untrusted="1">This folder is not trusted, so the buttons that run something are off here: answering, deciding, adding a task, Re-Prompt execution, Orchestrator runs, skills sync, jobs and the phone. Trust the folder (Manage Workspace Trust) to use them.</p>';
+// P2-277 Bridge: Claude's tower on the left, Gemini's on the right; the last crossings walk across as dots.
+// Colours by event: amber queued/written, blue taken/consumed, green done, red stalled/requeued/failed.
+// Under reduced motion (main.css) the dots stand still and the arrow shows the direction. Data: watch.json only.
+const BRIDGE_TONE = { queued: 'amber', written: 'amber', taken: 'blue', consumed: 'blue', done: 'green', failed: 'red', requeued: 'red', stalled: 'red' };
+const BRIDGE_WORD = { queued: 'queued', written: 'handoff written', taken: 'taken', consumed: 'handoff taken', done: 'done', failed: 'failed', requeued: 'requeued', unknown: 'crossed' };
+const sideOf = v => (/claude/i.test(String(v || '')) ? 'claude' : /gemini|antigravity|agy/i.test(String(v || '')) ? 'gemini' : '');
+function renderBridge(m) {
+  const b = (m && m.bridge) || {};
+  if (!b.found) return '<p class="empty">Bridge has no news yet. The checker writes it every 30 seconds once Watchkeeper is installed.</p>';
+  const c = b.counts || {}, now = m.now || Date.now();
+  const all = Array.isArray(b.crossings) ? b.crossings : [];
+  const shown = all.slice(-5);
+  const dots = shown.map((x, i) => {
+    const ltr = sideOf(x.from) !== 'gemini';   // from Claude (or unknown) walks left to right
+    const tone = BRIDGE_TONE[x.event] || 'amber';
+    return `<circle class="bridge-dot tone-${tone} ${ltr ? 'ltr' : 'rtl'} d${i}" cx="${ltr ? 60 + i * 30 : 260 - i * 30}" cy="44" r="5"><title>${esc(BRIDGE_WORD[x.event] || 'crossed')}: ${esc(x.title || x.id || '')}</title></circle>`;
+  }).join('');
+  const lastLtr = shown.length ? sideOf(shown[shown.length - 1].from) !== 'gemini' : true;
+  const svg = `<svg class="bridge-svg" viewBox="0 0 320 90" role="img" aria-label="Bridge between Claude and Gemini: ${c.waiting_for_claude || 0} waiting for Claude, ${c.queued_for_gemini || 0} queued for Gemini">
+  <rect class="bridge-tower" x="8" y="12" width="36" height="66" rx="4"/><text class="bridge-tower-label" x="26" y="86" text-anchor="middle">Claude</text>
+  <rect class="bridge-tower" x="276" y="12" width="36" height="66" rx="4"/><text class="bridge-tower-label" x="294" y="86" text-anchor="middle">Gemini</text>
+  <path class="bridge-deck" d="M44 52 Q160 30 276 52"/>
+  <path class="bridge-arrow" d="${lastLtr ? 'M150 66 L170 66 M164 61 L170 66 L164 71' : 'M170 66 L150 66 M156 61 L150 66 L156 71'}"/>
+  ${dots}</svg>`;
+  const status = !b.on ? '<p class="bridge-state">Bridge is off. <code>wk-bridge on</code> turns it on.</p>'
+    : `<p class="bridge-state">Bridge is on. Waiting in Claude: <strong>${esc(b.routes && b.routes.claude_wait || 'nobody')}</strong>; hooks are ${esc(b.routes && b.routes.hooks || 'off')}.</p>`;
+  const heldIds = Array.isArray(b.held) ? b.held : [];
+  const heldLine = heldIds.length ? `<p class="bridge-held"><span class="bridge-chip tone-amber held-chip">held</span> ${esc(heldIds.length === 1 ? '1 task on hold' : heldIds.length + ' tasks on hold')}: ${heldIds.map(id => `<code>${esc(id)}</code>`).join(', ')}. <code>wk-task release &lt;id&gt;</code> lifts a hold.</p>` : '';
+  const towers = `<div class="bridge-counts">
+  <dl class="bridge-side"><dt>Claude</dt><dd>${c.waiting_for_claude || 0} waiting</dd></dl>
+  <dl class="bridge-side bridge-mid"><dt>On the way</dt><dd>${c.in_flight || 0} in flight</dd><dd>${c.done_24h || 0} done in 24 h</dd>${c.stalled ? `<dd class="bridge-stalled">${c.stalled} stalled</dd>` : ''}</dl>
+  <dl class="bridge-side"><dt>Gemini</dt><dd>${c.queued_for_gemini || 0} queued</dd></dl></div>`;
+  const list = shown.length ? `<ol class="bridge-log">${shown.slice().reverse().map(x => {
+    const t = Date.parse(x.at);
+    const dir = sideOf(x.from) === 'gemini' ? 'Gemini to Claude' : 'Claude to Gemini';
+    return `<li><span class="bridge-chip tone-${BRIDGE_TONE[x.event] || 'amber'}">${esc(BRIDGE_WORD[x.event] || 'crossed')}</span> ${esc(x.title || '(no title)')} <span class="muted">· ${dir}${Number.isFinite(t) ? ' · ' + esc(ago(t, now)) : ''}</span></li>`;
+  }).join('')}</ol>` : '<p class="empty">Nothing has crossed yet.</p>';
+  const buttons = !isLocal(m) ? localLine()
+    : `<div class="btn-row">${c.waiting_for_claude ? `<button type="button" class="btn btn-primary" data-cmd="bridgeOpenClaude" data-repo="${esc(b.claudeRepo || '')}">Open in Claude</button>` : ''}${b.taskId ? `<button type="button" class="btn btn-secondary" data-cmd="bridgeOpenAntigravity" data-task-id="${esc(b.taskId)}">Open in Antigravity</button>` : ''}</div>`;
+  return status + heldLine + svg + towers + list + buttons;
+}
+
 function renderSections(m, open) {
   const lite = sessionsOnly(m), local = isLocal(m), untrusted = local && !lite && m.untrusted === true;
   return {
     mode: lite ? 'sessions' : 'full', untrusted, about: local ? renderAbout(m) : renderAboutWeb(m), status: (local ? renderStatus(m) : webStatus(m)) + (untrusted ? UNTRUSTED_NOTE : ''), pace: renderPace(m), spend: renderSpend(m), sessions: renderSessions(m, open), advice: renderAdvice(m), inbox: renderInbox(m), controls: renderControls(m), version: renderUpdate(m) + (local && !lite ? renderChannelUpdate(m) : ''),
     updated: `Updated ${when(m.now, m.now).replace('today ', '')}`,
     // P2-223: the new sections (data-needs="waiting" and "gemini") show only with the plugin
-    waiting: lite ? '' : renderWaiting(m), gemini: lite ? '' : renderGemini(m), routes: lite ? '' : renderRoutes(m),
+    waiting: lite ? '' : renderWaiting(m), bridge: lite ? '' : renderBridge(m), gemini: lite ? '' : renderGemini(m), routes: lite ? '' : renderRoutes(m),
     // P2-227: jobs, projects and the phone (data-needs "jobs", "projects", "phone"), also only with the plugin
     jobs: lite ? '' : renderJobs(m), projects: lite ? '' : renderProjects(m), phone: lite ? '' : renderPhone(m),
     // v0.8.0: active Re-Prompt / Carbon High Orchestrator / Skills Library / Wide Rail
@@ -1203,7 +1245,7 @@ function renderSections(m, open) {
     graph: lite ? '' : graphBadge(m.graphify),
     skillDomains: lite ? [] : ((m.skillLibrary && m.skillLibrary.domains) || []).map(d => d.domain),
     rail: lite ? '' : renderRail(m),
-    show: { waiting: !lite, gemini: !lite, jobs: !lite, projects: !lite, phone: !lite }
+    show: { waiting: !lite, bridge: !lite, gemini: !lite, jobs: !lite, projects: !lite, phone: !lite }
   };
 }
 
@@ -1256,6 +1298,10 @@ ${styleUris.map(u => `<link rel="stylesheet" href="${esc(u)}">`).join('\n')}
   <section aria-labelledby="h-jobs" data-needs="jobs" hidden><h2 id="h-jobs">Jobs</h2><div class="slot" data-slot="jobs"></div>
     <p class="feedback" id="feedback-jobs" aria-live="polite"></p></section>
   <section id="sec-sessions" aria-labelledby="h-sessions"><h2 id="h-sessions">Sessions and workers</h2><div class="slot" data-slot="sessions"></div></section>
+  </details>
+  <details class="ops-group" id="ops-bridge" data-id="ops-bridge" data-ops-group><summary>Bridge</summary>
+  <section aria-labelledby="h-bridge" data-needs="bridge" hidden><h2 id="h-bridge">Bridge</h2><div class="slot" data-slot="bridge"></div>
+    <p class="feedback" id="feedback-bridge" aria-live="polite"></p></section>
   </details>
   <details class="ops-group" id="ops-gemini" data-id="ops-gemini" data-ops-group><summary>Gemini queue</summary>
   <section aria-labelledby="h-gemini" data-needs="gemini" hidden><h2 id="h-gemini">Gemini</h2><div class="slot" data-slot="gemini"></div>
@@ -1382,4 +1428,4 @@ ${styleUris.map(u => `<link rel="stylesheet" href="${esc(u)}">`).join('\n')}
 </html>`;
 }
 
-module.exports = { dagCard, renderChannel, renderChannelUpdate, statusLineText, renderUsage, resetLine, promptBadge, repromptDrawer, ICONS, geminiLabelOf, renderStatusBar, waitingCount, renderSkillReview, limitsLabel, isArchivedWk, graphBadgeText, renderJobs, renderProjects, renderPhone, renderOrchestrator, renderSkills, renderRail, renderChatThread, eventLine, isLocal, LOCAL_LINE, JOB_WORDS, renderWaiting, renderGemini, renderRoutes, expandable, sessionsOnly, renderAbout, esc, when, ago, span, pct, usd, tok, lockSince, reasonWords, status, paceSentence, renderStatus, renderPace, renderSpend, renderSessions, renderAdvice, renderUpdate, renderInbox, renderControls, renderSections, renderPage };
+module.exports = { renderBridge, BRIDGE_TONE, dagCard, renderChannel, renderChannelUpdate, statusLineText, renderUsage, resetLine, promptBadge, repromptDrawer, ICONS, geminiLabelOf, renderStatusBar, waitingCount, renderSkillReview, limitsLabel, isArchivedWk, graphBadgeText, renderJobs, renderProjects, renderPhone, renderOrchestrator, renderSkills, renderRail, renderChatThread, eventLine, isLocal, LOCAL_LINE, JOB_WORDS, renderWaiting, renderGemini, renderRoutes, expandable, sessionsOnly, renderAbout, esc, when, ago, span, pct, usd, tok, lockSince, reasonWords, status, paceSentence, renderStatus, renderPace, renderSpend, renderSessions, renderAdvice, renderUpdate, renderInbox, renderControls, renderSections, renderPage };

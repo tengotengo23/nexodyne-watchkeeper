@@ -1,6 +1,6 @@
 'use strict';
 // The W panel's actions (P2-227: moved out of extension.js, behaviour unchanged). Plain Node, no vscode: the Antigravity panel
-// and wk-bridge (the phone, after the Mac checked its signature) call the same code. Each returns
+// and wk-remote (the phone, after the Mac checked its signature) call the same code. Each returns
 // { ok, text, cleared, where, extra, refresh }: what to say, under which section, and whether to read the data again.
 const path = require('path');
 const fs = require('fs');
@@ -111,12 +111,20 @@ async function jobStop(paths, m) {
   return res(r.ok, said(r, r.ok ? 'Stopping.' : 'The job was not stopped.'), { where: 'jobs', extra: { job: m.job } });
 }
 async function phoneKey(paths, id, trust) {
-  const r = await runScript(paths, 'wk-bridge.mjs', [trust ? 'trust' : 'reject', id]);
+  const r = await runScript(paths, 'wk-remote.mjs', [trust ? 'trust' : 'reject', id]);
   return res(r.ok, said(r, r.ok ? 'Done.' : 'That did not work.'), { where: 'phone' });
 }
 async function phoneControl(paths, on) {
-  const r = await runScript(paths, 'wk-bridge.mjs', [on ? 'enable' : 'disable']);
+  const r = await runScript(paths, 'wk-remote.mjs', [on ? 'enable' : 'disable']);
   return res(r.ok, said(r, r.ok ? 'Done.' : 'That did not work.'), { where: 'phone' });
+}
+
+// P2-277 Bridge: wk-bridge open brings Antigravity to the front in the task's folder and puts /wk-take-task on the clipboard.
+// It starts no agent: `open -a Antigravity` and `pbcopy` are all it does.
+async function bridgeOpen(paths, taskId) {
+  const r = await runScript(paths, 'wk-bridge.mjs', ['open', '--task', taskId, '--json']);
+  let line = ''; try { line = String(JSON.parse(String(r.out || '').trim().split('\n').pop() || '{}').line || ''); } catch { /* plain text */ }
+  return res(r.ok, r.ok ? (line || 'Antigravity is open. Paste /wk-take-task in its chat.') : said(r, 'Antigravity did not open.'), { where: 'bridge' });
 }
 
 async function skillsSync(paths) {
@@ -134,4 +142,4 @@ async function skillDecide(paths, verb, slug) {
 const skillApprove = (paths, slug) => skillDecide(paths, 'approve', slug);
 const skillReject = (paths, slug) => skillDecide(paths, 'reject', slug);
 
-module.exports = { MONEY_NOTE, question, suggestion, send, task, stopSwitch, installAsk, jobStart, jobReply, jobStop, phoneKey, phoneControl, skillsSync, skillApprove, skillReject };
+module.exports = { bridgeOpen, MONEY_NOTE, question, suggestion, send, task, stopSwitch, installAsk, jobStart, jobReply, jobStop, phoneKey, phoneControl, skillsSync, skillApprove, skillReject };

@@ -443,7 +443,7 @@
     keepField(t);
   });
 
-  const RUNS = /^(okQuestion|sendAnswer|decide|removal|installAsk|jobStart|jobReply|jobStop|watchdogScan|watchdogRecover|trustKey|rejectKey|remoteOn|remoteOff|addTask|repromptRewrite|repromptSend|orchestrateRun|skillsSync|graphRefresh|chatDraft|chatConfirm|chatSendToIde|chatContinueFromClaude|chatTakeTask|chatHandoffToClaude|skillApprove|skillReject|dagRun|dagStop|dagMerge|dagCheck)$/;
+  const RUNS = /^(okQuestion|sendAnswer|decide|removal|installAsk|jobStart|jobReply|jobStop|watchdogScan|watchdogRecover|trustKey|rejectKey|remoteOn|remoteOff|addTask|repromptRewrite|repromptSend|orchestrateRun|skillsSync|graphRefresh|chatDraft|chatConfirm|chatSendToIde|chatContinueFromClaude|chatTakeTask|chatHandoffToClaude|skillApprove|skillReject|dagRun|dagStop|dagMerge|dagCheck|bridgeOpenClaude|bridgeOpenAntigravity)$/;
   window.addEventListener('message', e => {
     const m = e.data;
     if (!m || typeof m !== 'object') return;
@@ -586,6 +586,10 @@
       vscode.postMessage({ cmd: 'answerQuestion', n, text });
     } else if (cmd === 'laterQuestion') {
       vscode.postMessage({ cmd, n });
+    } else if (cmd === 'bridgeOpenClaude') {
+      vscode.postMessage({ cmd, repo: b.getAttribute('data-repo') || '' });
+    } else if (cmd === 'bridgeOpenAntigravity') {
+      vscode.postMessage({ cmd, taskId: b.getAttribute('data-task-id') || '' });
     } else if (cmd === 'openTaskDiff') {
       diffWhere = b.closest('[data-slot="waiting"]') ? 'waiting' : 'gemini';
       vscode.postMessage({ cmd, id });

@@ -1,6 +1,6 @@
-// bridge-link (P2-227): the transport under wk-bridge, and nothing else. It spawns the link (ssh, or a test command), frames JSON lines
+// bridge-link (P2-227): the transport under wk-remote, and nothing else. It spawns the link (ssh, or a test command), frames JSON lines
 // both ways (a line over 2 MB is dropped and logged), and reconnects with a backoff from 5 s to 5 min. It knows no message types:
-// the protocol (hello, state, result, job, keys out; cmd, key in) lives in wk-bridge.mjs, so another transport can sit here later.
+// the protocol (hello, state, result, job, keys out; cmd, key in) lives in wk-remote.mjs, so another transport can sit here later.
 import { spawn } from 'node:child_process';
 
 export const MAX_LINE = 2 * 1024 * 1024;

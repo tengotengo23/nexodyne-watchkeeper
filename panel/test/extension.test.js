@@ -274,7 +274,7 @@ function hostileFixture(prefix) {
   const ran = path.join(w, 'ran.jsonl');
   const logger = `#!/usr/bin/env node\nrequire('fs').appendFileSync(${JSON.stringify(ran)}, JSON.stringify(process.argv.slice(1)) + '\\n');\n`;
   fs.writeFileSync(path.join(orch, 'nx'), logger, { mode: 0o755 });
-  for (const f of ['wk-suggest.mjs', 'wk-task.mjs', 'wk-job.mjs', 'wk-bridge.mjs', 'wk-ask-claude.mjs', 'wk-skill-sync.mjs']) fs.writeFileSync(path.join(plugin, 'bin', f), logger.replace('#!/usr/bin/env node\n', ''));
+  for (const f of ['wk-suggest.mjs', 'wk-task.mjs', 'wk-job.mjs', 'wk-remote.mjs', 'wk-ask-claude.mjs', 'wk-skill-sync.mjs']) fs.writeFileSync(path.join(plugin, 'bin', f), logger.replace('#!/usr/bin/env node\n', ''));
   fs.writeFileSync(path.join(plugin, 'bin', 'wk-ledger.mjs'), 'process.exit(3);');
   fs.writeFileSync(path.join(plugin, 'config', 'gates.json'), JSON.stringify({ kill_switch: { file: path.join(data, 'KILL') } }));
   fs.writeFileSync(path.join(data, 'suggestions.jsonl'), JSON.stringify({ id: 'S-20261114-100000-abcd', at: new Date().toISOString(), from: 'claude', title: 'Go?', action: { type: 'none' } }) + '\n');
@@ -287,7 +287,7 @@ const RUN_MESSAGES = [{ cmd: 'answerQuestion', n: '3', useRecommended: true }, {
   { cmd: 'repromptRewrite', draft: 'fix bug', target: 'antigravity', mode: 'balanced', skills: '' }, { cmd: 'repromptSend', text: 'fix bug', target: 'antigravity' }, { cmd: 'orchestrateRun', prompt: 'check logs', prefer: 'auto' }, { cmd: 'skillsSync' },
   { cmd: 'chatDraft', prompt: 'fix bug', confirmBeforeGo: true }, { cmd: 'chatConfirm', sessionId: 'WKS-20261122-120000-abcd', turnId: 'T-123456', repromptedText: 'fix' }, { cmd: 'chatSendToIde', sessionId: 'WKS-20261122-120000-abcd', turnId: 'T-123456', repromptedText: 'fix' },
   { cmd: 'chatContinueFromClaude', sessionId: 'sess_1234' }, { cmd: 'chatTakeTask' }, { cmd: 'chatHandoffToClaude', sessionId: 'WKS-20261122-120000-abcd', note: 'next' },
-  { cmd: 'watchdogScan' }, { cmd: 'watchdogRecover' }, { cmd: 'graphRefresh' }, { cmd: 'removal', id: 'wt-1', choice: 'ok' },
+  { cmd: 'watchdogScan' }, { cmd: 'watchdogRecover' }, { cmd: 'bridgeOpenClaude', repo: '/tmp' }, { cmd: 'bridgeOpenAntigravity', taskId: '20261124-202000-fix-login' }, { cmd: 'graphRefresh' }, { cmd: 'removal', id: 'wt-1', choice: 'ok' },
   { cmd: 'skillApprove', slug: 'some-source' }, { cmd: 'skillReject', slug: 'owner/repo' },
   { cmd: 'dagRun', sessionId: 'WKS-20261122-120000-abcd', turnId: 'T-123456' }, { cmd: 'dagStop', sessionId: 'WKS-20261122-120000-abcd', turnId: 'T-123456' },
   { cmd: 'dagMerge', sessionId: 'WKS-20261122-120000-abcd', turnId: 'T-123456' }, { cmd: 'dagCheck', sessionId: 'WKS-20261122-120000-abcd', turnId: 'T-123456' }];
@@ -431,4 +431,30 @@ test('P2-273: a panel paste over 30 words is marked so the Antigravity hook send
   assert.equal(pp.wantsAutoRewrite(marked, 30), false, 'the hook does not rewrite it again');
   assert.ok(ext.ideTaskFor(short, { hookAutoAll: true }).endsWith(ext.PANEL_AS_IS_MARK), 'rewrite-everything mode marks short text too');
   assert.equal(ext.ideTaskFor(long, null).endsWith(ext.PANEL_AS_IS_MARK), true, 'no settings: the default rule');
+});
+
+test('P2-277 Bridge: Open in Claude opens a terminal that takes the handoff (--handoff --cwd, never --claim) in the named folder only; a forged folder opens nothing', async t => {
+  const ctx = { extensionUri: { fsPath: path.join(__dirname, '..') }, subscriptions: [] };
+  t.after(() => { for (const p of Object.values(registered)) if (p && p.stop) p.stop(); delete fakeVscode.window.createTerminal; });
+  const terms = [];
+  fakeVscode.window.createTerminal = o => { const term = { o, shown: false, sent: [], show() { term.shown = true; }, sendText(s) { term.sent.push(s); } }; terms.push(term); return term; };
+  const repo = fs.mkdtempSync(path.join(base, 'repo-'));
+  fs.mkdirSync(cfg.dataDir, { recursive: true });
+  fs.writeFileSync(path.join(cfg.dataDir, 'watch.json'), JSON.stringify({ at: new Date().toISOString(), ids: { tasks_for_gemini: [], handoffs_for_claude: [`${repo}@2026-11-24T20:00:00Z`] },
+    bridge: { on: true, counts: { queued_for_gemini: 0, waiting_for_claude: 1, in_flight: 0, done_24h: 0, stalled: 0 }, stalled_ids: [], routes: { claude_wait: { alive: false, pid: null }, hooks: 'on' }, last_crossings: [] } }));
+  ext.activate(ctx);
+  const view = fakeView();
+  registered['watchkeeper.panel'].resolveWebviewView(view);
+  await until(() => view.posted.some(m => m.type === 'data'));
+  await view.send({ cmd: 'bridgeOpenClaude', repo });
+  assert.equal(terms.length, 1);
+  assert.equal(terms[0].o.cwd, repo);
+  assert.equal(terms[0].shown, true);
+  assert.deepEqual(terms[0].sent, [`claude '/wk-take-task --handoff --cwd "${repo}"'`]);
+  assert.ok(!terms[0].sent[0].includes('--claim'), 'a handoff is taken as a handoff, never through the queue');
+  await view.send({ cmd: 'bridgeOpenClaude', repo: '/etc' });
+  assert.equal(terms.length, 1, 'a folder watch.json does not name opens no terminal at all');
+  await view.send({ cmd: 'bridgeOpenAntigravity', taskId: '../../x' });
+  assert.equal(terms.length, 1, 'a bad task id runs nothing');
+  fs.rmSync(path.join(cfg.dataDir, 'watch.json'));
 });

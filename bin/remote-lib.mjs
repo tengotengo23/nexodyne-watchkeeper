@@ -2,7 +2,7 @@
 // canonical() and b64u() are the shared format (docs/REMOTE.md); checkEnvelope() is the judge: phone control on, every passkey
 // assertion (trusted key, webauthn.get, origin, challenge, RP ID hash, UP and UV, DER signature, sign counter), the session grant
 // (10 minutes at most, decide kinds only, P1363 signature), then the command itself (version, never-seen id, age, kind allowlist,
-// prompt kinds only with a fresh passkey, exact arguments). It never runs anything: wk-bridge acts on what passes.
+// prompt kinds only with a fresh passkey, exact arguments). It never runs anything: wk-remote acts on what passes.
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -39,12 +39,12 @@ export const FILES = {
   log: () => path.join(wkHome(), 'remote-log.jsonl'),
   status: () => path.join(wkHome(), 'remote-status.json'),
 };
-// No built-in server (P2-243): origin, rp_id, host, user and server_command stay empty until `wk-bridge config` sets them (panel/src/data.js has the same shape).
+// No built-in server (P2-243): origin, rp_id, host, user and server_command stay empty until `wk-remote config` sets them (panel/src/data.js has the same shape).
 // server_command: the program the server runs for this key (the forced command in its authorized_keys line).
-// login: 'passkey' (every command carries a Face ID signature the Mac checks) or 'panel' (the owner's choice of 19 Nov 2026: the panel's own sign-in is the only one; the Mac still applies the allowlist, limits, replay and stop checks). Only the Mac switches it: wk-bridge login.
+// login: 'passkey' (every command carries a Face ID signature the Mac checks) or 'panel' (the owner's choice of 19 Nov 2026: the panel's own sign-in is the only one; the Mac still applies the allowlist, limits, replay and stop checks). Only the Mac switches it: wk-remote login.
 export const REMOTE_DEFAULTS = Object.freeze({ enabled: false, login: 'passkey', origin: '', rp_id: '',
   host: '', port: 22, user: '', server_command: '', key: '~/.ssh/wk_bridge_ed25519', max_jobs: 2, job_hours: 3, pace_stop_pct: 90 });
-const BRIDGE = 'node ' + path.join(path.dirname(new URL(import.meta.url).pathname), 'wk-bridge.mjs');
+const BRIDGE = 'node ' + path.join(path.dirname(new URL(import.meta.url).pathname), 'wk-remote.mjs');
 export const SET_SERVER = `Phone control needs a companion server (not published yet). If you run one: ${BRIDGE} config --origin https://... --host ...`;
 export const SET_USER = `Set the ssh user first: ${BRIDGE} config --user NAME`;
 export const SET_COMMAND = `Set the program the server runs for this ssh key first: ${BRIDGE} config --server-command PATH`;
@@ -54,7 +54,7 @@ export function serverProblem(r) {
   if (!r.user) return SET_USER;
   return null;
 }
-// wk-bridge config: checks each value and returns the patch for writeRemote, or throws with a plain message.
+// wk-remote config: checks each value and returns the patch for writeRemote, or throws with a plain message.
 // o: { origin, host, port, user, rp_id, server_command } as typed (strings, null when not given); cur: readRemote().
 export const HOST_RE = /^[A-Za-z0-9][A-Za-z0-9.:-]{0,252}$/;   // the same rule as bridge-link's sshArgv: no spaces, no shell characters
 export const USER_RE = /^[a-z_][a-z0-9_-]{0,31}$/;
@@ -96,7 +96,7 @@ export function serverPatch(cur, o) {
     patch.rp_id = rp;
   }
   const next = { ...cur, ...patch };
-  if (!next.origin || !next.host) throw new Error('wk-bridge config needs both --origin and --host the first time');
+  if (!next.origin || !next.host) throw new Error('wk-remote config needs both --origin and --host the first time');
   return patch;
 }
 
@@ -319,7 +319,7 @@ export function checkEnvelope(env, { remote, keys, seen, now = Date.now() }) {
     via = 'grant';
   } else if (a.via === 'panel') {
     // No signature: the panel's own sign-in stood in front of the command. Accepted only when the Mac was told so (login 'panel').
-    if (remote.login !== 'panel') return { ok: false, verified: false, id, reason: 'The Mac asks for Face ID on every command. Use the passkey, or run wk-bridge login panel on the Mac.' };
+    if (remote.login !== 'panel') return { ok: false, verified: false, id, reason: 'The Mac asks for Face ID on every command. Use the passkey, or run wk-remote login panel on the Mac.' };
     if (!onlyKeys(a, ['via'])) return { ok: false, verified: false, id, reason: 'The command is broken.' };
     via = 'panel';
   } else return { ok: false, verified: false, id, reason: 'The command is not signed.' };

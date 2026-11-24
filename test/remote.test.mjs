@@ -185,7 +185,7 @@ test('the outgoing scan hides the review\'s extra shapes; gates.json (wk-guard\'
   for (const re of L.OUTGOING_SECRETS) assert.ok(!g.secretPatterns.includes(re), re);
 });
 
-// Owner's choice, 19 Nov 2026: the panel's own sign-in is the only one. Opt-in, set only on the Mac (wk-bridge login panel).
+// Owner's choice, 19 Nov 2026: the panel's own sign-in is the only one. Opt-in, set only on the Mac (wk-remote login panel).
 test('login panel: unsigned panel commands pass only when the Mac chose it, and keep every other check', () => {
   const panel = { ...remote, login: 'panel' };
   const env = (kind, args, extra = {}) => ({ command: P.command(kind, args), auth: { via: 'panel', ...extra } });
@@ -196,7 +196,7 @@ test('login panel: unsigned panel commands pass only when the Mac chose it, and 
   assert.equal(job.ok, true, job.reason);
   // default (Face ID) mode refuses it, naming the fix; nothing counts against the budget
   const off = L.checkEnvelope(env('ping'), { remote, keys, seen: null });
-  assert.equal(off.ok, false); assert.equal(off.verified, false); assert.match(off.reason, /wk-bridge login panel/);
+  assert.equal(off.ok, false); assert.equal(off.verified, false); assert.match(off.reason, /wk-remote login panel/);
   assert.equal(L.readRemote().login, 'passkey');
   // phone control off, an extra field, an unknown kind, a bad argument and a replay still fail
   assert.match(L.checkEnvelope(env('ping'), { remote: { ...panel, enabled: false }, keys, seen: null }).reason, /off on the Mac/);

@@ -33,6 +33,8 @@ const COMMANDS = ['ready', 'refresh', 'send', 'kill', 'unkill', 'openAdvice', 'i
   'dagRun', 'dagNotNow', 'dagStop', 'dagMerge', 'dagMergeNo', 'dagCheck',
   // Watchdog 1-click scan & recovery actions
   'watchdogScan', 'watchdogRecover', 'graphRefresh',
+  // P2-277 Bridge: open the waiting work in Claude (a terminal) or in Antigravity (wk-bridge open)
+  'bridgeOpenClaude', 'bridgeOpenAntigravity',
   // P2-272 (B): the owner approves or rejects a staged skill source
   'skillApprove', 'skillReject',
   // P2-272 (P3-B): archive a finished session (✓ Done or /done) and reopen one from Archived (N)
@@ -761,7 +763,7 @@ function readQuestions(orchDir, now = Date.now(), later = {}) {
 }
 
 // The only folder whose questions the panel lists and whose nx it runs: "orchestration" in <dataDir>/remote.json, the same rule
-// wk-bridge and wk-job follow. Never a folder found in a workspace: answering runs that folder's nx, and a workspace is not trusted code.
+// wk-remote and wk-job follow. Never a folder found in a workspace: answering runs that folder's nx, and a workspace is not trusted code.
 function questionsDir(dataDir, home = os.homedir()) {
   const j = readJsonSmall(path.join(dataDir, 'remote.json'), 64 * 1024) || {};
   return typeof j.orchestration === 'string' && j.orchestration.trim() ? expandHome(j.orchestration.trim(), home) : '';
@@ -833,6 +835,13 @@ function readSuggestions(dataDir, now = Date.now()) {
 const findOpenSuggestion = (dataDir, id, now = Date.now()) => (SUGGESTION_ID.test(String(id)) ? readSuggestions(dataDir, now).items.find(s => s.id === id) || null : null);
 
 // ---------------------------------------------------------------- Gemini: tasks, sessions, config
+// P2-277: the owner's hold (tasks/<id>/hold, written by `wk-task hold`): the checker never requeues a held task.
+// A hold with an `until` in the past counts as released, as in bin/wk-bridge.mjs holdOf.
+function taskHeld(dataDir, id, now = Date.now()) {
+  const h = readJsonSmall(path.join(dataDir, 'tasks', id, 'hold'), 16 * 1024);
+  if (!h || typeof h !== 'object') return false;
+  return !(h.until && Date.parse(h.until) <= now);
+}
 function readTasks(dataDir, n = 8) {
   const dir = path.join(dataDir, 'tasks');
   let names; try { names = fs.readdirSync(dir).filter(x => TASK_ID.test(x)).sort().reverse(); } catch { return { items: [], total: 0 }; }
@@ -846,7 +855,8 @@ function readTasks(dataDir, n = 8) {
       id, title: oneLine(m.title).slice(0, MAX_TITLE) || 'Untitled task', kind: TASK_KINDS.includes(m.kind) ? m.kind : '',
       model: str(m.model, 60), fallback: str(m.fallback, 60), modelUsed: str(m.model_used, 60),
       status: TASK_STATES.includes(m.status) ? m.status : 'unknown', from: FROM.includes(m.from) ? m.from : 'unknown',
-      at: t('created_at'), takenAt: t('taken_at'), doneAt: t('done_at'), note: str(m.note, 300), hasDiff: !!taskDiffFile(dataDir, id), hasTest: !!m.test
+      at: t('created_at'), takenAt: t('taken_at'), doneAt: t('done_at'), note: str(m.note, 300), hasDiff: !!taskDiffFile(dataDir, id), hasTest: !!m.test,
+      held: taskHeld(dataDir, id)
     });
   }
   return { items, total: names.length };
@@ -1116,6 +1126,16 @@ function validateMessage(m) {
     if (tid && !TASK_ID.test(tid)) return { ok: false, error: 'unknown task' };
     return { ok: true, msg: { cmd: 'chatTakeTask', taskId: tid } };
   }
+  if (m.cmd === 'bridgeOpenAntigravity') {
+    const tid = typeof m.taskId === 'string' ? m.taskId.trim() : '';
+    if (!TASK_ID.test(tid)) return { ok: false, error: 'unknown task' };
+    return { ok: true, msg: { cmd: 'bridgeOpenAntigravity', taskId: tid } };
+  }
+  if (m.cmd === 'bridgeOpenClaude') {
+    // the folder is only a hint: the extension uses it only when it equals the one watch.json names
+    const repo = typeof m.repo === 'string' && m.repo.length <= 1024 && !/[\u0000-\u001f\u007f]/.test(m.repo) ? m.repo : '';
+    return { ok: true, msg: { cmd: 'bridgeOpenClaude', repo } };
+  }
   if (m.cmd === 'chatHandoffToClaude') {
     if (typeof m.sessionId !== 'string' || !CHAT_SESSION_ID.test(m.sessionId)) return { ok: false, error: 'unknown session' };
     const note = m.note != null ? manyLines(String(m.note)).slice(0, 1000) : '';
@@ -1124,7 +1144,7 @@ function validateMessage(m) {
   return { ok: true, msg: { cmd: m.cmd } };
 }
 
-// ---------------------------------------------------------------- P2-227: jobs, projects and the phone (files written by wk-job, wk-projects and wk-bridge)
+// ---------------------------------------------------------------- P2-227: jobs, projects and the phone (files written by wk-job, wk-projects and wk-remote)
 const JOB_ID = /^J-\d{8}-\d{4}-[0-9a-f]{4}$/;
 const PROJECT_KEY = /^[a-z0-9][a-z0-9._-]{0,63}$/;
 const CRED_ID = /^[A-Za-z0-9_-]{16,1400}$/;
@@ -1133,7 +1153,7 @@ const MODES = ['auto', 'acceptEdits', 'plan'];
 const MODE_WORDS = { auto: 'Edit and run commands (auto mode)', acceptEdits: 'Edit files, no commands', plan: 'Look and plan only' };
 const JOB_STATES = ['queued', 'running', 'waiting', 'done', 'failed', 'stopped'];
 const MAX_PROMPT = 8000;
-// No built-in server (P2-243): the same shape and values as bin/remote-lib.mjs; `wk-bridge config` sets origin, rp_id, host and user.
+// No built-in server (P2-243): the same shape and values as bin/remote-lib.mjs; `wk-remote config` sets origin, rp_id, host and user.
 const REMOTE_DEFAULTS = {
   enabled: false, login: 'passkey', origin: '', rp_id: '', host: '', port: 22, user: '', server_command: '',
   key: '~/.ssh/wk_bridge_ed25519', max_jobs: 2, job_hours: 3, pace_stop_pct: 90
@@ -1448,7 +1468,8 @@ async function collect(cfg = {}, now = Date.now(), opts = {}) {
       watchdog: { ...EMPTY_WATCHDOG, items: [] },
       carbon: { claudeExhausted: false, agyReady: false, model: 'gemini-4-carbon-high' },
       usage: { found: false, fetchedAt: 0, windows: {} }, account: { state: 'no-plugin', email: '' }, geminiUsage: { label: '', tracked: false, today: null, cooldownUntil: 0, cooldownReason: '', weekTasks: null },
-      archivedChatSessions: []
+      archivedChatSessions: [],
+      bridge: { ...EMPTY_BRIDGE }
     };
   }
   const later = safe(() => readPanelState(p.dataDir).later, {});
@@ -1494,10 +1515,45 @@ async function collect(cfg = {}, now = Date.now(), opts = {}) {
     account: { state: account.state, email: account.email },
     geminiUsage: safe(() => readGeminiUsage(p.home, { now, env: opts.env || process.env, label: cfg.geminiLabel, dataDir: p.dataDir }), { label: '', tracked: false, today: null, cooldownUntil: 0, cooldownReason: '', weekTasks: null }),
     archivedChatSessions: safe(() => listArchivedChatSessions(p.dataDir), []),
+    bridge: safe(() => readBridge(p.dataDir), { ...EMPTY_BRIDGE }),
+  };
+}
+
+// P2-277 Bridge: the panel reads watch.json only (wk-watch writes it every 30 s and on each crossing). Nothing is run from here.
+const BRIDGE_EVENTS = new Set(['queued', 'taken', 'done', 'failed', 'requeued', 'written', 'consumed']);
+const EMPTY_BRIDGE = { found: false, on: false, at: '', counts: { queued_for_gemini: 0, waiting_for_claude: 0, in_flight: 0, done_24h: 0, stalled: 0 }, stalledIds: [], routes: { claude_wait: 'nobody', hooks: 'off', last_automation_run: null }, held: [], crossings: [], taskId: '', claudeRepo: '' };
+// wk-watch writes claude_wait as {alive, pid} (bin/wk-bridge.mjs waitRoute); the card says who waits in plain words.
+function waitWords(v) {
+  if (!v || typeof v !== 'object') return 'nobody';
+  const pid = Number.isInteger(v.pid) && v.pid > 0 ? v.pid : null;
+  return v.alive === true ? (pid ? `a Claude tab (pid ${pid})` : 'a Claude tab') : 'nobody';
+}
+function readBridge(dataDir) {
+  let w; try { w = JSON.parse(fs.readFileSync(path.join(dataDir, 'watch.json'), 'utf8')); } catch { return { ...EMPTY_BRIDGE }; }
+  const b = w && typeof w === 'object' && w.bridge && typeof w.bridge === 'object' ? w.bridge : null;
+  if (!b) return { ...EMPTY_BRIDGE };
+  const str = (v, n = 200) => (typeof v === 'string' ? v.replace(/[\u0000-\u001f\u007f-\u009f\u2028\u2029]+/g, ' ').trim().slice(0, n) : '');
+  const num = v => (Number.isFinite(v) && v >= 0 ? Math.floor(v) : 0);
+  const c = b.counts && typeof b.counts === 'object' ? b.counts : {};
+  const r = b.routes && typeof b.routes === 'object' ? b.routes : {};
+  const ids = w.ids && typeof w.ids === 'object' ? w.ids : {};
+  const firstTask = Array.isArray(ids.tasks_for_gemini) ? str(ids.tasks_for_gemini.find(x => typeof x === 'string' && /^\d{8}-\d{6}-[a-z0-9-]{1,40}$/.test(x)) || '', 60) : '';
+  const firstHand = Array.isArray(ids.handoffs_for_claude) ? str(ids.handoffs_for_claude.find(x => typeof x === 'string') || '', 600) : '';
+  const at = firstHand.lastIndexOf('@'), repo = at > 0 ? firstHand.slice(0, at) : '';
+  return {
+    found: true, on: b.on === true, at: str(w.checked_at || w.at, 40),
+    counts: { queued_for_gemini: num(c.queued_for_gemini), waiting_for_claude: num(c.waiting_for_claude), in_flight: num(c.in_flight), done_24h: num(c.done_24h), stalled: num(c.stalled) },
+    stalledIds: Array.isArray(b.stalled_ids) ? b.stalled_ids.filter(x => typeof x === 'string').slice(0, 20).map(x => str(x, 60)) : [],
+    routes: { claude_wait: waitWords(r.claude_wait), hooks: r.hooks === 'on' ? 'on' : 'off', last_automation_run: str(r.last_automation_run, 40) || null },
+    crossings: (Array.isArray(b.last_crossings) ? b.last_crossings : []).filter(x => x && typeof x === 'object').slice(-10)
+      .map(x => ({ at: str(x.at, 40), kind: x.kind === 'handoff' ? 'handoff' : 'task', from: str(x.from, 40), to: str(x.to, 40), event: BRIDGE_EVENTS.has(x.event) ? x.event : 'unknown', title: str(x.title, 120) })),
+    held: Array.isArray(w.held) ? w.held.filter(x => typeof x === 'string' && /^\d{8}-\d{6}-[a-z0-9-]{1,40}$/.test(x)).slice(0, 20) : [],
+    taskId: firstTask, claudeRepo: path.isAbsolute(repo) ? repo : '',
   };
 }
 
 module.exports = {
+  readBridge, EMPTY_BRIDGE, waitWords, taskHeld,
   pluginInstalled, HEAD_TAIL, MAX_TEXT, expandHome, resolvePaths, readPace, readStatusLine, readHeadTail, parseLines, decodeProject, modelName,
   cleanText, userText, sessionInfo, readMembers, listSessions, readClaudeTranscript, readLedger, readLocks, appendInbox, readInbox, inboxFile,
   killFilePath, killState, setKill, validateMessage, collect, readAdvice, adviceFile, askState, installAsk, readUpdate,

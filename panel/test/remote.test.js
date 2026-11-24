@@ -289,7 +289,7 @@ test('actions: jobs and the phone go through the plugin\'s own scripts with the 
   // without the scripts: a plain refusal, nothing runs
   const none = await A.jobStart(paths, { project: 'nexodyne', prompt: 'x', model: 'sonnet', mode: 'auto' });
   assert.deepEqual([none.ok, none.where, none.text], [false, 'jobs', 'the plugin has no bin/wk-job.mjs yet']);
-  fs.writeFileSync(path.join(plugin, 'bin', 'wk-job.mjs'), script); fs.writeFileSync(path.join(plugin, 'bin', 'wk-bridge.mjs'), script);
+  fs.writeFileSync(path.join(plugin, 'bin', 'wk-job.mjs'), script); fs.writeFileSync(path.join(plugin, 'bin', 'wk-remote.mjs'), script);
   const calls = () => fs.readFileSync(path.join(plugin, 'bin', 'calls.jsonl'), 'utf8').trim().split('\n').map(l => JSON.parse(l));
   const r1 = await A.jobStart(paths, { project: 'nexodyne', prompt: 'Fix it\n--model opus', model: 'opus', mode: 'plan', max_turns: 20 });
   assert.deepEqual([r1.ok, r1.cleared, r1.text], [true, true, 'Started J-20261116-1902-a3f9.']);
@@ -302,8 +302,8 @@ test('actions: jobs and the phone go through the plugin\'s own scripts with the 
     ['wk-job.mjs', ['start', '--project', 'nexodyne', '--model', 'opus', '--mode', 'plan', '--from', 'panel', '--prompt', 'Fix it\n--model opus', '--max-turns', '20'], data],
     ['wk-job.mjs', ['reply', J1, '--prompt', 'go on'], data],
     ['wk-job.mjs', ['stop', J1], data],
-    ['wk-bridge.mjs', ['trust', CRED], data], ['wk-bridge.mjs', ['reject', CRED], data],
-    ['wk-bridge.mjs', ['enable'], data], ['wk-bridge.mjs', ['disable'], data]]);
+    ['wk-remote.mjs', ['trust', CRED], data], ['wk-remote.mjs', ['reject', CRED], data],
+    ['wk-remote.mjs', ['enable'], data], ['wk-remote.mjs', ['disable'], data]]);
   // the stop switch moved out of extension.js unchanged
   fs.mkdirSync(path.join(plugin, 'config'));
   fs.writeFileSync(path.join(plugin, 'config', 'gates.json'), JSON.stringify({ kill_switch: { file: path.join(data, 'KILL') } }));
@@ -320,7 +320,7 @@ test('extension: Trust and Switch on need the modal; Reject, off and the job com
   fs.writeFileSync(path.join(plugin, 'bin', 'wk-ledger.mjs'), 'process.exit(3);');
   const script = "import fs from 'node:fs';import p from 'node:path';import {fileURLToPath} from 'node:url';const f=fileURLToPath(import.meta.url);"
     + "fs.appendFileSync(p.join(p.dirname(f),'calls.jsonl'),JSON.stringify([p.basename(f),...process.argv.slice(2)])+'\\n');console.log('OK '+process.argv[2]);\n";
-  fs.writeFileSync(path.join(plugin, 'bin', 'wk-job.mjs'), script); fs.writeFileSync(path.join(plugin, 'bin', 'wk-bridge.mjs'), script);
+  fs.writeFileSync(path.join(plugin, 'bin', 'wk-job.mjs'), script); fs.writeFileSync(path.join(plugin, 'bin', 'wk-remote.mjs'), script);
   fs.writeFileSync(path.join(data, 'remote-pending.json'), JSON.stringify({ keys: [{ id: CRED2, spki: 'S', label: 'New phone', registered_at: NOW }] }));
   const cfg = { pluginPath: plugin, dataDir: data, claudeDir: path.join(w, 'claude'), orchestrationDir: '' };
   let modal = 'Cancel'; const asked = [];
@@ -360,7 +360,7 @@ test('extension: Trust and Switch on need the modal; Reject, off and the job com
     await handlers.msg({ cmd: 'jobReply', job: J1, prompt: 'yes' }); await handlers.msg({ cmd: 'jobStop', job: J1 });
     await handlers.msg({ cmd: 'jobStart', project: 'nexodyne', prompt: 'Fix', mode: 'bypassPermissions' });
     assert.deepEqual([last().ok, last().where], [false, 'jobs']);
-    assert.deepEqual(calls(), [['wk-bridge.mjs', 'trust', CRED2], ['wk-bridge.mjs', 'enable'], ['wk-bridge.mjs', 'reject', CRED2], ['wk-bridge.mjs', 'disable'],
+    assert.deepEqual(calls(), [['wk-remote.mjs', 'trust', CRED2], ['wk-remote.mjs', 'enable'], ['wk-remote.mjs', 'reject', CRED2], ['wk-remote.mjs', 'disable'],
       ['wk-job.mjs', 'start', '--project', 'nexodyne', '--model', 'haiku', '--mode', 'acceptEdits', '--from', 'panel', '--prompt', 'Fix'],
       ['wk-job.mjs', 'reply', J1, '--prompt', 'yes'], ['wk-job.mjs', 'stop', J1]]);
   } finally { if (provider.stop) provider.stop(); }

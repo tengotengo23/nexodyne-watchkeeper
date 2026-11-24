@@ -10,6 +10,7 @@
 //   wk-task discard <id>                                            -> removes the worktree, keeps change.diff
 //   wk-task sweep [--recover] [--json]                              -> scans or recovers hung tasks via watchdog
 //   wk-task list [--json] · wk-task show <id> [--json]
+//   wk-task hold <id> [--hours <n>] [--note "<why>"] · wk-task release <id>   -> the owner's hold: the checker never requeues a held task
 // Exit: 0 done, 1 failed or refused, 2 bad input, 3 the Stop switch is on, 4 today's cap is reached, 5 nothing is queued.
 // Files: ~/.wk/tasks/<id>/ and ~/.wk/worktrees/<id>/ (or $WK_HOME); see docs/DATA-CONTRACT.md. Every git call uses execFile
 // with an argument array; nothing here pushes or uses the network.
@@ -22,6 +23,7 @@ import { gates, killOn, killFile, glob2re, globBody, earlierWorkLines } from './
 import { wkHome, tasksDir, worktreesDir, config, kinds, guessKind, oneLine, multiLine, stamp, slug, ensureDir, writeFile, readJSON,
   withLock, git, readTask, listTasks, addSuggestion, TASK_ID, FROM_TASK, MAX_TITLE, MAX_NOTE, MAX_TEXT } from './gemini-lib.mjs';
 import { runDetachedCommandSync, runWatchdogCli } from './wk-watchdog.mjs';
+import { recordCrossing, holdOf } from './wk-bridge.mjs';
 
 const BIN = path.dirname(new URL(import.meta.url).pathname);
 class Stop extends Error { constructor(code, msg) { super(msg); this.code = code; } }
@@ -31,7 +33,7 @@ const fail = m => { throw new Stop(1, m); };
 export function parseArgs(argv) {
   if (argv.includes('--help') || argv.includes('-h')) return { cmd: 'help', id: null, allow: [], json: false, recover: false };
   const o = { cmd: argv[0] || '', id: null, allow: [], json: false, recover: false };
-  const VAL = { '--repo': 'repo', '--title': 'title', '--kind': 'kind', '--model': 'model', '--test': 'test', '--from': 'from', '--text': 'text', '--id': 'id', '--model-used': 'modelUsed', '--note': 'note', '--base': 'base', '--attempt': 'attempt' };
+  const VAL = { '--repo': 'repo', '--title': 'title', '--kind': 'kind', '--model': 'model', '--test': 'test', '--from': 'from', '--text': 'text', '--id': 'id', '--model-used': 'modelUsed', '--note': 'note', '--base': 'base', '--attempt': 'attempt', '--hours': 'hours' };
   const a = argv.slice(1);
   while (a.length) {
     const x = a.shift();
@@ -194,6 +196,7 @@ export function addTask(o, now = new Date()) {
     ...(startBase ? { start_base: startBase } : {}) };
   writeFile(path.join(taskDir(id), 'task.md'), `# ${title}\n\n${text}\n`);
   saveMeta(meta);
+  recordCrossing({ kind: 'task', id, from, to: 'gemini', event: 'queued', title }, now);
   return meta;
 }
 
@@ -236,6 +239,7 @@ export function takeTask(o, now = new Date()) {
       wtAdded = true;
       Object.assign(m, { status: 'taken', taken_at: now.toISOString(), worktree: wt, base, attempt, claim_nonce: nonce, ...(o.modelUsed ? { model_used: oneLine(o.modelUsed).slice(0, 80) } : {}) });
       saveMeta(m);
+      recordCrossing({ kind: 'task', id: m.id, from: m.from, to: oneLine(o.modelUsed || 'gemini').slice(0, 40), event: 'taken', title: m.title }, now);
       return m;
     } catch (e) {
       if (wtAdded) {
@@ -304,7 +308,34 @@ const tail = (s, n) => String(s || '').replace(/\s+$/, '').split('\n').slice(-n)
 
 export function doneTask(o, now = new Date()) {
   metaOf(o.id);
-  return withTaskLock(o.id, () => doneLocked(o, now));
+  const r = withTaskLock(o.id, () => doneLocked(o, now));
+  if (r && r.m && r.m.status && r.m.status !== 'taken') {
+    const ok = r.code === 0;
+    recordCrossing({ kind: 'task', id: r.m.id, from: r.m.model_used || 'gemini', to: r.m.from || 'owner', event: ok ? 'done' : 'failed', title: r.m.title }, now);
+  }
+  return r;
+}
+
+// ---------------------------------------------------------------- hold, release (P2-277)
+// The owner's hold: the checker's automatic requeue skips a held task and leaves its worktree. No --hours: until released.
+export function holdTask(o, now = new Date()) {
+  const m = metaOf(o.id);
+  let until = null;
+  if (o.hours !== undefined) {
+    const h = Number(o.hours);
+    if (!Number.isFinite(h) || h <= 0 || h > 24 * 365) bad('--hours needs a number above 0');
+    until = new Date(now.getTime() + h * 3600000).toISOString();
+  }
+  const note = o.note !== undefined ? oneLine(o.note).slice(0, MAX_NOTE) : null;
+  writeFile(path.join(taskDir(m.id), 'hold'), JSON.stringify({ at: now.toISOString(), until, note }) + '\n');
+  return { m, code: 0, msg: `Held ${m.id}${until ? ` until ${until}` : ' until released (wk-task release ' + m.id + ')'}. The checker will not requeue it.` };
+}
+export function releaseTask(o) {
+  const m = metaOf(o.id);
+  const f = path.join(taskDir(m.id), 'hold');
+  const had = fs.existsSync(f);
+  fs.rmSync(f, { force: true });
+  return { m, code: 0, msg: had ? `Released ${m.id}.` : `${m.id} was not held.` };
 }
 // P2-276 review: an agent from an earlier attempt (its task was requeued after it went quiet) must not hand in its work as
 // the new attempt's: from attempt 2 on, done needs --attempt with the current number.
@@ -447,9 +478,9 @@ export function discardTask(o) {
 const ago = iso => { const s = Math.max(0, (Date.now() - (Date.parse(iso) || Date.now())) / 1000); return s < 3600 ? `${Math.round(s / 60)} min` : s < 86400 ? `${Math.round(s / 3600)} h` : `${Math.round(s / 86400)} d`; };
 function list(o) {
   const all = listTasks().reverse();
-  if (o.json) return console.log(JSON.stringify(all, null, 2));
+  if (o.json) return console.log(JSON.stringify(all.map(t => (holdOf(t.id) ? { ...t, held: true } : t)), null, 2));
   if (!all.length) return console.log('No tasks yet.');
-  for (const t of all.slice(0, 30)) console.log(`${t.id}  ${t.status.padEnd(12)} ${t.kind.padEnd(6)} ${t.model}${t.model_used ? ` (used ${t.model_used})` : ''}  ${ago(t.created_at)} ago  ${shortTitle(t.title, 80)}`);
+  for (const t of all.slice(0, 30)) console.log(`${t.id}  ${(holdOf(t.id) ? t.status + ',held' : t.status).padEnd(12)} ${t.kind.padEnd(6)} ${t.model}${t.model_used ? ` (used ${t.model_used})` : ''}  ${ago(t.created_at)} ago  ${shortTitle(t.title, 80)}`);
 }
 function show(o) {
   const m = metaOf(o.id);
@@ -463,15 +494,15 @@ function show(o) {
 
 const isMain = (() => { try { return !!process.argv[1] && fs.realpathSync(process.argv[1]) === fs.realpathSync(new URL(import.meta.url).pathname); } catch { return false; } })();
 if (isMain) {
-  const USAGE = 'usage: wk-task add|take|done|merge|discard|sweep|list|show (see the top of bin/wk-task.mjs)';
+  const USAGE = 'usage: wk-task add|take|done|merge|discard|hold|release|sweep|list|show (see the top of bin/wk-task.mjs)';
   let code = 0;
   try {
     const o = parseArgs(process.argv.slice(2));
     if (o.cmd === 'help') console.log(USAGE);
     else if (o.cmd === 'add') console.log(addTask(o).id);
     else if (o.cmd === 'take') { const m = takeTask(o); console.log(o.json ? JSON.stringify(m) : brief(m)); }
-    else if (['done', 'merge', 'discard'].includes(o.cmd)) {
-      const r = { done: doneTask, merge: mergeTask, discard: discardTask }[o.cmd](o);
+    else if (['done', 'merge', 'discard', 'hold', 'release'].includes(o.cmd)) {
+      const r = { done: doneTask, merge: mergeTask, discard: discardTask, hold: holdTask, release: releaseTask }[o.cmd](o);
       (r.code ? console.error : console.log)(r.msg); code = r.code;
     }
     else if (o.cmd === 'sweep') code = runWatchdogCli([o.recover ? 'recover' : 'scan', ...(o.json ? ['--json'] : [])]);

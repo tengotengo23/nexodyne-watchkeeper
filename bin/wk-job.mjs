@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// wk-job (P2-227): a Claude Code job on this Mac, started from the owner's phone (through wk-bridge) or from the W panel.
+// wk-job (P2-227): a Claude Code job on this Mac, started from the owner's phone (through wk-remote) or from the W panel.
 //   wk-job start --project <key> [--model sonnet|opus|fable|haiku] [--mode auto|acceptEdits|plan] [--max-turns 1-400]
 //                [--from phone|panel|cli] (--prompt "<t>" | stdin)      -> prints "Started <id> ..."
 //       A prompt with legal wording (panel/src/legal-words.js) runs on the newest top model in config/models.json "legal" at xhigh

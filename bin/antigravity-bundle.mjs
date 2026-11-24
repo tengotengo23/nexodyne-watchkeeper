@@ -18,6 +18,8 @@ export const TOOLS = {
   'wk-watch': ['node', 'bin/wk-watch.mjs'],
   'wk-suggest': ['node', 'bin/wk-suggest.mjs'],
   'wk-takeover': ['node', 'bin/wk-takeover.mjs'],
+  'wk-bridge': ['node', 'bin/wk-bridge.mjs'],
+  'wk-remote': ['node', 'bin/wk-remote.mjs'],
   'wk-ask-claude': ['node', 'bin/wk-ask-claude.mjs'],
   'wk-skill-sync': ['node', 'bin/wk-skill-sync.mjs'],
   'wk-skill-vault': ['python', 'reprompt/scripts/skill_vault.py'],

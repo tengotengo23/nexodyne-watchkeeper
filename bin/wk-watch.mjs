@@ -14,6 +14,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { execFile, spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
+import { holdOf, heldTasks, pruneBridge, readCrossings, waitRoute, isOn } from './wk-bridge.mjs';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const SCRIPT = path.join(HERE, 'wk-watch.mjs');
@@ -43,10 +44,48 @@ export function queuedTasks(dir = path.join(wkHome(), 'tasks')) {
   for (const id of names) {
     if (!TASK_ID.test(id)) continue;
     const m = readJson(path.join(dir, id, 'meta.json'), null);
-    if (m && m.status === 'queued' && m.id === id) out.push({ id, title: short(m.title) });
+    if (m && m.status === 'queued' && m.id === id) out.push({ id, title: short(m.title), ...(holdOf(id) ? { held: true } : {}) });
   }
   return out.sort((a, b) => a.id.localeCompare(b.id));
 }
+
+// ---------------------------------------------------------------- Bridge (P2-277)
+export const inboxDir = () => path.join(wkHome(), 'bridge', 'inbox');
+// Writers touch a marker in the inbox (launchd QueueDirectories runs the check at once); the check empties it, also under the
+// kill switch, so launchd never spins on a non-empty queue.
+export function clearInbox() {
+  let n = 0;
+  try { for (const f of fs.readdirSync(inboxDir())) { try { fs.rmSync(path.join(inboxDir(), f), { force: true, recursive: true }); n++; } catch {} } } catch {}
+  return n;
+}
+const taskStaleMs = () => { const v = Number(process.env.WK_TASK_STALE_MS ?? 45 * 60 * 1000); return Number.isFinite(v) && v > 0 ? v : 45 * 60 * 1000; };
+function mtime(f) { try { return fs.statSync(f).mtimeMs; } catch { return 0; } }
+// Counts, routes and the last ten crossings for the panel's Bridge card. Reads files only; starts nothing.
+export function bridgeState({ now = new Date(), queued = 0, forClaude = 0 } = {}) {
+  const dir = path.join(wkHome(), 'tasks');
+  let names = []; try { names = fs.readdirSync(dir); } catch {}
+  const inFlight = [], stalled = [];
+  for (const id of names) {
+    if (!TASK_ID.test(id)) continue;
+    const m = readJson(path.join(dir, id, 'meta.json'), null);
+    if (!m || m.id !== id || m.status !== 'taken') continue;
+    inFlight.push(id);
+    // Stalled: no heartbeat (guard hooks touch it on each tool call) and no take within the watchdog's stale window.
+    const last = Math.max(mtime(path.join(dir, id, 'heartbeat')), Date.parse(m.taken_at || '') || 0, mtime(path.join(dir, id, 'meta.json')));
+    if (now.getTime() - last > taskStaleMs()) stalled.push(id);
+  }
+  const day = now.getTime() - 24 * 3600 * 1000;
+  const done24 = readCrossings(MAX_READ).filter(c => c.event === 'done' && Date.parse(c.at) >= day).length;
+  const autoMark = mtime(path.join(wkHome(), 'bridge', 'automation-last'));
+  return {
+    on: isOn(),
+    counts: { queued_for_gemini: queued, waiting_for_claude: forClaude, in_flight: inFlight.length, done_24h: done24, stalled: stalled.length },
+    stalled_ids: stalled,
+    routes: { claude_wait: waitRoute('claude'), hooks: isOn() ? 'on' : 'off', last_automation_run: autoMark ? new Date(autoMark).toISOString() : null },
+    last_crossings: readCrossings(10),
+  };
+}
+const MAX_READ = 2000;
 
 // Unread handoffs in shared-workspace.json: consumed_by is empty. The key includes updated_at, so a new handoff for the
 // same folder counts as a new item.
@@ -128,9 +167,14 @@ async function recover() {
 // ---------------------------------------------------------------- check
 export async function check({ now = new Date() } = {}) {
   const t0 = process.hrtime.bigint();
+  // Markers first: one written after this line runs the check again.
+  clearInbox();
   if (fs.existsSync(path.join(wkHome(), 'KILL'))) return { killed: true, took_ms: Number(process.hrtime.bigint() - t0) / 1e6 };
   const prev = readJson(watchFile(), {}) || {};
-  const tasks = queuedTasks();
+  const all = queuedTasks();
+  const tasks = all.filter(t => !t.held).map(({ held: _h, ...t }) => t);
+  const held = heldTasks(now.getTime());   // every state, not only queued (review must-fix 4)
+  const pruned = pruneBridge(now.getTime());
   const hand = openHandoffs();
   const forGemini = [...tasks.map(t => ({ ...t, kind: 'gemini', key: `task:${t.id}` })), ...hand.antigravity.map(h => ({ ...h, kind: 'gemini', key: `handoff:${h.id}` }))];
   const forClaude = hand.claude.map(h => ({ ...h, kind: 'claude', key: `handoff:${h.id}` }));
@@ -149,6 +193,8 @@ export async function check({ now = new Date() } = {}) {
     checked_at: now.toISOString(),
     counts: { tasks_for_gemini: tasks.length, handoffs_for_antigravity: hand.antigravity.length, handoffs_for_claude: hand.claude.length },
     ids: { tasks_for_gemini: tasks.map(t => t.id), handoffs_for_antigravity: hand.antigravity.map(h => h.id), handoffs_for_claude: hand.claude.map(h => h.id) },
+    held,
+    bridge: bridgeState({ now, queued: forGemini.length, forClaude: forClaude.length }),
     notified,
     last_recover_at: lastRecover ? new Date(lastRecover).toISOString() : null,
     last_recover: recovery,
@@ -166,7 +212,7 @@ export async function check({ now = new Date() } = {}) {
     writeWatch({ ...state, last_recover_at: now.toISOString(), last_recover: recovery });
   }
   return { killed: false, ...state, last_recover_at: lastRecover ? new Date(lastRecover).toISOString() : null, last_recover: recovery,
-    new_items: fresh.map(i => ({ kind: i.kind, id: i.id, title: i.title })), notifications: sent, recovered_now: due, took_ms: Math.round(took * 10) / 10 };
+    new_items: fresh.map(i => ({ kind: i.kind, id: i.id, title: i.title })), notifications: sent, recovered_now: due, pruned, took_ms: Math.round(took * 10) / 10 };
 }
 
 // ---------------------------------------------------------------- scheduler
@@ -181,6 +227,7 @@ export function plist({ node, script = SCRIPT, logFile, wkHomeEnv = process.env.
   <key>Label</key><string>${LABEL}</string>
   <key>ProgramArguments</key><array><string>${xml(node)}</string><string>${xml(script)}</string><string>check</string></array>
   <key>StartInterval</key><integer>${EVERY_S}</integer>
+  <key>QueueDirectories</key><array><string>${xml(path.join(wkHomeEnv ? path.resolve(wkHomeEnv) : path.join(home(), '.wk'), 'bridge', 'inbox'))}</string></array>
   <key>RunAtLoad</key><true/>
   <key>ProcessType</key><string>Background</string>
   <key>LowPriorityIO</key><true/>
@@ -250,6 +297,8 @@ async function findNodeBin() {
 export async function install(now = new Date()) {
   const node = await findNodeBin();
   fs.mkdirSync(wkHome(), { recursive: true, mode: 0o700 });
+  // launchd needs the QueueDirectories folder to exist before it loads the agent.
+  fs.mkdirSync(inboxDir(), { recursive: true, mode: 0o700 });
   if (platform() === 'darwin') {
     const file = plistFile();
     const body = plist({ node, logFile: path.join(wkHome(), 'watch-launchd.log') });

@@ -1,4 +1,4 @@
-// P2-272: the Stop switch in wk-bridge. While $WK_HOME/KILL exists, no remote action runs ("Stop switch is on");
+// P2-272: the Stop switch in wk-remote. While $WK_HOME/KILL exists, no remote action runs ("Stop switch is on");
 // ping (a status read), the switch itself and stopping a job still work, and status reads keep working.
 // Same harness as test/bridge.test.mjs: a temp HOME and WK_HOME; nothing reaches a server, the real ~/.wk or ~/.ssh.
 import test from 'node:test'; import assert from 'node:assert/strict';
@@ -8,7 +8,7 @@ const HOME = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'wk-p2-272-br
 const WK = path.join(HOME, '.wk');
 process.env.HOME = HOME; process.env.WK_HOME = WK;
 fs.mkdirSync(WK, { recursive: true });
-const B = await import('../bin/wk-bridge.mjs');
+const B = await import('../bin/wk-remote.mjs');
 const L = await import('../bin/remote-lib.mjs');
 const P = await import('./fixtures/passkey.mjs');
 

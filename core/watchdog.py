@@ -48,6 +48,50 @@ def resolve_watchdog_dir(wk_home: str | Path | None = None) -> Path:
     return resolve_wk_home(wk_home) / "watchdog"
 
 
+def _task_held(tdir: Path, now_ms: int) -> bool:
+    """P2-277: True when ~/.wk/tasks/<id>/hold exists and has not run out (no "until" = until released)."""
+    data = read_json_safe(tdir / "hold", None)
+    if not isinstance(data, dict):
+        return False
+    until = data.get("until")
+    if not until:
+        return True
+    try:
+        end = dt.datetime.fromisoformat(str(until).replace("Z", "+00:00")).timestamp() * 1000
+    except (TypeError, ValueError):
+        return True
+    return end > now_ms
+
+
+def _bridge_crossing(home: Path, tid: str, frm: str, to: str, event: str, title: str, now_ms: int) -> None:
+    """P2-277: one line in ~/.wk/bridge/crossings.jsonl (the same shape bin/wk-bridge.mjs writes); never raises."""
+    try:
+        bdir = home / "bridge"
+        bdir.mkdir(mode=0o700, parents=True, exist_ok=True)
+        f = bdir / "crossings.jsonl"
+        clean = lambda v: re.sub(r"\s+", " ", re.sub(r"[\x00-\x1f\x7f-\x9f\u2028\u2029]", " ", str(v or ""))).strip()
+        line = json.dumps({"at": _iso_utc(now_ms), "kind": "task", "id": clean(tid), "from": clean(frm), "to": clean(to),
+                           "event": clean(event), "title": clean(title)[:120]}, ensure_ascii=False) + "\n"
+        fd = os.open(str(f), os.O_WRONLY | os.O_APPEND | os.O_CREAT, 0o600)
+        try:
+            os.write(fd, line.encode("utf-8"))
+        finally:
+            os.close(fd)
+        lines = f.read_text(encoding="utf-8").splitlines()
+        if len(lines) > 2000:
+            tmp = bdir / f"crossings.jsonl.{os.getpid()}.{uuid.uuid4().hex[:6]}.tmp"
+            tfd = os.open(str(tmp), os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o600)   # private from the first byte
+            with os.fdopen(tfd, "w", encoding="utf-8") as fh:
+                fh.write("\n".join(lines[-2000:]) + "\n")
+            os.replace(tmp, f)
+        inbox = bdir / "inbox"
+        inbox.mkdir(mode=0o700, parents=True, exist_ok=True)
+        fd = os.open(str(inbox / f"{now_ms}-{os.getpid()}-{uuid.uuid4().hex[:6]}"), os.O_WRONLY | os.O_CREAT, 0o600)
+        os.close(fd)
+    except OSError:
+        pass
+
+
 def is_kill_switch_active(wk_home: str | Path | None = None) -> bool:
     """Return True if KILL switch file is present in Watchkeeper home."""
     return (resolve_wk_home(wk_home) / "KILL").exists()
@@ -1743,6 +1787,11 @@ def recover_hanging_tasks(
             pend0 = pend0 if isinstance(pend0, dict) and not pend0.get("removed_at") else {}
             # An owner's answer (keep, later, or a "later" that ran out) means the owner decides from now on.
             owner_hold = str(pend0.get("decision") or "") in ("kept", "later") or bool(pend0.get("owner_decided"))
+            # P2-277: the owner's hold (wk-task hold) stops the automatic path; the worktree stays as it is.
+            if not owner and _task_held(tdir, now):
+                recovered.append({"surface": "task", "id": tid, "action": "held", "reason": reason,
+                                  "message": "Held by the owner (wk-task release to lift it); not requeued."})
+                continue
             if reason == "hung_dirty" or wt_present or rq >= AUTO_REQUEUE_CAP or owner_hold:
                 # P2-272: one notice per hung task, and never a removal by wall-clock alone.
                 # P2-276 review: a dead task is recovered automatically only after the watcher itself
@@ -1788,6 +1837,7 @@ def recover_hanging_tasks(
                     res = decide_pending_removal(tid, "approve-remove", wk_home=home, now_ms=now, stale_ms=t_stale)
                     if res.get("ok") and res.get("requeued"):
                         title = str(meta0.get("title") or tid)[:120]
+                        _bridge_crossing(home, tid, str(meta0.get("model_used") or "gemini"), "gemini", "requeued", title, now)
                         bk = res.get("backup")
                         quiet_min = round((idle_ms_i if owner else quiet_i) / 60000.0, 1)
                         detail = (

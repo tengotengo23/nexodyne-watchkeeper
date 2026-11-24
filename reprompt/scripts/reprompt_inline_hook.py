@@ -227,6 +227,50 @@ def consume_pending_shared_handoff(workspace_dir: str, target_engine: str) -> st
                 pass
 
 
+_TASK_ID_RE = re.compile(r"^\d{8}-\d{6}-[a-z0-9-]{1,40}$")
+
+
+def bridge_task_note() -> str:
+    """P2-277 Bridge: one line naming the oldest queued, unheld Watchkeeper task, or "" (Bridge off, kill switch, none).
+
+    Reads ~/.wk/tasks only; starts nothing. The owner takes the task by saying /wk-take-task.
+    """
+    home = _wk_home_dir()
+    if (home / "KILL").exists() or (home / "bridge" / "off").exists():
+        return ""
+    try:
+        names = sorted(os.listdir(home / "tasks"))
+    except OSError:
+        return ""
+    now = time.time()
+    for tid in names:
+        if not _TASK_ID_RE.match(tid):
+            continue
+        try:
+            meta = json.loads((home / "tasks" / tid / "meta.json").read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            continue
+        if not isinstance(meta, dict) or meta.get("id") != tid or meta.get("status") != "queued":
+            continue
+        try:
+            hold = json.loads((home / "tasks" / tid / "hold").read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            hold = None
+        if isinstance(hold, dict):
+            until = hold.get("until")
+            try:
+                lifted = bool(until) and datetime.fromisoformat(str(until).replace("Z", "+00:00")).timestamp() <= now
+            except ValueError:
+                lifted = False
+            if not lifted:
+                continue
+        title = re.sub(r"\s+", " ", re.sub("[\x00-\x1f\x7f-\x9f\u2028\u2029]+", " ", str(meta.get("title") or ""))).strip() or "untitled"
+        if len(title) > 120:
+            title = title[:119] + "\u2026"
+        return f"Bridge: task {tid} waits: {title}. Say /wk-take-task to take it."
+    return ""
+
+
 def is_wk_kill_active_for_payload(payload: dict[str, Any]) -> bool:
     """Return True while the Stop switch (~/.wk/KILL) is on.
 
@@ -430,6 +474,10 @@ def main() -> int:
         handoff_note = ""
         if not user_input.startswith("/"):
             handoff_note = consume_pending_shared_handoff(workspace_dir, "antigravity")
+        bridge_note = "" if user_input.startswith("/") else bridge_task_note()
+        badge = "**🔄 Shared Workspace Handoff Applied**" if handoff_note else "**🌉 Bridge · a task waits**"
+        if bridge_note:
+            handoff_note = f"{handoff_note}\n\n{bridge_note}" if handoff_note else bridge_note
 
         parsed = parse_inline_trigger(user_input, auto_all=auto_all, over_words=over_words)
         if not parsed:
@@ -444,7 +492,7 @@ def main() -> int:
                                 {
                                     "systemMessage": {
                                         "systemMessage": handoff_note,
-                                        "metadata": {"user_markdown": "**🔄 Shared Workspace Handoff Applied**"},
+                                        "metadata": {"user_markdown": badge},
                                     }
                                 }
                             ]

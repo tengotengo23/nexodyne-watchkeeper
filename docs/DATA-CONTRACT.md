@@ -19,6 +19,12 @@ Nothing here talks to Google or runs `agy`: Gemini reads and writes these files 
 | `tasks/<id>/change.diff` | `wk-task done` (and `discard` when no diff exists yet) | the panel (*Show the change*), `wk-task merge` (its sha-256) |
 | `tasks/<id>/verify.json` | `wk-task done` | the panel, `wk-task show` |
 | `tasks/<id>/claim` | `wk-task take` (made once, so a task is taken once) | `wk-task` |
+| `tasks/<id>/hold` (0600) | `wk-task hold` / `release` (removes it) | the checker (`wk-watch`), the watchdog, `wk-bridge`, the Re-Prompt note, the panel |
+| `bridge/crossings.jsonl` (0600, folder 0700) | `wk-bridge`, `wk-task`, `wk-takeover`, the watchdog (trimmed to the last 2,000 lines) | `wk-bridge crossings`, `wk-watch` (watch.json), the panel |
+| `bridge/inbox/` | the same writers: one empty marker file per crossing | launchd (`QueueDirectories`) runs the check at once; the check empties it, also under the kill switch |
+| `bridge/claims/<sha256(id)[:32]>` (0600) | `wk-bridge wait`, the Claude Stop hook (made once with O_EXCL; stale after 15 minutes) | `wk-bridge`, the hooks |
+| `bridge/chains/<sha256(session)[:32]>.json` (0600) | the Claude Stop hook (at most 3 chains an hour per session) | the Stop hook |
+| `bridge/off` | `wk-bridge off` (removed by `on`) | everything Bridge does |
 | `worktrees/<id>/`, `worktrees/<id>.a<n>/` | `wk-task take` (git worktree, detached at the repository's HEAD; `.a<n>` for attempt n ≥ 2) | Gemini works here |
 | `suggestions.jsonl` | `wk-suggest add/decide`, `wk-task done` | the panel, `wk-state`, `wk-suggest list` |
 | `owner-inbox.jsonl` | the panel (recommendation, rule, decision), `wk-suggest decide` (decision) | a Claude Code session |
@@ -27,13 +33,13 @@ Nothing here talks to Google or runs `agy`: Gemini reads and writes these files 
 | `panel-state.json` | the panel only | the panel only |
 | `antigravity-hook.json` | `wk-antigravity install` (so every `wk-update` too) | `wk-guard-agy` (the Antigravity hook), the panel |
 | `<orchestration>/QUESTIONS.md` | your own tooling, if it keeps a question queue; answered only with `<orchestration>/nx answer <n> "<text>"` | the panel, `wk-state` |
-| `remote.json` | `wk-bridge config`, `enable`/`disable`, the panel's phone switch, a phone's `remote-off` | `wk-bridge`, `wk-job`, the panel |
-| `remote-keys.json` | `wk-bridge trust/reject`, the panel's Trust and Reject (sign counters: `wk-bridge run`) | `wk-bridge`, the panel |
-| `remote-pending.json` | `wk-bridge run` (key lines from the server) | `wk-bridge trust/reject/keys`, the panel |
-| `remote-seen.jsonl`, `remote-log.jsonl`, `remote-status.json` | `wk-bridge run` | `wk-bridge`, `wk-bridge status` |
-| `jobs/<id>/` (meta.json, prompt-<n>.txt, events.jsonl, pushed.json) | `wk-job` (pushed.json: `wk-bridge run`) | the panel, `wk-bridge` (to the server), `wk-job list/show` |
+| `remote.json` | `wk-remote config`, `enable`/`disable`, the panel's phone switch, a phone's `remote-off` | `wk-remote`, `wk-job`, the panel |
+| `remote-keys.json` | `wk-remote trust/reject`, the panel's Trust and Reject (sign counters: `wk-remote run`) | `wk-remote`, the panel |
+| `remote-pending.json` | `wk-remote run` (key lines from the server) | `wk-remote trust/reject/keys`, the panel |
+| `remote-seen.jsonl`, `remote-log.jsonl`, `remote-status.json` | `wk-remote run` | `wk-remote`, `wk-remote status` |
+| `jobs/<id>/` (meta.json, prompt-<n>.txt, events.jsonl, pushed.json) | `wk-job` (pushed.json: `wk-remote run`) | the panel, `wk-remote` (to the server), `wk-job list/show` |
 | `model-pick.json`, `model-audit.jsonl` | `bin/model-pick.mjs` (from `wk-job` and `wk-ask-claude`) | `model-pick.mjs`, `node bin/model-pick.mjs [lane] [--json]` |
-| `projects.json` | `wk-projects scan` (first run or `--write`); you may edit it | `wk-job`, the panel, `wk-bridge` |
+| `projects.json` | `wk-projects scan` (first run or `--write`); you may edit it | `wk-job`, the panel, `wk-remote` |
 
 ### `tasks/<id>/meta.json`
 ```
@@ -85,11 +91,18 @@ Existing kinds `recommendation` and `rule` (`{at, kind, text, status}`, written 
 ### `panel-state.json`
 `{ "later": { "Q106": <until, ms since 1970> } }` (the panel's own state).
 
+### Bridge (P2-277)
+- `tasks/<id>/hold`: `{"at": "<ISO>", "until": "<ISO>" | null, "note": "<t>"}`. `until: null` holds until `wk-task release`; a hold whose `until` has passed counts as released. A held task is never requeued automatically (the watchdog reports it as `held`), is not offered by the Re-Prompt note, and is listed under `held` in watch.json (queued or taken), not under the queued tasks; the panel marks it held.
+- `bridge/crossings.jsonl`: one line per crossing, `{"at", "kind": "task"|"handoff", "id", "from", "to", "event": "queued"|"taken"|"done"|"failed"|"requeued"|"written"|"consumed", "title"}`; text is flattened to one line.
+- watch.json gains `held` (ids of held tasks in every state) and `bridge`: `{on, counts: {queued_for_gemini, waiting_for_claude, in_flight, done_24h, stalled}, stalled_ids, routes: {claude_wait: {alive, pid}, hooks, last_automation_run}, last_crossings}`. `wk-watch check --json` also reports `pruned` (claim and chain files removed this pass).
+- `bridge/claims/<sha256(id) cut to 32>` (0600): made with O_EXCL, so one session takes a handoff; a claim older than 15 minutes may be taken over only by the holder of the O_EXCL lock `<claim>.steal`. The checker removes claims older than 1 day, `.steal` locks older than 1 hour and chain files with no stamp inside the hour. `bridge/chains/<session>`: the stamps of that session's continuations (at most 3 an hour). `stalled` means taken, with no heartbeat or take within `WK_TASK_STALE_MS` (45 minutes by default).
+- The Claude Code Stop hook answers `{"decision":"block","reason":"Bridge: a handoff from Gemini waits: <title>. Run /wk-take-task --handoff --cwd \"<repo>\" to take it."}` only when a handoff for Claude waits, it claimed it, and the session's chain cap allows (claim first, then the chain slot; at the cap the claim is released); the handoff for the session's own cwd comes first; a repo with a quote, `$`, backtick, backslash or newline is left out of the text (`Run /wk-take-task --handoff to take it.`); never under the kill switch or `bridge/off`. The Antigravity Stop hook keeps answering `{}`.
+
 ### Questions
 Open lines in `<orchestration>/QUESTIONS.md`: `- [ ] Q<n> (<date time>, tab <x>): <text>`, often with "Recommended: …" near the end. Never edited directly: `nx answer` ticks the line and appends to `DECISIONS.md`.
 
 ### Phone control (docs/REMOTE.md has the whole story; it needs a companion server that is not published yet)
-- `remote.json`: `{ "enabled": false, "origin": "", "rp_id": "", "host": "", "port": 22, "user": "", "server_command": "", "key": "~/.ssh/wk_bridge_ed25519", "max_jobs": 2, "job_hours": 3, "pace_stop_pct": 90, "orchestration"?: <abs>, "task_repo"?: <abs> }`. Only the Mac turns `enabled` on. There is no built-in server: `origin`, `rp_id`, `host`, `user` and `server_command` (the forced command in the server's `authorized_keys` line) stay empty until `wk-bridge config` sets them (for example `--origin https://panel.example.com --host 192.0.2.10 --user root`), and until then the link and every command that reaches the server refuse.
+- `remote.json`: `{ "enabled": false, "origin": "", "rp_id": "", "host": "", "port": 22, "user": "", "server_command": "", "key": "~/.ssh/wk_bridge_ed25519", "max_jobs": 2, "job_hours": 3, "pace_stop_pct": 90, "orchestration"?: <abs>, "task_repo"?: <abs> }`. Only the Mac turns `enabled` on. There is no built-in server: `origin`, `rp_id`, `host`, `user` and `server_command` (the forced command in the server's `authorized_keys` line) stay empty until `wk-remote config` sets them (for example `--origin https://panel.example.com --host 192.0.2.10 --user root`), and until then the link and every command that reaches the server refuse.
 - `remote-keys.json`: `{ "keys": [ { "id", "spki" (b64u DER), "label", "added_at", "registered_at", "sign_count", "used_at"? } ], "rejected": [ "<id>" ] }` (the last 200 rejected ids).
 - `remote-pending.json`: `{ "keys": [ { "id", "spki", "alg": -7, "label" (<= 40, control characters removed), "registered_at", "seen_at" } ] }`.
 - `remote-seen.jsonl`: `{ "id", "at", "status": "started"|"done"|"interrupted", "ok", "text" (<= 2000), "hash" }` per verified command, kept 7 days; the `started` line is written (fsync) before the action and `done` after it; a `started` line found at start-up becomes `interrupted` ("Interrupted, send again."), never a second run; a repeat id gets the stored answer again.
@@ -99,7 +112,7 @@ Open lines in `<orchestration>/QUESTIONS.md`: `- [ ] Q<n> (<date time>, tab <x>)
 - `model-pick.json` (0600): `{ "v": 1, "unavailable": { "<model>": { at, lane, why } }, "picked": { "<lane>": { model, at } } }`; entries older than `cache_hours` (24, `config/models.json`) are ignored. `model-audit.jsonl`: `{ at: ISO, ev: "model-fallback"|"model-picked", lane, from, model, next?, why? }`, one line per fallback and per change of pick.
 - `config/models.json` (in the plugin): `"legal": ["claude-fable-5-2", "fable", "opus", "sonnet"]`, the order legal wording tries; a newer Fable needs only its id first. The next model is tried only on "not available" (api_error_status 404); a 429, 529 or rate limit waits and retries the same model. `config/gemini.json` `routes.legal`: the Gemini lane for legal wording (the strongest models, the same as `hard`), matched by the same word list.
 - `projects.json`: `{ "projects": [ { key, name, path (with ~), kind: "repo"|"folder", repo? } ] }`.
-- What `wk-bridge` pushes: the panel's `collect` model without `host` and `paths`, plus `mac {name: "this Mac" (never the hostname), free_mb, low_ram}`, each `questions.items[i].h` (16 lowercase hex: SHA-256 of that item's `text` as pushed, cut to 16; an `answer` command must send it back as `args.q`), `phone {enabled, trusted[{id,label,added_at}], pending[{id,label,registered_at}]}`, `bridge {version, pushed_at}`; jobs without `tail`; `~` for the home folder; secrets as `[hidden]`; at most 1.5 MB (`cut: true` when even the trimmed model was too big).
+- What `wk-remote` pushes: the panel's `collect` model without `host` and `paths`, plus `mac {name: "this Mac" (never the hostname), free_mb, low_ram}`, each `questions.items[i].h` (16 lowercase hex: SHA-256 of that item's `text` as pushed, cut to 16; an `answer` command must send it back as `args.q`), `phone {enabled, trusted[{id,label,added_at}], pending[{id,label,registered_at}]}`, `bridge {version, pushed_at}`; jobs without `tail`; `~` for the home folder; secrets as `[hidden]`; at most 1.5 MB (`cut: true` when even the trimmed model was too big).
 
 ## `node bin/wk-state.mjs --json`
 The documented feed for any tool you build on these files:
@@ -117,5 +130,7 @@ The orchestration folder comes from `--orchestration <dir>`, else `$WK_ORCHESTRA
 - `node bin/wk-task.mjs take [--id <id>] [--model-used <m>]` · `done <id> [--note "<t>"] [--model-used <m>]` · `merge <id>` · `discard <id>` · `list [--json]` · `show <id> [--json]`. Exit 0 done, 1 failed or refused, 2 bad input, 3 kill switch on, 4 today's cap reached, 5 nothing queued.
 - `node bin/wk-suggest.mjs add --title "<t>" [--detail "<t>" | stdin] [--from <who>]` prints the new id. `decide <id> ok|later|no [--text "<t>"]` exits 0 on success; on failure it exits non-zero with one plain line on stderr. `list [--open|--decided|--all] [--json]`.
 - `node bin/wk-job.mjs start --project <key> --prompt "<t>" [--model sonnet|opus|fable|haiku] [--mode auto|acceptEdits|plan] [--max-turns <1-400>] [--from phone|panel|cli]` · `reply <id> --prompt "<t>"` · `stop <id>` · `list [--json]` · `show <id> [--json] [--after <n>]`. Exit 0 done, 1 refused, 2 bad input, 3 stop switch on.
-- `node bin/wk-projects.mjs scan [--write] [--json] [--root <dir>]... | list [--json]` · `node bin/wk-bridge.mjs setup|run|trust <id>|reject <id>|keys|enable|disable|status|install|uninstall` (docs/REMOTE.md).
-- All honour `WK_HOME`. Every git call uses execFile with an argument array; nothing pushes or uses the network. (Only `wk-bridge run` talks to the network: one ssh link to your own server.)
+- `node bin/wk-projects.mjs scan [--write] [--json] [--root <dir>]... | list [--json]` · `node bin/wk-remote.mjs setup|run|trust <id>|reject <id>|keys|enable|disable|status|install|uninstall` (docs/REMOTE.md).
+- `node bin/wk-task.mjs hold <id> [--hours <n>] [--note "<t>"]` · `release <id>`.
+- `node bin/wk-bridge.mjs status [--json]` · `wait --for claude|gemini [--max <minutes>]` (no limit by default; exit 0 with one JSON line, the item already claimed; 1 nothing came within `--max`; a handoff another tab claimed first is skipped; 2 kill switch or Bridge off) · `on` · `off` · `crossings [--json]` · `open --task <id>|--handoff <workspace> [--json]` (`--task` runs only `open -a Antigravity <repo>` and puts `/wk-take-task` on the clipboard; `--handoff` prints `cd '<repo>' && claude '/wk-take-task --handoff --cwd "<repo>"'`). `run` only says phone control moved to `wk-remote` and exits 2. It starts no agent.
+- All honour `WK_HOME`. Every git call uses execFile with an argument array; nothing pushes or uses the network. (Only `wk-remote run` talks to the network: one ssh link to your own server.)

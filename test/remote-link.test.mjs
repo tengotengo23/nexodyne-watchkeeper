@@ -1,18 +1,18 @@
-// P2-227: wk-bridge, the Mac end of the phone link. A temp HOME and WK_HOME; ssh, ssh-keygen, launchctl and claude are fakes in test/fixtures.
+// P2-227: wk-remote, the Mac end of the phone link. A temp HOME and WK_HOME; ssh, ssh-keygen, launchctl and claude are fakes in test/fixtures.
 // Nothing here reaches the server, the real ~/.wk, ~/.ssh, ~/.claude or ~/Library.
 import test from 'node:test'; import assert from 'node:assert/strict';
 import fs from 'node:fs'; import os from 'node:os'; import path from 'node:path';
 import { spawn, spawnSync } from 'node:child_process';
 
-const HOME = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'wk-bridge-')));
+const HOME = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'wk-remote-')));
 const WK = path.join(HOME, '.wk');
 process.env.HOME = HOME; process.env.WK_HOME = WK;
 fs.mkdirSync(WK, { recursive: true });
-const BIN = path.resolve('bin/wk-bridge.mjs'), FX = path.resolve('test/fixtures');
+const BIN = path.resolve('bin/wk-remote.mjs'), FX = path.resolve('test/fixtures');
 const SERVER = path.join(FX, 'fake-bridge-server.mjs');
-// the version wk-bridge reports is read from the plugin manifest, so a release bump never breaks this test
+// the version wk-remote reports is read from the plugin manifest, so a release bump never breaks this test
 const WK_VERSION = JSON.parse(fs.readFileSync(path.resolve('.claude-plugin/plugin.json'), 'utf8')).version;
-const B = await import('../bin/wk-bridge.mjs');
+const B = await import('../bin/wk-remote.mjs');
 const { sshArgv } = await import('../bin/bridge-link.mjs');
 const L = await import('../bin/remote-lib.mjs');
 const P = await import('./fixtures/passkey.mjs');
@@ -69,10 +69,10 @@ test('setup makes the key once (0600), writes remote.json switched off, warns ab
   const r = cli(['setup']); assert.equal(r.status, 0, r.stderr);
   assert.equal(fs.statSync(key).mode & 0o777, 0o600);
   assert.equal(fs.statSync(path.join(HOME, '.ssh')).mode & 0o777, 0o700);
-  assert.deepEqual(lines(KGLOG)[0], ['-t', 'ed25519', '-N', '', '-C', 'wk-bridge', '-q', '-f', key]);
+  assert.deepEqual(lines(KGLOG)[0], ['-t', 'ed25519', '-N', '', '-C', 'wk-remote', '-q', '-f', key]);
   assert.deepEqual(lines(KGLOG)[1], ['-F', SERVER_HOST]);
   assert.match(r.stdout, /host key is not in ~\/\.ssh\/known_hosts yet/);
-  assert.equal(r.stdout.trim().split('\n').at(-1), 'restrict,command="/usr/local/sbin/example-bridge" ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIFAKEfakeFAKEfakeFAKEfakeFAKEfakeFAKEfake wk-bridge');
+  assert.equal(r.stdout.trim().split('\n').at(-1), 'restrict,command="/usr/local/sbin/example-bridge" ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIFAKEfakeFAKEfakeFAKEfakeFAKEfakeFAKEfake wk-remote');
   assert.ok(!r.stdout.includes('PRIVATE'));
   const rem = JSON.parse(fs.readFileSync(path.join(WK, 'remote.json'), 'utf8'));
   assert.equal(rem.enabled, false); assert.equal(rem.host, SERVER_HOST); assert.equal(rem.pace_stop_pct, 90);
@@ -117,24 +117,24 @@ test('keys, trust, reject, enable and disable on the command line', () => {
 });
 
 test('install writes the launchd plist and starts it; a second install backs up the old one; uninstall moves it away', () => {
-  const plist = path.join(HOME, 'Library', 'LaunchAgents', 'org.nexodyne.wk-bridge.plist');
+  const plist = path.join(HOME, 'Library', 'LaunchAgents', 'org.nexodyne.wk-remote.plist');
   const r = cli(['install']); assert.equal(r.status, 0, r.stderr);
   const text = fs.readFileSync(plist, 'utf8');
-  assert.match(text, /<key>Label<\/key><string>org\.nexodyne\.wk-bridge<\/string>/);
+  assert.match(text, /<key>Label<\/key><string>org\.nexodyne\.wk-remote<\/string>/);
   assert.ok(text.includes(`<string>${process.execPath}</string><string>${BIN}</string><string>run</string>`));
   assert.ok(text.includes('<key>PATH</key>')); assert.ok(text.includes(`<key>WK_HOME</key><string>${WK}</string>`));
   assert.match(text, /<key>KeepAlive<\/key><true\/>/);
   const uid = process.getuid();
   assert.deepEqual(lines(LCTL), [['bootstrap', `gui/${uid}`, plist]]);
   const r2 = cli(['install']); assert.equal(r2.status, 0);
-  assert.match(r2.stdout, /Moved the old org\.nexodyne\.wk-bridge\.plist to ~\/\.wk\/backups\//);
-  assert.deepEqual(lines(LCTL).slice(1), [['bootout', `gui/${uid}/org.nexodyne.wk-bridge`], ['bootstrap', `gui/${uid}`, plist]]);
+  assert.match(r2.stdout, /Moved the old org\.nexodyne\.wk-remote\.plist to ~\/\.wk\/backups\//);
+  assert.deepEqual(lines(LCTL).slice(1), [['bootout', `gui/${uid}/org.nexodyne.wk-remote`], ['bootstrap', `gui/${uid}`, plist]]);
   assert.equal(fs.readdirSync(path.join(WK, 'backups')).length, 1);
   assert.match(cli(['status']).stdout, /Service: installed/);
-  const bad = cli(['install'], { FAKE_LAUNCHCTL_EXIT: '5' }); assert.equal(bad.status, 1); assert.match(bad.stderr, /launchctl did not start the bridge: fake launchctl: refused/);
-  const u = cli(['uninstall']); assert.equal(u.status, 0); assert.match(u.stdout, /Stopped the bridge and moved/);
+  const bad = cli(['install'], { FAKE_LAUNCHCTL_EXIT: '5' }); assert.equal(bad.status, 1); assert.match(bad.stderr, /launchctl did not start phone control \(wk-remote\): fake launchctl: refused/);
+  const u = cli(['uninstall']); assert.equal(u.status, 0); assert.match(u.stdout, /Stopped phone control \(wk-remote\) and moved/);
   assert.ok(!fs.existsSync(plist)); assert.equal(fs.readdirSync(path.join(WK, 'backups')).length, 3);
-  assert.deepEqual(lines(LCTL).at(-1), ['bootout', `gui/${uid}/org.nexodyne.wk-bridge`]);
+  assert.deepEqual(lines(LCTL).at(-1), ['bootout', `gui/${uid}/org.nexodyne.wk-remote`]);
   assert.match(cli(['uninstall']).stdout, /not installed/);
   assert.match(cli(['status']).stdout, /Service: not installed/);
 });
@@ -365,7 +365,7 @@ test('no key yet: run says so and does not start ssh', async () => {
   const child = spawn(process.execPath, [BIN, 'run', '--once'], { env: keyless, stdio: 'ignore' });
   assert.equal(await new Promise(r => child.on('exit', r)), 0);
   assert.deepEqual(lines(path.join(SRV, 'argv.jsonl')), []);
-  assert.match(spawnSync(process.execPath, [BIN, 'status'], { encoding: 'utf8', env: keyless }).stdout, /none yet \(run wk-bridge setup\)/);
+  assert.match(spawnSync(process.execPath, [BIN, 'status'], { encoding: 'utf8', env: keyless }).stdout, /none yet \(run wk-remote setup\)/);
 });
 
 // ---------------------------------------------------------------- review fixes (W2)
@@ -436,7 +436,7 @@ test('an answer is bound to its question: a changed, gone or wrong-hash question
 });
 
 // ---------------------------------------------------------------- P2-243: no built-in server
-// A stranger's Mac: no remote.json. Nothing may reach any server until `wk-bridge config` names one.
+// A stranger's Mac: no remote.json. Nothing may reach any server until `wk-remote config` names one.
 const freshWorld = name => {
   const h = path.join(HOME, name), wk = path.join(h, '.wk'); fs.mkdirSync(wk, { recursive: true });
   const e = { ...env, HOME: h, WK_HOME: wk, FAKE_KEYGEN_LOG: path.join(h, 'keygen.jsonl'), FAKE_LAUNCHCTL_LOG: path.join(h, 'launchctl.jsonl') };
@@ -448,7 +448,7 @@ test('no server set: the defaults hold no server; status says so; setup, run, in
   assert.deepEqual(D.REMOTE_DEFAULTS, { ...L.REMOTE_DEFAULTS }, 'the panel\'s copy has the same shape and values');
   const w = freshWorld('stranger');
   const st = w.cli(['status']); assert.equal(st.status, 0, st.stderr);
-  assert.match(st.stdout, /^Server: not set \(run wk-bridge config --origin https:\/\/\.\.\. --host \.\.\.\)\.$/m);
+  assert.match(st.stdout, /^Server: not set \(run wk-remote config --origin https:\/\/\.\.\. --host \.\.\.\)\.$/m);
   assert.equal(JSON.parse(w.cli(['status', '--json']).stdout).server, false);
   const msg = `Phone control needs a companion server (not published yet). If you run one: node ${BIN} config --origin https://... --host ...`;
   for (const cmd of [['setup'], ['install'], ['enable'], ['print-argv'], ['run', '--once']]) {
@@ -456,12 +456,12 @@ test('no server set: the defaults hold no server; status says so; setup, run, in
   }
   assert.ok(!fs.existsSync(path.join(w.h, '.ssh', 'wk_bridge_ed25519')), 'setup made no key');
   assert.deepEqual(lines(path.join(w.h, 'keygen.jsonl')), []); assert.deepEqual(lines(path.join(w.h, 'launchctl.jsonl')), []);
-  assert.ok(!fs.existsSync(path.join(w.h, 'Library', 'LaunchAgents', 'org.nexodyne.wk-bridge.plist')), 'install wrote no plist');
+  assert.ok(!fs.existsSync(path.join(w.h, 'Library', 'LaunchAgents', 'org.nexodyne.wk-remote.plist')), 'install wrote no plist');
   assert.equal(L.readJsonFile(path.join(w.wk, 'remote.json'), {}).enabled, undefined, 'enable switched nothing on');
   const off = w.cli(['disable']); assert.equal(off.status, 0, off.stderr); assert.match(off.stdout, /Phone control is off/);
   // the link itself: a run started some other way (an old launchd agent) waits, opens no transport and says why
   fs.writeFileSync(path.join(SRV, 'argv.jsonl'), '');
-  const B2 = await import('../bin/wk-bridge.mjs?no-server');
+  const B2 = await import('../bin/wk-remote.mjs?no-server');
   const before = { HOME: process.env.HOME, WK_HOME: process.env.WK_HOME };
   process.env.WK_HOME = w.wk;
   try {
@@ -474,10 +474,10 @@ test('no server set: the defaults hold no server; status says so; setup, run, in
   const nu = w.cli(['print-argv']); assert.equal(nu.status, 1); assert.equal(nu.stderr.trim(), `Set the ssh user first: node ${BIN} config --user NAME`);
 });
 
-test('wk-bridge config checks every value, writes remote.json through writeRemote and prints what it set', () => {
+test('wk-remote config checks every value, writes remote.json through writeRemote and prints what it set', () => {
   const w = freshWorld('configured'), file = path.join(w.wk, 'remote.json');
   const usage = w.cli(['config']); assert.equal(usage.status, 2);
-  assert.match(usage.stderr, /usage: wk-bridge config --origin <https URL> --host <name or IP> \[--port N\] \[--user NAME\] \[--rp-id DOMAIN\] \[--server-command PATH\]/);
+  assert.match(usage.stderr, /usage: wk-remote config --origin <https URL> --host <name or IP> \[--port N\] \[--user NAME\] \[--rp-id DOMAIN\] \[--server-command PATH\]/);
   const refused = [
     [['--origin', 'http://panel.example.com', '--host', SERVER_HOST], /--origin must be an https address/],
     [['--origin', 'https://panel.example.com/w', '--host', SERVER_HOST], /--origin must be an https address/],

@@ -38,6 +38,7 @@ const HELP = `Watchkeeper /wk command family
   /wk go                    turn the Stop switch off
   /wk task "<text>"         queue a task as a file; starts nothing
   /wk take-task [id]        take the next queued task or the latest handoff
+  /wk take-task --handoff --cwd <repo>   take only that repo's unread handoff (Bridge uses this)
   /wk watch [check|install|uninstall|status]   the 30 s checker: notifies, starts no agent
 
 Old names still work: /wk-status, /wk-take-task, /wk-add-task, /wk-suggest, and the
@@ -89,8 +90,17 @@ function task(rest) {
 
 function takeTask(rest) {
   const engine = process.env.WK_ENGINE === 'antigravity' ? 'antigravity' : 'claude';
-  const args = ['brief', '--cwd', process.cwd(), '--engine', engine, '--claim', '--consume', '--model-used', engine];
-  if (rest[0]) args.push('--id', rest[0]);
+  // P2-277: `--cwd <dir>` takes the handoff for that repo (Bridge wakes name it); the default stays the current folder.
+  // `--handoff` takes only that repo's unread handoff, never a queued task (every Bridge route uses it; exit 5 if gone).
+  let cwd = process.cwd(); let handoff = false; const left = [];
+  for (let i = 0; i < rest.length; i++) {
+    if (rest[i] === '--cwd' && rest[i + 1]) cwd = rest[++i];
+    else if (rest[i] === '--handoff') handoff = true;
+    else left.push(rest[i]);
+  }
+  if (handoff) return script('wk-takeover.mjs', ['brief', '--cwd', cwd, '--engine', engine, '--handoff', '--consume', '--model-used', engine]);
+  const args = ['brief', '--cwd', cwd, '--engine', engine, '--claim', '--consume', '--model-used', engine];
+  if (left[0]) args.push('--id', left[0]);
   return script('wk-takeover.mjs', args);
 }
 

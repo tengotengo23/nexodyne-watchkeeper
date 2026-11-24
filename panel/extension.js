@@ -2,7 +2,7 @@
 // Watchkeeper W panel (P2-205): one webview view on the Activity Bar. Reads files; writes only the owner inbox line and the Stop switch,
 // and (P2-208, on the owner's click) installs the ask-claude skill for Gemini through wk-ask-claude.
 // P2-223, on the owner's press: answers a question through nx, decides a suggestion and adds a task through the plugin's scripts.
-// P2-227: the handlers live in src/actions.js (wk-bridge uses the same ones for the phone); jobs, phone keys and phone control too.
+// P2-227: the handlers live in src/actions.js (wk-remote uses the same ones for the phone); jobs, phone keys and phone control too.
 const vscode = require('vscode');
 const crypto = require('crypto');
 const fs = require('fs');
@@ -73,15 +73,21 @@ const WHERE = {
   repromptRewrite: 'reprompt', repromptSend: 'reprompt', repromptCopy: 'reprompt', repromptToggleAuto: 'reprompt', orchestrateRun: 'orchestrator', skillsSync: 'skills', skillApprove: 'skills', skillReject: 'skills',
   chatDraft: 'reprompt', chatConfirm: 'reprompt', chatCancel: 'reprompt', chatSendToIde: 'reprompt', chatContinueFromClaude: 'reprompt', chatTakeTask: 'reprompt', chatHandoffToClaude: 'reprompt',
   // P2-272 4B: the task splitter's plan card
+  // P2-277 Bridge
+  bridgeOpenClaude: 'bridge', bridgeOpenAntigravity: 'bridge',
   dagRun: 'reprompt', dagNotNow: 'reprompt', dagStop: 'reprompt', dagMerge: 'reprompt', dagMergeNo: 'reprompt', dagCheck: 'reprompt',
 };
 
 // The commands that run a program (the plugin's scripts, nx, or Re-Prompt/Orchestrator CLI execution). While the window's folder is not trusted, none of them runs:
 // the panel says why, and the page shows these buttons as off.
-const RUNS = new Set(['answerQuestion', 'decideSuggestion', 'addTask', 'installAsk', 'jobStart', 'jobReply', 'jobStop', 'removal', 'watchdogScan', 'watchdogRecover', 'trustKey', 'rejectKey', 'remoteOn', 'remoteOff',
+const RUNS = new Set(['bridgeOpenClaude', 'bridgeOpenAntigravity', 'answerQuestion', 'decideSuggestion', 'addTask', 'installAsk', 'jobStart', 'jobReply', 'jobStop', 'removal', 'watchdogScan', 'watchdogRecover', 'trustKey', 'rejectKey', 'remoteOn', 'remoteOff',
   'repromptRewrite', 'repromptSend', 'orchestrateRun', 'skillsSync', 'skillApprove', 'skillReject', 'graphRefresh', 'chatDraft', 'chatConfirm', 'chatSendToIde', 'chatContinueFromClaude', 'chatTakeTask', 'chatHandoffToClaude', 'dagRun', 'dagStop', 'dagMerge', 'dagCheck']);
 const UNTRUSTED = 'This folder is not trusted, so Watchkeeper runs nothing from this window. Trust the folder (Manage Workspace Trust), then try again. Nothing was run.';
 const trusted = () => vscode.workspace.isTrusted === true;
+// P2-277: the folder watch.json names for the first handoff waiting for Claude (an absolute folder that exists), or ''.
+function safeBridgeRepo(dataDir) {
+  try { const r = D.readBridge(dataDir).claudeRepo; return r && fs.statSync(r).isDirectory() ? r : ''; } catch { return ''; }
+}
 // P2-272 4B: a task taken from the queue, with no Gemini API key set, is not queued again; it says so in plain words.
 const TAKEN_TASK_NO_KEY = "This task is already in Antigravity's queue; only a Gemini API key can run it here. Add one in Settings, or take it in Antigravity with /wk-take-task.";
 
@@ -956,7 +962,7 @@ class Panel {
         if (go !== 'Allow wake-ups') { this.reply(true, 'Nothing changed: wake-ups stay stopped.'); return; }
         return this.answer(A.stopSwitch(paths, false));
       }
-      // P2-227: jobs and the phone, through the plugin's wk-job and wk-bridge
+      // P2-227: jobs and the phone, through the plugin's wk-job and wk-remote
       if (m.cmd === 'jobStart') return this.answer(await A.jobStart(paths, m, 'panel'));
       if (m.cmd === 'jobReply') return this.answer(await A.jobReply(paths, m));
       if (m.cmd === 'jobStop') return this.answer(await A.jobStop(paths, m));
@@ -1075,6 +1081,20 @@ class Panel {
         this.postChatState(paths, !trusted());
         return;
       }
+      // P2-277 Bridge: the owner's click is the only thing that starts claude, in a terminal they can see.
+      if (m.cmd === 'bridgeOpenClaude') {
+        const named = safeBridgeRepo(paths.dataDir);
+        const want = m.repo && m.repo === named ? named : '';
+        // Handoff only (review must-fix 2): never --claim, which could take a queued task for Gemini instead.
+        // The repo goes inside double quotes inside single quotes, so a path with ", $, `, \\ or a newline is refused.
+        if (!want || /["$`\\\n']/.test(want)) return this.reply(false, 'No unread handoff for Claude with a plain folder path; run /wk-take-task --handoff --cwd <repo> in Claude yourself.', false, 'bridge');
+        const line = `claude '/wk-take-task --handoff --cwd "${want}"'`;
+        const term = vscode.window.createTerminal({ name: 'Watchkeeper Bridge', cwd: want });
+        term.show();
+        term.sendText(line);
+        return this.reply(true, `A terminal opened in ${want} with ${line}.`, false, 'bridge');
+      }
+      if (m.cmd === 'bridgeOpenAntigravity') return this.answer(await A.bridgeOpen(paths, m.taskId));
       if (m.cmd === 'chatTakeTask') {
         await this.takeWatchkeeperTaskIntoSession(paths, { taskId: m.taskId || '', source: 'manual' });
         return;

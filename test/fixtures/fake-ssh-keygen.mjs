@@ -8,4 +8,4 @@ if (a[0] === '-F') process.exit(process.env.FAKE_KNOWN === '1' ? 0 : 1);
 const f = a[a.indexOf('-f') + 1];
 if (!f || process.env.FAKE_KEYGEN_FAIL === '1') { process.stderr.write('fake keygen: failed\n'); process.exit(1); }
 fs.writeFileSync(f, 'FAKE PRIVATE KEY (test only)\n', { mode: 0o644 });
-fs.writeFileSync(f + '.pub', 'ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIFAKEfakeFAKEfakeFAKEfakeFAKEfakeFAKEfake wk-bridge\n');
+fs.writeFileSync(f + '.pub', 'ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIFAKEfakeFAKEfakeFAKEfakeFAKEfakeFAKEfake wk-remote\n');

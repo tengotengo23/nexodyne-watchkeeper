@@ -47,10 +47,10 @@ test('task queue: wk-task takes each task in its own git worktree (run for real 
   assert.match(read('test/gemini.test.mjs'), /task\(\['take'/);
 });
 
-test('phone approvals: off in code until a server is set up (wk-bridge enable needs one)', async () => {
+test('phone approvals: off in code until a server is set up (wk-remote enable needs one)', async () => {
   const { REMOTE_DEFAULTS } = await import('../bin/remote-lib.mjs');
   assert.equal(REMOTE_DEFAULTS.enabled, false);
-  assert.match(read('bin/wk-bridge.mjs'), /needServer\(\); writeRemote\(\{ enabled: true \}\)/);
+  assert.match(read('bin/wk-remote.mjs'), /needServer\(\); writeRemote\(\{ enabled: true \}\)/);
 });
 
 // ---- lean and opt-in ----

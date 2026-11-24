@@ -7,6 +7,7 @@ import path from 'node:path';
 import crypto from 'node:crypto';
 import { execFileSync } from 'node:child_process';
 import { earlierWorkLines } from './lib.mjs';
+import { recordCrossing } from './wk-bridge.mjs';
 
 const BIN = path.dirname(new URL(import.meta.url).pathname);
 const TASK_ID_RE = /^\d{8}-\d{6}-[a-z0-9-]+$/;
@@ -346,6 +347,8 @@ export function publishHandoff({
     store.workspaces[ws] = entry;
     writePrivateJson(sharedFilePath(dataDir), store);
   });
+  // P2-277: the Bridge log; the inbox marker wakes wk-watch and any wk-bridge wait.
+  recordCrossing({ kind: 'handoff', id: `${ws}@${entry.updated_at}`, from, to, event: 'written', title: cleanTitle }, now, dataDir);
   return { ok: true, workspace: ws, handoff_file: mdFile, shared_file: sharedFilePath(dataDir), entry };
 }
 
@@ -419,10 +422,32 @@ export function getBrief({
   claim = false,
   modelUsed = '',
   consume = false,
+  handoff = false,
 } = {}, dataDir = wkHome(), cDir = claudeDir()) {
   if (killActive()) return { ok: false, code: 3, error: 'The kill switch is on (~/.wk/KILL), so Watchkeeper does no work.' };
   const ws = normWs(cwd);
   const tasks = listAllTasks(dataDir);
+
+  // Handoff mode (P2-277 Bridge): take only the unread handoff for this workspace; never a queued task, never an
+  // older session. Exit 5 when it is gone (consumed by another tab, or none), so a Bridge wake counts as empty.
+  if (handoff) {
+    if (!ws) return { ok: false, code: 5, error: 'No handoff: the folder is not a workspace.' };
+    let entry = null; let brief = '';
+    withFileLock(path.join(dataDir, 'shared-workspace.lock'), () => {
+      const store = loadSharedStore(dataDir);
+      const e = store.workspaces[ws] || null;
+      if (!e || e.consumed_by) return;
+      entry = e;
+      brief = buildHandoffBrief({ ws, snap: gitSnapshot(ws), sharedEntry: e, claudeSess: null, wkSess: null, engine });
+      if (consume) {
+        store.workspaces[ws] = { ...e, consumed_by: engine, consumed_at: new Date().toISOString() };
+        writePrivateJson(sharedFilePath(dataDir), store);
+      }
+    });
+    if (!entry) return { ok: false, code: 5, error: `No unread handoff for ${ws}: it was already taken, or there is none.` };
+    if (consume) recordCrossing({ kind: 'handoff', id: `${ws}@${entry.updated_at}`, from: entry.from_engine, to: engine, event: 'consumed', title: entry.title }, new Date(), dataDir);
+    return { ok: true, code: 0, kind: 'handoff', workspace: ws, shared: entry, brief };
+  }
 
   let targetTask = null;
   if (id && TASK_ID_RE.test(id)) {
@@ -472,6 +497,9 @@ export function getBrief({
       }
     }
   });
+  if (sharedEntry && consume) {
+    recordCrossing({ kind: 'handoff', id: `${ws}@${sharedEntry.updated_at}`, from: sharedEntry.from_engine, to: engine, event: 'consumed', title: sharedEntry.title }, new Date(), dataDir);
+  }
 
   if (sharedEntry || claudeSess || wkSess) {
     return { ok: true, code: 0, kind: 'handoff', workspace: ws, shared: sharedEntry, brief };
@@ -500,7 +528,7 @@ export function getStatus({ cwd = process.cwd() } = {}, dataDir = wkHome()) {
 function parseArgs(argv) {
   if (argv.includes('--help') || argv.includes('-h')) return { cmd: 'help' };
   const cmd = argv[0] || '';
-  const opts = { cmd, cwd: process.cwd(), engine: 'claude', from: 'claude', to: 'any', id: '', title: '', summary: '', nextSteps: '', sessionId: '', agyConv: '', claudeSession: '', taskId: '', worktree: '', modelUsed: '', claim: false, consume: false, json: false };
+  const opts = { cmd, cwd: process.cwd(), engine: 'claude', from: 'claude', to: 'any', id: '', title: '', summary: '', nextSteps: '', sessionId: '', agyConv: '', claudeSession: '', taskId: '', worktree: '', modelUsed: '', claim: false, consume: false, handoff: false, json: false };
   const VAL = {
     '--cwd': 'cwd', '--engine': 'engine', '--from': 'from', '--to': 'to', '--id': 'id',
     '--title': 'title', '--summary': 'summary', '--next': 'nextSteps', '--session-id': 'sessionId',
@@ -511,6 +539,7 @@ function parseArgs(argv) {
     const a = argv[i];
     if (a === '--claim') opts.claim = true;
     else if (a === '--consume') opts.consume = true;
+    else if (a === '--handoff') opts.handoff = true;
     else if (a === '--json') opts.json = true;
     else if (VAL[a]) {
       if (i + 1 >= argv.length) throw new Error(`${a} needs a value`);

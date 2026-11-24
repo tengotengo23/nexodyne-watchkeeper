@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import datetime as dt
+import hashlib
 import json
 import os
 import re
@@ -173,6 +174,200 @@ def _consume_shared_handoff(workspace_dir: Path, target_engine: str = "claude") 
             return "\n".join(parts)
     except Exception:
         return ""
+
+
+# ---------------------------------------------------------------- Bridge (P2-277)
+# Names, TTL and cap match bin/wk-bridge.mjs: a claim is ~/.wk/bridge/claims/<sha256(id)[:32]>, made with O_EXCL; one older
+# than 15 minutes is stale. The Stop hook chains at most 3 handoffs an hour per Claude session. Nothing here starts a process.
+_BRIDGE_CLAIM_TTL_S = 15 * 60
+_BRIDGE_CHAIN_CAP = 3
+_BRIDGE_CTRL = re.compile("[\x00-\x1f\x7f-\x9f\u2028\u2029]+")
+
+
+def _bridge_line(s: Any) -> str:
+    return re.sub(r"\s+", " ", _BRIDGE_CTRL.sub(" ", str(s if s is not None else ""))).strip()
+
+
+def _bridge_short(s: Any, n: int = 120) -> str:
+    t = _bridge_line(s) or "untitled"
+    return t if len(t) <= n else t[: n - 1] + "\u2026"
+
+
+def _bridge_hash(s: str) -> str:
+    return hashlib.sha256(s.encode("utf-8")).hexdigest()[:32]
+
+
+def _bridge_on() -> bool:
+    return not (_wk_home_dir() / "bridge" / "off").exists()
+
+
+def _bridge_waiting_for_claude() -> list[dict[str, Any]]:
+    """Unread handoffs addressed to Claude (same ids as wk-bridge.mjs waitingFor('claude'))."""
+    raw = read_json_safe(_wk_home_dir() / "shared-workspace.json", {})
+    wss = raw.get("workspaces") if isinstance(raw, dict) else None
+    out: list[dict[str, Any]] = []
+    if not isinstance(wss, dict):
+        return out
+    for key, e in wss.items():
+        if not isinstance(e, dict) or e.get("consumed_by") or str(e.get("to_engine") or "").lower() != "claude":
+            continue
+        repo = _bridge_line(e.get("workspace") or key)
+        out.append({"id": f"{repo}@{_bridge_line(e.get('updated_at') or '')}", "title": _bridge_short(e.get("title")), "at": e.get("updated_at"), "repo": repo})
+    return out
+
+
+def _bridge_age(at: Any) -> str:
+    try:
+        then = dt.datetime.fromisoformat(str(at).replace("Z", "+00:00"))
+        mins = round((time.time() - then.timestamp()) / 60)
+    except (TypeError, ValueError):
+        return "just now"
+    if mins < 1:
+        return "just now"
+    return f"{mins} min ago" if mins < 60 else f"{round(mins / 60)} h ago"
+
+
+def _bridge_claimed_fresh(item_id: str) -> bool:
+    try:
+        return time.time() - (_wk_home_dir() / "bridge" / "claims" / _bridge_hash(item_id)).stat().st_mtime < _BRIDGE_CLAIM_TTL_S
+    except OSError:
+        return False
+
+
+def _bridge_claim(item_id: str, by: str) -> bool:
+    d = _wk_home_dir() / "bridge" / "claims"
+    try:
+        d.mkdir(parents=True, exist_ok=True, mode=0o700)
+    except OSError:
+        return False
+    f = d / _bridge_hash(item_id)
+    for _ in range(2):
+        try:
+            fd = os.open(str(f), os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o600)
+            try:
+                os.write(fd, (json.dumps({"id": item_id, "by": _bridge_line(by), "at": dt.datetime.now(dt.timezone.utc).isoformat()}) + "\n").encode("utf-8"))
+            finally:
+                os.close(fd)
+            return True
+        except FileExistsError:
+            try:
+                if time.time() - f.stat().st_mtime < _BRIDGE_CLAIM_TTL_S:
+                    return False
+            except OSError:
+                continue
+            # Stale: only the holder of <claim>.steal (O_EXCL) may remove it, after checking again under that lock.
+            # Nobody else ever removes a claim, so a fresh claim cannot be lost; the new claim is then taken with
+            # O_EXCL like any other, so exactly one claimer wins. A crash's leftover lock is pruned after an hour.
+            steal = d / (f.name + ".steal")
+            try:
+                sfd = os.open(str(steal), os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o600)
+            except OSError:
+                return False
+            try:
+                try:
+                    stale = time.time() - f.stat().st_mtime >= _BRIDGE_CLAIM_TTL_S
+                except FileNotFoundError:
+                    stale = True
+                except OSError:
+                    return False
+                if not stale:
+                    return False
+                try:
+                    f.unlink()
+                except FileNotFoundError:
+                    pass
+                except OSError:
+                    return False
+                try:
+                    fd = os.open(str(f), os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o600)
+                except OSError:
+                    return False
+                try:
+                    os.write(fd, (json.dumps({"id": item_id, "by": _bridge_line(by), "at": dt.datetime.now(dt.timezone.utc).isoformat()}) + "\n").encode("utf-8"))
+                finally:
+                    os.close(fd)
+                return True
+            finally:
+                try:
+                    os.close(sfd)
+                except OSError:
+                    pass
+                try:
+                    steal.unlink()
+                except OSError:
+                    pass
+        except OSError:
+            return False
+    return False
+
+
+def _bridge_release(item_id: str) -> None:
+    try:
+        (_wk_home_dir() / "bridge" / "claims" / _bridge_hash(item_id)).unlink()
+    except OSError:
+        pass
+
+
+def _bridge_chain_take(sid: str) -> bool:
+    """Count one Stop-hook chain for this session; False when 3 already ran in the last hour."""
+    d = _wk_home_dir() / "bridge" / "chains"
+    try:
+        d.mkdir(parents=True, exist_ok=True, mode=0o700)
+        f = d / f"{_bridge_hash(sid or 'unknown')}.json"
+        with _exclusive_file_lock(d / f"{f.name}.lock"):
+            now = time.time()
+            data = read_json_safe(f, {})
+            stamps = [float(t) for t in (data.get("at") if isinstance(data, dict) and isinstance(data.get("at"), list) else []) if isinstance(t, (int, float)) and now - float(t) < 3600]
+            if len(stamps) >= _BRIDGE_CHAIN_CAP:
+                return False
+            stamps.append(now)
+            atomic_write_json(f, {"at": stamps})
+            try:
+                os.chmod(f, 0o600)
+            except OSError:
+                pass
+            return True
+    except Exception:
+        return False
+
+
+def _bridge_context_line() -> str:
+    """One line for SessionStart and UserPromptSubmit when a handoff waits for Claude; empty otherwise."""
+    if _kill_switch_active() or not _bridge_on():
+        return ""
+    for it in _bridge_waiting_for_claude():
+        if not _bridge_claimed_fresh(it["id"]):
+            return f"Bridge: a handoff from Gemini waits: {it['title']}, {_bridge_age(it['at'])}. Take it with /wk-take-task when the owner's request allows."
+    return ""
+
+
+def _bridge_stop_reason(sid: str, cwd: str = "") -> str:
+    """Stop hook: claim the first unclaimed handoff for Claude, within the chain cap; empty when nothing applies."""
+    if _kill_switch_active() or not _bridge_on():
+        return ""
+    items = [it for it in _bridge_waiting_for_claude() if not _bridge_claimed_fresh(it["id"])]
+    if not items:
+        return ""
+    # The handoff for this session's own folder first, then the rest in order.
+    def _real(p: str) -> str:
+        try:
+            return os.path.realpath(os.path.expanduser(p.strip())) if p and p.strip() else ""
+        except (OSError, ValueError):
+            return ""
+    here = _real(cwd)
+    items.sort(key=lambda it: 0 if here and _real(str(it.get("repo") or "")) == here else 1)
+    for it in items:
+        if not _bridge_claim(it["id"], f"stop:{sid}"):
+            continue
+        # Claim first, then the chain slot: a lost claim race spends no slot; at the cap the claim is given back.
+        if not _bridge_chain_take(sid):
+            _bridge_release(it["id"])
+            return ""
+        repo = it.get("repo") or ""
+        if repo and not re.search(r'["$`\\\n]', repo):
+            return f'Bridge: a handoff from Gemini waits: {it["title"]}. Run /wk-take-task --handoff --cwd "{repo}" to take it.'
+        return f"Bridge: a handoff from Gemini waits: {it['title']}. Run /wk-take-task --handoff to take it."
+    return ""
 
 
 def _workspace_from_payload(payload: dict[str, Any]) -> Path:
@@ -384,6 +579,10 @@ def handle_event(
                         outputs.append({"systemMessage": f"Watchkeeper Watchdog: {wd['hungCount']} hanging task(s)/job(s) detected — run '/wk watchdog recover'."})
             except Exception:
                 pass
+        if not is_ag:
+            b_line = _bridge_context_line()
+            if b_line:
+                outputs.append({"hookSpecificOutput": {"hookEventName": "SessionStart", "additionalContext": b_line}})
         merged = _merge_hook_outputs(outputs)
         if is_ag:
             if not merged:
@@ -474,6 +673,9 @@ def handle_event(
         handoff_note = ""
         if event_name == "UserPromptSubmit" and not is_subagent and not prompt_text.lstrip().startswith("/"):
             handoff_note = _consume_shared_handoff(ws, "claude")
+            b_line = _bridge_context_line()
+            if b_line:
+                handoff_note = f"{handoff_note}\n\n{b_line}" if handoff_note else b_line
 
         cfg = rt.load_config()
         decision = evaluate_fast_path(prompt_text, env=dict(os.environ), session_state=sess, runtime_config=cfg)
@@ -604,6 +806,13 @@ def handle_event(
         msgs = [m for m in (clip_msg, ho_msg, wd_msg) if m]
         if is_ag:
             return _ag_stop_output(None, payload, msgs)
+        # Bridge (P2-277), Claude only: chain to a waiting handoff, claimed first so two tabs never take one.
+        b_reason = "" if killed else _bridge_stop_reason(sid, str(payload.get("cwd") or ""))
+        if b_reason:
+            out_b: dict[str, Any] = {"decision": "block", "reason": b_reason}
+            if msgs:
+                out_b["systemMessage"] = " | ".join(msgs)
+            return 0, json.dumps(out_b) + "\n", ""
         if msgs:
             return 0, json.dumps({"systemMessage": " | ".join(msgs)}) + "\n", ""
         return 0, "", ""

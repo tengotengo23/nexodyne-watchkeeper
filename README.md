@@ -1,4 +1,4 @@
-# Watchkeeper · v3.4.0
+# Watchkeeper · v3.4.1
 
 **Watchkeeper is an open-source (MIT), local-first AI coding control plane and full-IDE workspace for Claude Code and Google Antigravity.** It unifies fail-closed tool & secret guards, test-verified completion gates (`done` evidence), an integrated **Re-Prompt** prompt-normalization studio, a **Running Tasks** cockpit, an auto-updating **Skills Library** that discovers trending GitHub agent skills daily, and a Claude-limit handover (the Gemini lane by quota, or the task queue for Antigravity) so work is not lost when Claude Code plan or rate limits run out. Everything stays in local files on your machine — zero Nexodyne servers, zero accounts, and zero telemetry.
 
@@ -76,7 +76,7 @@ claude plugin marketplace update nexodyne
 claude plugin update watchkeeper@nexodyne
 ```
 
-Copies installed from the public mirror update themselves too: each release's update.json is signed with the developer's key and names the exact public file tree (public_tree); a copy reads it from https://nexodyne.org/watchkeeper/channel/ when its clone has none, and moves only to a tag whose files match. The developer's publish step refuses to push a version to the public mirror before it is signed.
+Copies installed from the public mirror update themselves too: each release's update.json is signed with the developer's key and names the exact public file tree (public_tree); a copy reads it from https://nexodyne.org/watchkeeper/channel/ when its clone has none, and moves only to a tag whose files match. The developer's publish step refuses to push a version to the public mirror before it is signed. The release key's fingerprint is `ae6a:87a7:3beb:9deb:6cc2:fd23:6554:fb7e:a0b5:62dd:24ce:6cd6:3956:8f20:277d:ab6c`; the first install prints the fingerprint of the key it pinned, so compare the two.
 
 If you would rather read and change the code first, clone it and start Claude Code with the folder each time:
 

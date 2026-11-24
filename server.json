@@ -3,7 +3,7 @@
   "name": "io.github.tengotengo23/nexodyne-watchkeeper",
   "title": "Watchkeeper (Re-Prompt, Skill Vault, Graphify & Duo Orchestrator)",
   "description": "Local-first AI coding control plane for Claude Code & Antigravity: fail-closed tool guards, evidence gate, Re-Prompt studio, daily trending GitHub Skills Library sync, Graphify knowledge graphs, and a task queue for Antigravity when Claude limits run out.",
-  "version": "3.4.0",
+  "version": "3.4.1",
   "repository": {
     "url": "https://github.com/tengotengo23/nexodyne-watchkeeper",
     "source": "github"

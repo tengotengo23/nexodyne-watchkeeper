@@ -25,7 +25,10 @@ const pubPem = k => k.publicKey.export({ type: 'spki', format: 'pem' });
 const ALWAYS = ['.claude-plugin/plugin.json', '.claude-plugin/marketplace.json', 'panel/package.json', 'antigravity/plugins/watchkeeper/plugin.json', 'server.json', 'README.md'];
 const SOMETIMES = ['public/README.md', 'panel/install/INSTALL.html'];
 const RELEASE_FILES = [...ALWAYS, ...SOMETIMES.filter(f => fs.existsSync(path.join(root, f)))];
-const FILES = spawnSync('git', ['-C', root, 'ls-files', '-z', '--cached', '--others', '--exclude-standard'], { encoding: 'utf8' }).stdout.split('\0').filter(f => f && fs.existsSync(path.join(root, f)));
+// The repository's own release state (its real public key and the signed channel files) never enters a test world:
+// each world pins its own test key, and a real signature in the copy would be checked against that key.
+const OWN_RELEASE_STATE = f => f === 'release/release-key.pub' || f.startsWith('release/channel/');
+const FILES = spawnSync('git', ['-C', root, 'ls-files', '-z', '--cached', '--others', '--exclude-standard'], { encoding: 'utf8' }).stdout.split('\0').filter(f => f && fs.existsSync(path.join(root, f)) && !OWN_RELEASE_STATE(f));
 
 function world({ pin = true } = {}) {
   const base = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'wk-upd-')));

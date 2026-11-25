@@ -8,6 +8,7 @@ import crypto from 'node:crypto';
 import { execFileSync } from 'node:child_process';
 import { earlierWorkLines } from './lib.mjs';
 import { recordCrossing } from './wk-bridge.mjs';
+import { briefFrame } from './wk-task.mjs';
 
 const BIN = path.dirname(new URL(import.meta.url).pathname);
 const TASK_ID_RE = /^\d{8}-\d{6}-[a-z0-9-]+$/;
@@ -356,7 +357,11 @@ function buildTaskBrief(meta, dataDir) {
   let taskMd = '';
   try { taskMd = fs.readFileSync(path.join(dataDir, 'tasks', meta.id, 'task.md'), 'utf8').trim(); } catch {}
   const doneBin = path.join(BIN, 'wk-task.mjs');
+  // P2-282: the run line first and the "take --run <id> again" line last in an automation run; the queue after a plain take
+  const { head, tail } = briefFrame(meta);
+  const runId = meta.run && meta.run.id;
   return [
+    ...head,
     `[Watchkeeper /wk-take-task — Queued Task ${meta.id}]`,
     `Title: ${meta.title}`,
     `Repository: ${meta.repo}`,
@@ -374,6 +379,7 @@ function buildTaskBrief(meta, dataDir) {
     '',
     'Task Specification:',
     taskMd || `# ${meta.title}`,
+    ...tail.map(l => (runId && l.startsWith('Next: ') ? `${l} (command: "${process.execPath}" "${path.join(BIN, 'wk.mjs')}" take-task --run ${runId})` : l)),
   ].join('\n');
 }
 
@@ -423,6 +429,7 @@ export function getBrief({
   modelUsed = '',
   consume = false,
   handoff = false,
+  run = '',
 } = {}, dataDir = wkHome(), cDir = claudeDir()) {
   if (killActive()) return { ok: false, code: 3, error: 'The kill switch is on (~/.wk/KILL), so Watchkeeper does no work.' };
   const ws = normWs(cwd);
@@ -447,6 +454,27 @@ export function getBrief({
     if (!entry) return { ok: false, code: 5, error: `No unread handoff for ${ws}: it was already taken, or there is none.` };
     if (consume) recordCrossing({ kind: 'handoff', id: `${ws}@${entry.updated_at}`, from: entry.from_engine, to: engine, event: 'consumed', title: entry.title }, new Date(), dataDir);
     return { ok: true, code: 0, kind: 'handoff', workspace: ws, shared: entry, brief };
+  }
+
+  // P2-282 automation run: wk-task take --run decides (Stop switch 3, daily cap 4, run budget 6, nothing queued 5); no handoff fallback
+  if (claim && run) {
+    const takeArgs = [path.join(BIN, 'wk-task.mjs'), 'take', '--json', '--run', String(run)];
+    if (run === 'new') {
+      const queued = tasks.filter(t => t.status === 'queued');
+      const first = (id && TASK_ID_RE.test(id) && queued.find(t => t.id === id)) || (ws && queued.find(t => normWs(t.repo) === ws)) || null;
+      if (first) takeArgs.push('--id', first.id);
+    }
+    if (modelUsed) takeArgs.push('--model-used', modelUsed);
+    let meta;
+    try {
+      const out = execFileSync(process.execPath, takeArgs, { encoding: 'utf8', timeout: 20000, env: { ...process.env, WK_HOME: dataDir }, stdio: ['ignore', 'pipe', 'pipe'] });
+      meta = JSON.parse(out.trim());
+    } catch (err) {
+      const code = Number.isInteger(err && err.status) && err.status > 0 ? err.status : 1;
+      const msg = String((err && (err.stderr || err.stdout)) || (err && err.message) || err).trim().split('\n')[0];
+      return { ok: false, code, error: msg || `wk-task take exited ${code}` };
+    }
+    return { ok: true, code: 0, kind: 'task', task_id: meta.id, workspace: meta.repo, worktree: meta.worktree || '', run_id: meta.run ? meta.run.id : '', brief: buildTaskBrief(meta, dataDir) };
   }
 
   let targetTask = null;
@@ -528,12 +556,12 @@ export function getStatus({ cwd = process.cwd() } = {}, dataDir = wkHome()) {
 function parseArgs(argv) {
   if (argv.includes('--help') || argv.includes('-h')) return { cmd: 'help' };
   const cmd = argv[0] || '';
-  const opts = { cmd, cwd: process.cwd(), engine: 'claude', from: 'claude', to: 'any', id: '', title: '', summary: '', nextSteps: '', sessionId: '', agyConv: '', claudeSession: '', taskId: '', worktree: '', modelUsed: '', claim: false, consume: false, handoff: false, json: false };
+  const opts = { cmd, cwd: process.cwd(), engine: 'claude', from: 'claude', to: 'any', id: '', title: '', summary: '', nextSteps: '', sessionId: '', agyConv: '', claudeSession: '', taskId: '', worktree: '', modelUsed: '', run: '', claim: false, consume: false, handoff: false, json: false };
   const VAL = {
     '--cwd': 'cwd', '--engine': 'engine', '--from': 'from', '--to': 'to', '--id': 'id',
     '--title': 'title', '--summary': 'summary', '--next': 'nextSteps', '--session-id': 'sessionId',
     '--agy-conv': 'agyConv', '--claude-session': 'claudeSession', '--task-id': 'taskId',
-    '--worktree': 'worktree', '--model-used': 'modelUsed',
+    '--worktree': 'worktree', '--model-used': 'modelUsed', '--run': 'run',
   };
   for (let i = 1; i < argv.length; i++) {
     const a = argv[i];
@@ -558,7 +586,7 @@ if (isMain) {
   try {
     const o = parseArgs(process.argv.slice(2));
     if (o.cmd === 'help') {
-      console.log('usage: wk-takeover publish|brief|status [options]');
+      console.log('usage: wk-takeover publish|brief [--claim [--run new|<run id>]]|status [options]');
     } else if (o.cmd === 'publish') {
       const r = publishHandoff(o);
       console.log(JSON.stringify(r));

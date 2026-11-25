@@ -740,9 +740,14 @@
       captureConfirmDrafts(chatThread);
     } else if (cmd === 'chatTakeTask') {
       const tid = b.getAttribute('data-task-id') || '';
+      // P2-282: the button at the top of the panel reports under the header; the chat's buttons report under the chat
+      const where = b.getAttribute('data-where') === 'top' ? 'top' : 'reprompt';
       applyTab('reprompt');
-      say('Claiming Watchkeeper task into Antigravity simulated session…', true, 'reprompt');
-      vscode.postMessage(tid ? { cmd: 'chatTakeTask', taskId: tid } : { cmd: 'chatTakeTask' });
+      say(where === 'top' ? 'Taking the next queued task…' : 'Claiming Watchkeeper task into Antigravity simulated session…', true, where);
+      const msg = { cmd: 'chatTakeTask' };
+      if (tid) msg.taskId = tid;
+      if (where === 'top') msg.where = 'top';
+      vscode.postMessage(msg);
     } else if (cmd === 'chatHandoffToClaude') {
       const sid = b.getAttribute('data-session-id') || activeChatSessionId || '';
       if (!sid) { say('Select a Watchkeeper session first.', false, 'reprompt'); return; }

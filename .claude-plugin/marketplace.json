@@ -9,7 +9,7 @@
       "name": "watchkeeper",
       "source": "./",
       "description": "Unified full-IDE Watchkeeper control plane for Claude Code and Antigravity: fail-closed path & secret guards, evidence gate, kill switch, integrated Re-Prompt studio (rp:* / raw:), Running Tasks cockpit, daily trending GitHub Skills Library sync, Graphify knowledge graphs, and a task queue for Antigravity when Claude limits run out. Local-only; zero telemetry.",
-      "version": "3.6.0",
+      "version": "3.7.1",
       "author": { "name": "Nexodyne" },
       "homepage": "https://github.com/tengotengo23/nexodyne-watchkeeper",
       "repository": "https://github.com/tengotengo23/nexodyne-watchkeeper",

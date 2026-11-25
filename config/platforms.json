@@ -1,0 +1,58 @@
+{
+  "_comment": "The commands Watchkeeper shows for each kind of computer (P2-282). The W panel and `wk env` (bin/env-lib.mjs) read this file and fill the placeholders: <NODE> the Node.js program, <ABS> this Watchkeeper folder, <WK_HOME> the ~/.wk folder (or WK_HOME), <HOME> the home folder. A filled path that holds a space is quoted. <task-id> stays as written: the person puts the task's id there. wsl uses the linux entry with its own name.",
+  "macos": {
+    "name": "macOS",
+    "shell": "sh",
+    "scheduler": "launchd",
+    "stop_file_display": "~/.wk/KILL",
+    "commands": {
+      "stop": "touch '<WK_HOME>/KILL'",
+      "resume": "rm '<WK_HOME>/KILL'",
+      "inbox": "<NODE> <ABS>/bin/wk-task.mjs inbox --brief",
+      "take": "<NODE> <ABS>/bin/wk-task.mjs take <task-id>",
+      "done": "<NODE> <ABS>/bin/wk-task.mjs done <task-id>",
+      "watch_install": "<NODE> <ABS>/bin/wk-watch.mjs install",
+      "watch_uninstall": "<NODE> <ABS>/bin/wk-watch.mjs uninstall",
+      "status": "<NODE> <ABS>/bin/wk.mjs status",
+      "logs": "tail -n 40 '<WK_HOME>/watch-launchd.log'"
+    }
+  },
+  "linux": {
+    "name": "Linux",
+    "shell": "sh",
+    "scheduler": "systemd user timer",
+    "stop_file_display": "~/.wk/KILL",
+    "commands": {
+      "stop": "touch '<WK_HOME>/KILL'",
+      "resume": "rm '<WK_HOME>/KILL'",
+      "inbox": "<NODE> <ABS>/bin/wk-task.mjs inbox --brief",
+      "take": "<NODE> <ABS>/bin/wk-task.mjs take <task-id>",
+      "done": "<NODE> <ABS>/bin/wk-task.mjs done <task-id>",
+      "watch_install": "<NODE> <ABS>/bin/wk-watch.mjs install",
+      "watch_uninstall": "<NODE> <ABS>/bin/wk-watch.mjs uninstall",
+      "status": "<NODE> <ABS>/bin/wk.mjs status",
+      "logs": "journalctl --user -u watchkeeper-watch.service -n 40 --no-pager"
+    }
+  },
+  "windows": {
+    "name": "Windows",
+    "shell": "powershell",
+    "scheduler": "Task Scheduler",
+    "stop_file_display": "%USERPROFILE%\\.wk\\KILL",
+    "commands": {
+      "stop": "New-Item -ItemType File -Force \"<WK_HOME>\\KILL\"",
+      "resume": "Remove-Item \"<WK_HOME>\\KILL\"",
+      "inbox": "& <NODE> <ABS>\\bin\\wk-task.mjs inbox --brief",
+      "take": "& <NODE> <ABS>\\bin\\wk-task.mjs take <task-id>",
+      "done": "& <NODE> <ABS>\\bin\\wk-task.mjs done <task-id>",
+      "watch_install": "& <NODE> <ABS>\\bin\\wk-watch.mjs install",
+      "watch_uninstall": "& <NODE> <ABS>\\bin\\wk-watch.mjs uninstall",
+      "status": "& <NODE> <ABS>\\bin\\wk.mjs status",
+      "logs": "schtasks /Query /TN WatchkeeperWatch /V /FO LIST"
+    }
+  },
+  "wsl": {
+    "name": "Windows Subsystem for Linux",
+    "fallback": "linux"
+  }
+}

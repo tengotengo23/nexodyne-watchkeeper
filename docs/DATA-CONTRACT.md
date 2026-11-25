@@ -15,6 +15,7 @@ Nothing here talks to Google or runs `agy`: Gemini reads and writes these files 
 | File | Written by | Read by |
 |---|---|---|
 | `tasks/<id>/meta.json` | `wk-task` (add, take, done, merge, discard) | the panel, `wk-state`, `wk-task list/show` |
+| `runs/<run id>.json` (0600, folder 0700) | `wk-task take --run` (P2-282) | `wk-task take --run <id>` |
 | `tasks/<id>/task.md` | `wk-task add` | Gemini (printed by `wk-task take`) |
 | `tasks/<id>/change.diff` | `wk-task done` (and `discard` when no diff exists yet) | the panel (*Show the change*), `wk-task merge` (its sha-256) |
 | `tasks/<id>/verify.json` | `wk-task done` | the panel, `wk-task show` |
@@ -51,8 +52,10 @@ Nothing here talks to Google or runs `agy`: Gemini reads and writes these files 
   "repo" (absolute, the repository's top folder), "allow": [globs relative to the repository], "test": string|null,
   "status": "queued"|"taken"|"verified"|"failed"|"out-of-scope"|"no-change"|"merged"|"discarded"|"conflict",
   "taken_at", "model_used", "worktree", "base" (sha), "commit" (sha), "done_at", "note" (≤4000),
-  "attempt" (1, 2, ...), "claim_nonce", "requeue_count", "removal_backup", "removal_backups": [paths] }
+  "attempt" (1, 2, ...), "claim_nonce", "requeue_count", "removal_backup", "removal_backups": [paths],
+  "minutes" (5-480, P2-282: the size Claude gave with --minutes, else the kind estimate at add time) }
 ```
+- A task without `minutes` (made before P2-282) counts as `estimate_minutes[kind]` from `config/gemini.json`, or 30.
 - `queued` → `take` → `taken` → `done` → `verified` (scope and test pass, committed in the worktree), `failed` (the test failed or the commit failed), `out-of-scope` (a file outside `allow`, or one `gates.json` excludes), or `no-change`.
 - `failed` and `out-of-scope` can run `done` again after a fix. `verified` → `merge` → `merged`, or `conflict` (the merge was undone). Anything not merged → `discard` → `discarded`.
 - `allow` defaults to `["**"]`. `*` matches within one folder, `**` across folders. A task from Gemini never has a `test`.
@@ -142,13 +145,19 @@ The documented feed for any tool you build on these files:
 The orchestration folder comes from `--orchestration <dir>`, else `$WK_ORCHESTRATION`, else the nearest `orchestration/` folder holding `QUESTIONS.md` above the current folder; with none, `questions` is empty.
 
 ## Commands that write
-- `node bin/wk-task.mjs add --repo <abs> --title "<t>" [--kind <k>] [--model <m>] [--allow <glob>]... [--test "<cmd>"] [--from claude|owner|gemini] [--text "<t>" | stdin]` prints the new id.
-- `node bin/wk-task.mjs take [--id <id>] [--model-used <m>]` · `done <id> [--note "<t>"] [--model-used <m>]` · `merge <id>` · `discard <id>` · `list [--json]` · `show <id> [--json]`. Exit 0 done, 1 failed or refused, 2 bad input, 3 kill switch on, 4 today's cap reached, 5 nothing queued.
+- `node bin/wk-task.mjs add --repo <abs> --title "<t>" [--kind <k>] [--model <m>] [--allow <glob>]... [--test "<cmd>"] [--from claude|owner|gemini] [--minutes <5-480>] [--text "<t>" | stdin]` prints the new id.
+- `node bin/wk-task.mjs take [--id <id>] [--model-used <m>] [--run new|<run id>]` · `done <id> [--note "<t>"] [--model-used <m>]` · `merge <id>` · `discard <id>` · `list [--json]` · `show <id> [--json]`. Exit 0 done, 1 failed or refused, 2 bad input, 3 kill switch on, 4 today's cap reached, 5 nothing queued, 6 this run's budget is used (`take --run` only; the checks run in the order 3, 4, 6, 5).
 - `node bin/wk-suggest.mjs add --title "<t>" [--detail "<t>" | stdin] [--from <who>]` prints the new id. `decide <id> ok|later|no [--text "<t>"]` exits 0 on success; on failure it exits non-zero with one plain line on stderr. `list [--open|--decided|--all] [--json]`.
 - `node bin/wk-job.mjs start --project <key> --prompt "<t>" [--model sonnet|opus|fable|haiku] [--mode auto|acceptEdits|plan] [--max-turns <1-400>] [--from phone|panel|cli]` · `reply <id> --prompt "<t>"` · `stop <id>` · `list [--json]` · `show <id> [--json] [--after <n>]`. Exit 0 done, 1 refused, 2 bad input, 3 stop switch on.
 - `node bin/wk-projects.mjs scan [--write] [--json] [--root <dir>]... | list [--json]` · `node bin/wk-remote.mjs setup|run|trust <id>|reject <id>|keys|enable|disable|status|install|uninstall` (docs/REMOTE.md).
 - `node bin/wk-task.mjs hold <id> [--hours <n>] [--note "<t>"]` · `release <id>`.
-- `node bin/wk-task.mjs inbox --brief` prints `N waiting` and up to 5 `<id> · <title>` lines (queued tasks that are not held), or `0 waiting (the Stop switch is on)` under the kill switch; it takes nothing and exits 0.
+- `node bin/wk-task.mjs inbox --brief` prints `N waiting (about M min)` (or `0 waiting`) and up to 5 `<id> · <title> · ~N min` lines (queued tasks that are not held), or `0 waiting (the Stop switch is on)` under the kill switch; it takes nothing and exits 0.
 - `node bin/wk-bridge.mjs gemini-chain on|off|status [--json]` turns the Gemini chain on or off, or shows it with the offers in the last hour.
 - `node bin/wk-bridge.mjs status [--json]` · `wait --for claude|gemini [--max <minutes>]` (no limit by default; exit 0 with one JSON line, the item already claimed; 1 nothing came within `--max`; a handoff another tab claimed first is skipped; 2 kill switch or Bridge off) · `on` · `off` · `crossings [--json]` · `open --task <id>|--handoff <workspace> [--json]` (`--task` runs only `open -a Antigravity <repo>` and puts `/wk-take-task` on the clipboard; `--handoff` prints `cd '<repo>' && claude '/wk-take-task --handoff --cwd "<repo>"'`). `run` only says phone control moved to `wk-remote` and exits 2. It starts no agent.
 - All honour `WK_HOME`. Every git call uses execFile with an argument array; nothing pushes or uses the network. (Only `wk-remote run` talks to the network: one ssh link to your own server.)
+
+### Run budget (P2-282)
+- `runs/<run id>.json` (0600, folder 0700), id `r-YYYYMMDD-HHMM-<4 hex>`: `{ "id", "started_at" (ISO), "budget_min", "max_tasks", "task_ids": [ids], "repo_last" }`. Made by `take --run new`; files older than 24 hours are removed when a new run starts.
+- `take --run <id>` gives the next task while fewer than `budget_min` minutes have passed since `started_at` and fewer than `max_tasks` tasks were taken; otherwise it exits 6 with `Run <id> is complete (used N min of B; T task(s)). Stop here.` on stdout. A queued task in `repo_last` comes first.
+- `take --json` in a run adds `run: {id, budget_min, used_min, n, max_tasks}`; a plain `take` adds `queue_after: {tasks: [{id, title, minutes}] (up to 5), count, minutes}` when other tasks wait.
+- `config/gemini.json` gains `run_budget_minutes` (60), `max_tasks_per_run` (6), `estimate_minutes` (by kind) and `automation_schedule` (`default` `*/30 9-21 * * *`, `quiet` `0 8-23 * * *`); `automation_prompt` gains `<budget>`.

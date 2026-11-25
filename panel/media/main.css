@@ -495,3 +495,6 @@ body.wk-full-ide main { padding: 1em 1.6em 3em; }
   .bridge-dot.ltr, .bridge-dot.rtl { animation: none; opacity: 1; transform: none; }
   .bridge-arrow { display: inline; }
 }
+
+/* P2-282: the shown automation prompt and the commands block */
+.automation-text { margin: 0.5em 0; font: inherit; font-size: 0.9em; white-space: pre-wrap; overflow-wrap: anywhere; max-width: 100%; }

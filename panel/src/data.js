@@ -22,7 +22,7 @@ const HOUR = 60 * MIN;
 const KINDS = ['recommendation', 'rule'];
 const COMMANDS = ['ready', 'refresh', 'send', 'kill', 'unkill', 'openAdvice', 'installAsk',
   // P2-223: "Waiting for you" and Gemini
-  'answerQuestion', 'laterQuestion', 'decideSuggestion', 'openTaskDiff', 'addTask', 'copyAutomation',
+  'answerQuestion', 'laterQuestion', 'decideSuggestion', 'openTaskDiff', 'addTask', 'copyAutomation', 'copyEnvCommands',
   // P2-227: jobs and the phone
   'jobStart', 'jobReply', 'jobStop', 'trustKey', 'rejectKey', 'remoteOn', 'remoteOff',
   // v0.8.0: Full-IDE workspace, active Re-Prompt, Orchestrator Carbon High, Skills Library
@@ -897,8 +897,62 @@ function readGeminiConfig(pluginPath) {
   if (!j) return { found: false, prompt: '', routes: {} };
   const routes = {};
   if (isObj(j.routes)) for (const k of TASK_KINDS) if (isObj(j.routes[k])) routes[k] = { model: str(j.routes[k].model, 60), fallback: str(j.routes[k].fallback, 60), for: str(j.routes[k].for, 200) };
+  const posInt = v => (Number.isInteger(v) && v > 0 && v < 1e6 ? v : 0);
+  const s80 = v => (typeof v === 'string' && v.trim() && v.length <= 80 ? v.trim() : '');
+  const as = isObj(j.automation_schedule) ? j.automation_schedule : {};
+  const schedule = { default: s80(as.default), default_words: s80(as.default_words), quiet: s80(as.quiet), quiet_words: s80(as.quiet_words) };
   return { found: true, prompt: typeof j.automation_prompt === 'string' ? manyLines(j.automation_prompt).slice(0, 2000) : '', routes,
-    desk_rules: typeof j.desk_rules === 'string' ? manyLines(j.desk_rules).slice(0, 2000) : '' };
+    desk_rules: typeof j.desk_rules === 'string' ? manyLines(j.desk_rules).slice(0, 2000) : '',
+    run_budget_minutes: posInt(j.run_budget_minutes), max_tasks_per_run: posInt(j.max_tasks_per_run), max_tasks_per_day: posInt(j.max_tasks_per_day),
+    automation_schedule: schedule };
+}
+
+// P2-282: the commands that suit this computer (config/platforms.json). Pure; mirrors bin/env-lib.mjs (fillCommand, quote).
+function readPlatforms(pluginPath) {
+  try {
+    if (typeof pluginPath !== 'string' || !path.isAbsolute(pluginPath)) return {};
+    const j = readJsonSmall(path.join(pluginPath, 'config', 'platforms.json'));
+    return isObj(j) ? j : {};
+  } catch { return {}; }
+}
+const ENV_KEYS = ['stop', 'resume', 'inbox', 'take', 'done', 'watch_install', 'watch_uninstall', 'status', 'logs'];
+const ENV_NEEDS_QUOTE = /[\s'"$`&|;()<>*?!#~%^,{}[\]]/;
+function quoteWord(s, style) { s = String(s); return style === 'powershell' ? `'${s.replace(/'/g, "''")}'` : `'${s.replace(/'/g, `'\\''`)}'`; }
+function fillCommand(template, values, style) {
+  const ph = /<([A-Z_]+)>/g;
+  return String(template).split(/(\s+)/).map(word => {
+    if (!/<[A-Z_]+>/.test(word)) return word;
+    const filled = word.replace(ph, (all, k) => (values[k] === undefined || values[k] === null ? all : String(values[k])));
+    if (/^['"]/.test(word)) return filled;
+    return ENV_NEEDS_QUOTE.test(filled.replace(/<[A-Za-z_-]+>/g, '')) ? quoteWord(filled, style) : filled;
+  }).join('');
+}
+// <NODE> is what the user types in a terminal: inside the IDE (Electron) process.execPath is the IDE's own binary, so the
+// commands say `node` (or WK_NODE when set) there; the login shell's name comes from SHELL (review P2-282).
+function envSummary({ platform = process.platform, home = '', wkHome = '', nodePath = '', pluginPath = '', platforms = {}, wsl,
+  electron = !!(process.versions && process.versions.electron), shellEnv = process.env.SHELL || '' } = {}) {
+  const win = platform === 'win32';
+  const node = nodePath || (electron ? (process.env.WK_NODE || 'node') : process.execPath);
+  const shellName = !win && /^[A-Za-z][\w-]{0,15}$/.test(path.basename(String(shellEnv))) ? path.basename(String(shellEnv)) : '';
+  let osKey = platform === 'darwin' ? 'macos' : win ? 'windows' : 'linux';
+  if (osKey === 'linux') {
+    let isWsl = wsl;
+    if (isWsl === undefined) { try { isWsl = !!process.env.WSL_DISTRO_NAME || /microsoft|wsl/i.test(fs.readFileSync('/proc/version', 'utf8')); } catch { isWsl = false; } }
+    if (isWsl) osKey = 'wsl';
+  }
+  const t0 = isObj(platforms) ? platforms[osKey] : null;
+  const base = t0 && t0.fallback && isObj(platforms[t0.fallback]) ? { ...platforms[t0.fallback], ...t0 } : t0;
+  if (!isObj(base) || !isObj(base.commands)) return { os: osKey, name: '', shell: '', scheduler: '', stopFileDisplay: '', commands: {} };
+  const sep = win ? '\\' : '/';
+  const defaultWk = home ? home.replace(/[\\/]+$/, '') + sep + '.wk' : '';
+  const wh = wkHome || defaultWk;
+  const values = { NODE: node, ABS: pluginPath, WK_HOME: wh, HOME: home };
+  const style = win ? 'powershell' : 'sh';
+  const commands = {};
+  for (const k of ENV_KEYS) if (typeof base.commands[k] === 'string') commands[k] = fillCommand(base.commands[k], values, style);
+  // A data folder other than ~/.wk shows its own Stop file; the default keeps the short form from the table.
+  const stopFile = wkHome && wkHome !== defaultWk ? wkHome.replace(/[\\/]+$/, '') + sep + 'KILL' : (str(base.stop_file_display, 80) || '~/.wk/KILL');
+  return { os: osKey, name: str(base.name, 60), shell: shellName || str(base.shell, 30), scheduler: str(base.scheduler, 60), stopFileDisplay: stopFile, commands };
 }
 
 // ---------------------------------------------------------------- the plugin's scripts (Desk A): decide a suggestion, add a task
@@ -1140,7 +1194,8 @@ function validateMessage(m) {
   if (m.cmd === 'chatTakeTask') {
     const tid = m.taskId == null ? '' : String(m.taskId).trim();
     if (tid && !TASK_ID.test(tid)) return { ok: false, error: 'unknown task' };
-    return { ok: true, msg: { cmd: 'chatTakeTask', taskId: tid } };
+    // P2-282: the button at the top of the panel says where its feedback goes (under the header); anything else lands under the chat
+    return { ok: true, msg: { cmd: 'chatTakeTask', taskId: tid, where: m.where === 'top' ? 'top' : 'reprompt' } };
   }
   if (m.cmd === 'bridgeOpenAntigravity') {
     const tid = typeof m.taskId === 'string' ? m.taskId.trim() : '';
@@ -1516,6 +1571,7 @@ async function collect(cfg = {}, now = Date.now(), opts = {}) {
     tasks: safe(() => readTasks(p.dataDir), { items: [], total: 0 }),
     gemini: safe(() => readGeminiSessions(p.dataDir, now), { items: [], active: 0 }),
     geminiConfig: safe(() => readGeminiConfig(p.pluginPath), { found: false, prompt: '', routes: {} }),
+    automation: safe(() => buildAutomation(p), { text: '', env: null }),
     hookPass: safe(() => readHookPass(p.dataDir), { pass: 'unknown' }),
     // P2-227
     jobs, projects: pr.items, projectsFile: { found: pr.found, more: pr.more },
@@ -1563,7 +1619,7 @@ async function apiKeysState(pluginPath, now = Date.now()) {
 // P2-279 Gemini Desk: the text the copy button puts on the clipboard. Pure. <ABS> becomes the plugin folder (quoted when it
 // has a space or a shell sign); "<desk_rules>." becomes the Desk rules, which end in their own full stop. The three setup
 // lines go under the prompt only when the config carries Desk rules, so an older config copies exactly as before.
-function automationText(g, pluginPath, tz) {
+function automationText(g, pluginPath, tz, env) {
   const prompt = g && typeof g.prompt === 'string' ? g.prompt : '';
   if (!prompt) return '';
   const rules = g && typeof g.desk_rules === 'string' ? g.desk_rules.trim() : '';
@@ -1572,12 +1628,39 @@ function automationText(g, pluginPath, tz) {
   if (!rules) return text;
   const r = /[.!?]$/.test(rules) ? rules : rules + '.';
   text = text.includes('<desk_rules>.') ? text.split('<desk_rules>.').join(r) : text.split('<desk_rules>').join(r);
+  const budget = Number.isInteger(g.run_budget_minutes) && g.run_budget_minutes > 0 ? g.run_budget_minutes : 0;
+  if (budget) text = text.split('<budget>').join(String(budget));
+  const stop = env && typeof env.stopFileDisplay === 'string' && env.stopFileDisplay ? env.stopFileDisplay : '~/.wk/KILL';
+  if (env && env.os === 'windows') text = text.split('~/.wk/KILL').join(stop);
   const zone = typeof tz === 'string' && /^[A-Za-z0-9_+\/-]{1,64}$/.test(tz) ? tz : 'UTC';
-  return [text, '',
-    'Setup in Antigravity (Agent Manager, Automations, new automation):',
-    `Custom cron schedule: CRON_TZ=${zone} 0 8-23 * * *`,
-    'Model: Pro (Flash is the default; the choices are Flash Lite, Flash and Pro).',
-    'Do the test run with a sample task queued, so the grants it records cover node, git and the repo\'s tests.'].join('\n');
+  const sc = g.automation_schedule && typeof g.automation_schedule === 'object' ? g.automation_schedule : {};
+  const lines = [text, '',
+    'Setup in Antigravity: make a new automation (its scheduled runs; the menu names vary by version) with this text as the prompt. Watchkeeper never installs or switches on an automation: you do, and you can stop it at any time.'];
+  if (sc.default) {
+    lines.push(`Schedule (custom cron): CRON_TZ=${zone} ${sc.default}${sc.default_words ? `  (${sc.default_words})` : ''}.`
+      + (sc.quiet ? ` Quieter: ${sc.quiet}${sc.quiet_words ? `  (${sc.quiet_words})` : ''}.` : ''));
+  }
+  lines.push('Model: the strongest one your plan offers; a lighter model spends less quota but does worse on a big task.',
+    'Before you switch it on, run /wk-take-task once by hand with a sample task queued, so Antigravity records the narrow permissions it needs (node, git, the repo\'s tests); an unattended run refuses anything it was not granted.',
+    `Each run starts a new conversation and uses quota even when the queue is empty.${budget && g.max_tasks_per_run ? ` A run with work takes tasks for about ${budget} minutes: several small ones or one big one, at most ${g.max_tasks_per_run}.` : ''}`);
+  const day = g.max_tasks_per_day ? `${g.max_tasks_per_day} tasks a day (config/gemini.json max_tasks_per_day), ` : '';
+  lines.push(`What stays: ${day}the Stop switch (${stop}: with it in place no run takes a new task), and your review and merge in this panel.`);
+  return lines.join('\n');
+}
+
+// One "label:  command" line per command, in a fixed order; the same lines the panel shows and the button copies.
+const ENV_LABELS = { stop: 'stop', resume: 'resume', inbox: 'inbox', take: 'take', done: 'done', watch_install: 'watch install', watch_uninstall: 'watch uninstall', status: 'status', logs: 'logs' };
+function envCommandsText(env) {
+  const c = env && env.commands ? env.commands : {};
+  const w = Math.max(...ENV_KEYS.map(k => ENV_LABELS[k].length)) + 1;
+  return ENV_KEYS.filter(k => c[k]).map(k => `${(ENV_LABELS[k] + ':').padEnd(w + 1)}${c[k]}`).join('\n');
+}
+
+// P2-282: what the Gemini section shows (the prompt as the copy button gives it, and the commands for this computer).
+function buildAutomation(p) {
+  let tz = 'UTC'; try { tz = Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC'; } catch { }
+  const env = envSummary({ home: p.home || '', wkHome: typeof p.dataDir === 'string' ? p.dataDir : '', pluginPath: p.pluginPath || '', platforms: readPlatforms(p.pluginPath) });
+  return { text: automationText(readGeminiConfig(p.pluginPath), p.pluginPath, tz, env), env };
 }
 
 // P2-277 Bridge: the panel reads watch.json only (wk-watch writes it every 30 s and on each crossing). Nothing is run from here.
@@ -1615,7 +1698,7 @@ function readBridge(dataDir) {
 }
 
 module.exports = {
-  automationText,
+  automationText, readPlatforms, envSummary, envCommandsText, buildAutomation,
   readBridge, EMPTY_BRIDGE, waitWords, taskHeld,
   // P2-278
   API_PROVIDERS, apiDriveLib, apiKeysState,

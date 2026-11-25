@@ -3,11 +3,13 @@
 //   check [--json]       one pass: count queued tasks for Gemini and unread handoffs, write watch.json, notify new items once,
 //                        and about every 5 minutes run the watchdog's recover pass for tasks only (`recover --surface task`,
 //                        at most 10 minutes, then SIGTERM): a task the checker itself saw quiet long enough is requeued.
-//   install | uninstall  the scheduler that runs `check` every 30 s: a LaunchAgent on macOS, a systemd user timer on Linux.
+//   install | uninstall  the scheduler that runs `check` every 30 s: a LaunchAgent on macOS, a systemd user timer on Linux;
+//                        on Windows a Task Scheduler task (WatchkeeperWatch) every 60 s, its shortest step. install --print
+//                        shows the Windows command without running it.
 //   status [--json]      what the last pass saw and whether the scheduler is set up.
 // It never starts or drives agy, Antigravity, claude, gemini or any model: the owner (or an automation the owner set up in
 // the agent itself) types /wk-take-task. With the Stop switch (KILL) on, `check` does nothing at all.
-// Env (tests): WK_HOME, WK_LAUNCH_AGENTS, WK_LAUNCHCTL, WK_SYSTEMD_USER_DIR, WK_SYSTEMCTL, WK_WATCH_PLATFORM (darwin|linux),
+// Env (tests): WK_HOME, WK_LAUNCH_AGENTS, WK_LAUNCHCTL, WK_SYSTEMD_USER_DIR, WK_SYSTEMCTL, WK_SCHTASKS, WK_WATCH_PLATFORM (darwin|linux|win32),
 //   WK_WATCH_RECOVER_S (300; 0 turns the recover pass off), WK_WATCH_NOTIFY=0 (no notifications).
 import fs from 'node:fs';
 import os from 'node:os';
@@ -21,9 +23,11 @@ const SCRIPT = path.join(HERE, 'wk-watch.mjs');
 export const LABEL = 'com.tengo.watchkeeper-watch';
 export const UNIT = 'watchkeeper-watch';
 export const EVERY_S = 30;
+export const TASK_NAME = 'WatchkeeperWatch';
+export const WIN_EVERY_S = 60;
 const TASK_ID = /^\d{8}-\d{6}-[a-z0-9-]{1,40}$/;
 
-const home = () => process.env.HOME || os.homedir();
+const home = () => process.env.HOME || process.env.USERPROFILE || os.homedir();
 export const wkHome = () => path.resolve(process.env.WK_HOME || path.join(home(), '.wk'));
 export const watchFile = () => path.join(wkHome(), 'watch.json');
 const platform = () => process.env.WK_WATCH_PLATFORM || process.platform;
@@ -291,11 +295,23 @@ function backupIfChanged(file, body, name, now, ext) {
   return b;
 }
 
+// ---------------------------------------------------------------- Windows: Task Scheduler (P2-282)
+const schtasks = args => spawnSync(process.env.WK_SCHTASKS || 'schtasks', args, { encoding: 'utf8', timeout: 30000, windowsHide: true });
+// The task's command: node and this script quoted, `check`, and the data folder when WK_HOME is set (a task does not inherit it).
+export function schtasksCreateArgs({ node, script = SCRIPT, wkHomeEnv = process.env.WK_HOME }) {
+  const tr = `"${node}" "${script}" check${wkHomeEnv ? ` --wk-home "${path.resolve(wkHomeEnv)}"` : ''}`;
+  return ['/Create', '/SC', 'MINUTE', '/MO', '1', '/TN', TASK_NAME, '/TR', tr, '/F'];
+}
+// The same command as one line to paste into PowerShell or cmd.
+export function schtasksLine(args) {
+  return ['schtasks', ...args.map(a => (/[\s"]/.test(a) ? `"${a.replace(/"/g, '\\"')}"` : a))].join(' ');
+}
+
 async function findNodeBin() {
   try { const { findNode } = await import('./antigravity-lib.mjs'); return findNode() || process.execPath; } catch { return process.execPath; }
 }
 
-export async function install(now = new Date()) {
+export async function install(now = new Date(), { print = false } = {}) {
   const node = await findNodeBin();
   fs.mkdirSync(wkHome(), { recursive: true, mode: 0o700 });
   // launchd needs the QueueDirectories folder to exist before it loads the agent.
@@ -336,7 +352,18 @@ export async function install(now = new Date()) {
     console.log(`It reads ${tilde(wkHome())} and notifies; it starts no agent. Turn it off with: wk-watch uninstall`);
     return 0;
   }
-  console.error(`wk-watch: the scheduler is set up for macOS and Linux only. Run "node ${tilde(SCRIPT)} check" every 30 seconds from your own scheduler.`);
+  if (platform() === 'win32') {
+    const args = schtasksCreateArgs({ node });
+    const tr = args[args.indexOf('/TR') + 1];
+    if (tr.length > 261) console.error(`wk-watch: the task command is ${tr.length} characters; Task Scheduler takes 261 at most. Move Watchkeeper to a shorter folder if the task does not start.`);
+    if (print) { console.log(schtasksLine(args)); return 0; }
+    const r = schtasks(args);
+    if (r.error || r.status !== 0) { console.error(`wk-watch: Task Scheduler refused the task (${firstLine(r.stderr) || r.error?.message || 'no reason given'}). The command was: ${schtasksLine(args)}`); return 1; }
+    console.log(`Checker on: every ${WIN_EVERY_S} s (Task Scheduler task ${TASK_NAME})`);
+    console.log(`It reads ${tilde(wkHome())} and notifies; it starts no agent. Turn it off with: wk-watch uninstall`);
+    return 0;
+  }
+  console.error(`wk-watch: the scheduler is set up for macOS, Linux and Windows only. Run "node ${tilde(SCRIPT)} check" every 30 seconds from your own scheduler.`);
   return 2;
 }
 
@@ -361,7 +388,14 @@ export function uninstall(now = new Date()) {
     console.log(`Checker off. The unit files are in ${moved.map(tilde).join(', ')}.`);
     return 0;
   }
-  console.log('The checker is scheduled on macOS and Linux only; nothing to stop here.');
+  if (platform() === 'win32') {
+    if (schtasks(['/Query', '/TN', TASK_NAME]).status !== 0) { console.log('The checker was not set up here; nothing to stop.'); return 0; }
+    const r = schtasks(['/Delete', '/TN', TASK_NAME, '/F']);
+    if (r.error || r.status !== 0) { console.error(`wk-watch: Task Scheduler did not delete ${TASK_NAME} (${firstLine(r.stderr) || r.error?.message || 'no reason given'}).`); return 1; }
+    console.log(`Checker off. The Task Scheduler task ${TASK_NAME} is deleted.`);
+    return 0;
+  }
+  console.log('The checker is scheduled on macOS, Linux and Windows only; nothing to stop here.');
   return 0;
 }
 
@@ -369,6 +403,7 @@ export function status() {
   const w = readJson(watchFile(), null);
   const scheduler = platform() === 'darwin' ? { kind: 'launchd', file: plistFile(), installed: fs.existsSync(plistFile()) }
     : platform() === 'linux' ? { kind: 'systemd', file: path.join(unitDir(), `${UNIT}.timer`), installed: fs.existsSync(path.join(unitDir(), `${UNIT}.timer`)) }
+    : platform() === 'win32' ? { kind: 'schtasks', file: `Task Scheduler: ${TASK_NAME}`, installed: schtasks(['/Query', '/TN', TASK_NAME]).status === 0 }
     : { kind: 'none', file: null, installed: false };
   return { watch: w, scheduler, kill: fs.existsSync(path.join(wkHome(), 'KILL')) };
 }
@@ -381,10 +416,13 @@ export function statusLine(w = readJson(watchFile(), null)) {
 }
 
 // ---------------------------------------------------------------- command line
-const USAGE = 'usage: wk-watch [check [--json] | install | uninstall | status [--json]]';
+const USAGE = 'usage: wk-watch [check [--json] | install [--print] | uninstall | status [--json]] [--wk-home <dir>]';
 const isMain = (() => { try { return !!process.argv[1] && fs.realpathSync(process.argv[1]) === fs.realpathSync(fileURLToPath(import.meta.url)); } catch { return false; } })();
 if (isMain) {
   const args = process.argv.slice(2);
+  // --wk-home <dir>: the Windows task passes the data folder this way, since a scheduled task gets no WK_HOME.
+  const wi = args.indexOf('--wk-home');
+  if (wi >= 0) { if (args[wi + 1]) process.env.WK_HOME = path.resolve(args[wi + 1]); args.splice(wi, 2); }
   const cmd = args.find(a => !a.startsWith('--')) || 'check';
   const json = args.includes('--json');
   let code = 0;
@@ -398,7 +436,7 @@ if (isMain) {
     const s = status();
     if (json) console.log(JSON.stringify(s));
     else console.log(`Checker: ${s.scheduler.installed ? `on (${s.scheduler.kind}, ${tilde(s.scheduler.file)})` : 'not installed'}${s.kill ? ' | Stop switch ON' : ''}\nLast pass: ${statusLine(s.watch)}`);
-  } else if (cmd === 'install') code = await install();
+  } else if (cmd === 'install') code = await install(new Date(), { print: args.includes('--print') });
   else if (cmd === 'uninstall') code = uninstall();
   else { console.error(USAGE); code = 2; }
   process.exit(code);

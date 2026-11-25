@@ -1,6 +1,9 @@
 // P2-227: wk-remote, the Mac end of the phone link. A temp HOME and WK_HOME; ssh, ssh-keygen, launchctl and claude are fakes in test/fixtures.
 // Nothing here reaches the server, the real ~/.wk, ~/.ssh, ~/.claude or ~/Library.
-import test from 'node:test'; import assert from 'node:assert/strict';
+import nodeTest from "node:test"; import assert from 'node:assert/strict';
+// P2-282: these tests run sh stubs (launchctl, systemctl, sh -c); on Windows each one is skipped with the reason.
+const UNIX_ONLY = process.platform === "win32" && "needs sh stub scripts (launchctl, systemctl, sh -c), which Windows does not run";
+const test = UNIX_ONLY ? (name, o, f) => nodeTest(name, { ...(typeof o === "object" && o ? o : {}), skip: UNIX_ONLY }, typeof o === "function" ? o : f) : nodeTest;
 import fs from 'node:fs'; import os from 'node:os'; import path from 'node:path';
 import { spawn, spawnSync } from 'node:child_process';
 
@@ -541,7 +544,7 @@ test('the orchestration folder comes only from remote.json: no built-in default,
   } finally { fs.rmSync(path.join(HOME, 'Projects', OLD), { recursive: true }); }
 });
 
-test.after(() => {
+nodeTest.after(() => {
   // the job started from the "phone" ends on its own; stop any that still runs
   try { for (const id of fs.readdirSync(path.join(WK, 'jobs'))) spawnSync(process.execPath, [path.resolve('bin/wk-job.mjs'), 'stop', id], { env, encoding: 'utf8' }); } catch { /* none */ }
 });

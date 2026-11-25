@@ -60,7 +60,8 @@ class _ChainBase(_TempHome):
 class GeminiChainTests(_ChainBase):
     def test_desk_rules_stored_word_for_word(self) -> None:
         self.assertTrue(RULES.startswith("Gemini Desk rules (the owner's standing instruction). A proposal from Claude waits"))
-        self.assertTrue(RULES.endswith("One task per turn. Never run agy. Stop when nothing waits."))
+        # P2-282: "One task per turn" became one task at a time with a run budget.
+        self.assertTrue(RULES.endswith("One task at a time; in an automation run, after done, take the next task while the run's budget lasts (the take command says when to stop). Never run agy. Stop when nothing waits."))
 
     def test_offers_first_queued_task_with_rules(self) -> None:
         self.task("20261125-090000-first-job", title="First job")

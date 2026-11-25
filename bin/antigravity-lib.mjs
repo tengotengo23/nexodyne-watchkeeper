@@ -28,12 +28,23 @@ export function findNode({ env = process.env, execPath = process.execPath, stabl
   return path.basename(execPath) === 'node' ? execPath : 'node';
 }
 
-export function findPython({ env = process.env, stable = ['/opt/homebrew/bin/python3', '/usr/local/bin/python3', '/usr/bin/python3'] } = {}) {
+export function findPython({ env = process.env, stable = ['/opt/homebrew/bin/python3', '/usr/local/bin/python3', '/usr/bin/python3'], platform = process.platform } = {}) {
   const ok = p => { try { fs.accessSync(p, fs.constants.X_OK); return fs.statSync(p).isFile(); } catch { return false; } };
+  if (platform === 'win32') return findPythonWindows(env);
   if (env.WK_PYTHON && path.isAbsolute(env.WK_PYTHON) && ok(env.WK_PYTHON)) return env.WK_PYTHON;
   for (const p of stable) if (ok(p)) return p;
   for (const d of String(env.PATH || '').split(path.delimiter).filter(d => path.isAbsolute(d))) { const p = path.join(d, 'python3'); if (ok(p)) return p; }
   return 'python3';
+}
+
+// Windows: python.exe, then python3.exe, then the py launcher (it starts Python 3 by default, so no -3 is needed).
+// The Microsoft Store stubs in \WindowsApps\ only open the Store, so they are skipped.
+function findPythonWindows(env) {
+  const w = path.win32, isFile = p => { try { return fs.statSync(p).isFile(); } catch { return false; } };
+  if (env.WK_PYTHON && w.isAbsolute(env.WK_PYTHON) && isFile(env.WK_PYTHON)) return env.WK_PYTHON;
+  const dirs = String(env.PATH || env.Path || '').split(';').filter(d => d && w.isAbsolute(d) && !/\\WindowsApps\\?$/i.test(d));
+  for (const n of ['python.exe', 'python3.exe', 'py.exe']) for (const d of dirs) { const p = w.join(d, n); if (isFile(p)) return p; }
+  return 'python';
 }
 
 function sourceFiles(src) {

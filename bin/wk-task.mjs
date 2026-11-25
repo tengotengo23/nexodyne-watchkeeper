@@ -3,16 +3,18 @@
 // the plugin skill /wk-take-task (typed by the owner, or an automation the owner set up once), works in its own git worktree,
 // and finishes with `done`. Watchkeeper then checks the result (allowed files, the task's test) before anything reaches the owner.
 //   wk-task add --repo <abs> --title "<t>" [--kind <k>] [--model <m>] [--allow <glob>]... [--test "<cmd>"] [--from claude|owner|gemini]
-//               [--text "<t>" | stdin]                              -> prints the new id
-//   wk-task take [--id <id>] [--model-used <m>]                     -> claims the next task, makes its worktree, prints the brief
+//               [--minutes <5-480>] [--text "<t>" | stdin]          -> prints the new id; --minutes is the size (default by kind)
+//   wk-task take [--id <id>] [--model-used <m>] [--run new|<run id>] -> claims the next task, makes its worktree, prints the brief;
+//               --run new starts an automation run (~/.wk/runs/<id>.json), --run <id> takes the run's next task while its budget lasts
 //   wk-task done <id> [--attempt <n>] [--note "<t>"] [--model-used <m>] -> diff, scope check, test, commit in the worktree, a suggestion
 //   wk-task merge <id>                                              -> merges a verified task into its repo (never pushes)
 //   wk-task discard <id>                                            -> removes the worktree, keeps change.diff
 //   wk-task sweep [--recover] [--json]                              -> scans or recovers hung tasks via watchdog
 //   wk-task list [--json] · wk-task show <id> [--json]
-//   wk-task inbox --brief                                           -> "N waiting" and up to 5 "<id> · <title>" lines; takes nothing, exit 0
+//   wk-task inbox --brief                                           -> "N waiting (about M min)" and up to 5 "<id> · <title> · ~N min"; takes nothing, exit 0
 //   wk-task hold <id> [--hours <n>] [--note "<why>"] · wk-task release <id>   -> the owner's hold: the checker never requeues a held task
-// Exit: 0 done, 1 failed or refused, 2 bad input, 3 the Stop switch is on, 4 today's cap is reached, 5 nothing is queued.
+// Exit: 0 done, 1 failed or refused, 2 bad input, 3 the Stop switch is on, 4 today's cap is reached, 5 nothing is queued,
+// 6 this automation run's budget is used (time or task count). Codes 3 to 6 print their one line on stdout.
 // Files: ~/.wk/tasks/<id>/ and ~/.wk/worktrees/<id>/ (or $WK_HOME); see docs/DATA-CONTRACT.md. Every git call uses execFile
 // with an argument array; nothing here pushes or uses the network.
 import fs from 'node:fs';
@@ -34,7 +36,7 @@ const fail = m => { throw new Stop(1, m); };
 export function parseArgs(argv) {
   if (argv.includes('--help') || argv.includes('-h')) return { cmd: 'help', id: null, allow: [], json: false, recover: false };
   const o = { cmd: argv[0] || '', id: null, allow: [], json: false, recover: false };
-  const VAL = { '--repo': 'repo', '--title': 'title', '--kind': 'kind', '--model': 'model', '--test': 'test', '--from': 'from', '--text': 'text', '--id': 'id', '--model-used': 'modelUsed', '--note': 'note', '--base': 'base', '--attempt': 'attempt', '--hours': 'hours' };
+  const VAL = { '--repo': 'repo', '--title': 'title', '--kind': 'kind', '--model': 'model', '--test': 'test', '--from': 'from', '--text': 'text', '--id': 'id', '--model-used': 'modelUsed', '--note': 'note', '--base': 'base', '--attempt': 'attempt', '--hours': 'hours', '--minutes': 'minutes', '--run': 'run' };
   const a = argv.slice(1);
   while (a.length) {
     const x = a.shift();
@@ -53,6 +55,48 @@ const taskDir = id => path.join(tasksDir(), id);
 const saveMeta = m => writeFile(path.join(taskDir(m.id), 'meta.json'), JSON.stringify(m, null, 2) + '\n');
 const metaOf = id => { if (!id || !TASK_ID.test(id)) bad('give a task id (see wk-task list)'); const m = readTask(id); if (!m) bad(`no task ${id}`); return m; };
 const shortTitle = (t, n) => (t.length > n ? t.slice(0, n - 1).trimEnd() + '…' : t);
+// P2-282: a task's size in minutes. meta.minutes when add set it, else config estimate_minutes[kind], else 30.
+const MIN_MINUTES = 5, MAX_MINUTES = 480;
+const okMinutes = v => Number.isInteger(v) && v >= MIN_MINUTES && v <= MAX_MINUTES;
+export const estimateOf = (kind, c = config()) => { const v = c.estimate_minutes && typeof c.estimate_minutes === 'object' ? c.estimate_minutes[kind] : undefined; return okMinutes(v) ? v : 30; };
+export const minutesOf = (t, c = config()) => (okMinutes(t && t.minutes) ? t.minutes : estimateOf(t && t.kind, c));
+// P2-282: an automation run. One file per run in ~/.wk/runs/; take --run <id> gives the next task while the run's budget lasts.
+export const RUN_ID = /^r-\d{8}-\d{4}-[0-9a-f]{4}$/;
+const runsDir = () => path.join(wkHome(), 'runs');
+const runFile = id => path.join(runsDir(), `${id}.json`);
+const posIntOr = (v, d, max) => (Number.isInteger(v) && v > 0 && v <= max ? v : d);
+const runBudget = c => posIntOr(c.run_budget_minutes, 60, 24 * 60);
+const runMax = c => posIntOr(c.max_tasks_per_run, 6, 100);
+const usedMin = (run, now) => Math.max(0, Math.floor((now.getTime() - (Date.parse(run.started_at) || now.getTime())) / 60000));
+// Pure: null while the run may take another task, else { used, tasks, msg } for exit 6. The budget and the task limit are the run's own
+// (written when it started); c only fills them in for a run file that lacks them.
+export function runGate(run, c, now) {
+  const budget = posIntOr(run.budget_min, runBudget(c), 24 * 60), max = posIntOr(run.max_tasks, runMax(c), 100);
+  const used = usedMin(run, now), tasks = Array.isArray(run.task_ids) ? run.task_ids.length : 0;
+  if (used < budget && tasks < max) return null;
+  return { used, tasks, msg: `Run ${run.id} is complete (used ${used} min of ${budget}; ${tasks} task${tasks === 1 ? '' : 's'}). Stop here.` };
+}
+function newRun(c, now) {
+  ensureDir(runsDir());
+  // run files older than a day are removed when a new run starts
+  try {
+    for (const f of fs.readdirSync(runsDir())) {
+      if (!/^r-\d{8}-\d{4}-[0-9a-f]{4}\.json$/.test(f)) continue;
+      const p = path.join(runsDir(), f);
+      try { if (now.getTime() - fs.statSync(p).mtimeMs > 24 * 3600 * 1000) fs.rmSync(p, { force: true }); } catch {}
+    }
+  } catch {}
+  let id;
+  for (let i = 0; i < 20; i++) { id = `r-${stamp(now).slice(0, 13)}-${crypto.randomBytes(2).toString('hex')}`; if (!fs.existsSync(runFile(id))) break; }
+  return { id, started_at: now.toISOString(), budget_min: runBudget(c), max_tasks: runMax(c), task_ids: [], repo_last: null };
+}
+function loadRun(id) {
+  if (!RUN_ID.test(String(id))) bad('--run must be new or a run id like r-20261125-0930-a1b2');
+  const r = readJSON(runFile(id));
+  if (!r || typeof r !== 'object' || r.id !== id || !Array.isArray(r.task_ids)) bad(`no run ${id} (start one with take --run new)`);
+  return r;
+}
+const saveRun = r => { ensureDir(runsDir()); writeFile(runFile(r.id), JSON.stringify(r, null, 2) + '\n'); };
 function killed() {
   if (fs.existsSync(path.join(wkHome(), 'KILL'))) return true;
   let g; try { g = gates({ allowMismatch: true }); } catch (e) { fail(`the policy does not load (${e.message.slice(0, 120)}); nothing runs until the owner fixes it`); }
@@ -175,6 +219,11 @@ export function addTask(o, now = new Date()) {
   if (text.length > MAX_TEXT) bad(`the text is longer than ${MAX_TEXT} characters`);
   if (o.kind !== undefined && !kinds(c).includes(o.kind)) bad(`--kind must be one of ${kinds(c).join(', ')}`);
   const kind = o.kind || guessKind(title, text, c), route = c.routes[kind];
+  let minutes = estimateOf(kind, c);
+  if (o.minutes !== undefined) {
+    if (!/^\d{1,4}$/.test(String(o.minutes)) || !okMinutes(Number(o.minutes))) bad(`--minutes must be a whole number from ${MIN_MINUTES} to ${MAX_MINUTES}`);
+    minutes = Number(o.minutes);
+  }
   const model = o.model !== undefined ? oneLine(o.model).slice(0, 80) : route.model;
   if (!model) bad('--model is empty');
   const allow = o.allow.length ? o.allow.map(g => oneLine(g)) : ['**'];
@@ -193,7 +242,7 @@ export function addTask(o, now = new Date()) {
     try { fs.mkdirSync(taskDir(id), { mode: 0o700 }); break; }
     catch (e) { if (e.code !== 'EEXIST' || i > 99) throw e; const s = slug(title).slice(0, 40 - String(i).length - 1).replace(/-+$/, ''); id = `${stamp(now)}-${s}-${i}`; }
   }
-  const meta = { id, created_at: now.toISOString(), from, title, kind, model, fallback: route.fallback || null, repo: fs.realpathSync(top.trim()), allow, test,
+  const meta = { id, created_at: now.toISOString(), from, title, kind, minutes, model, fallback: route.fallback || null, repo: fs.realpathSync(top.trim()), allow, test,
     status: 'queued', taken_at: null, model_used: null, worktree: null, base: null, commit: null, done_at: null, note: null,
     ...(startBase ? { start_base: startBase } : {}) };
   writeFile(path.join(taskDir(id), 'task.md'), `# ${title}\n\n${text}\n`);
@@ -212,9 +261,20 @@ export function takeTask(o, now = new Date()) {
     const all = listTasks();
     const today = all.filter(t => t.taken_at && sameDay(t.taken_at, now)).length;
     if (today >= c.max_tasks_per_day) throw new Stop(4, `Today's cap of ${c.max_tasks_per_day} tasks is reached (config/gemini.json max_tasks_per_day). Stop here; the queue waits for tomorrow.`);
+    // P2-282: the run gate comes after the Stop switch and the daily cap, before the pick
+    let run = null;
+    if (o.run !== undefined) {
+      if (o.run === 'new') run = newRun(c, now);
+      else { run = loadRun(o.run); const g = runGate(run, c, now); if (g) throw new Stop(6, g.msg); }
+    }
+    const waiting = all.filter(t => t.status === 'queued' && !holdOf(t.id, now.getTime()));
     let m;
     if (o.id) { m = metaOf(o.id); if (m.status !== 'queued') fail(`task ${m.id} is ${m.status}, not queued`); }
-    else { m = all.find(t => t.status === 'queued' && !holdOf(t.id, now.getTime())); if (!m) throw new Stop(5, 'Nothing is queued. Stop here.'); }
+    else {
+      // in a run, a task in the repository the run worked in last comes first (its worktree setup and tests are warm), then the oldest
+      m = (run && run.repo_last && waiting.find(t => t.repo === run.repo_last)) || waiting[0];
+      if (!m) throw new Stop(5, 'Nothing is queued. Stop here.');
+    }
     // the claim file is made once ('wx'): two sessions can never take the same task, even with the lock taken over
     return withTaskLock(m.id, () => {
     m = metaOf(m.id);   // read again under the task lock: the watchdog may have changed it meanwhile
@@ -242,7 +302,16 @@ export function takeTask(o, now = new Date()) {
       Object.assign(m, { status: 'taken', taken_at: now.toISOString(), worktree: wt, base, attempt, claim_nonce: nonce, ...(o.modelUsed ? { model_used: oneLine(o.modelUsed).slice(0, 80) } : {}) });
       saveMeta(m);
       recordCrossing({ kind: 'task', id: m.id, from: m.from, to: oneLine(o.modelUsed || 'gemini').slice(0, 40), event: 'taken', title: m.title }, now);
-      return m;
+      // not saved in meta.json: what the brief shows about the run, or (plain take) the queue after this task
+      if (run) {
+        run.task_ids.push(m.id); run.repo_last = m.repo; saveRun(run);
+        return { ...m, run: { id: run.id, budget_min: run.budget_min, used_min: usedMin(run, now), n: run.task_ids.length, max_tasks: run.max_tasks } };
+      }
+      const rest = waiting.filter(t => t.id !== m.id);
+      if (!rest.length) return m;
+      const order = [...rest.filter(t => t.repo === m.repo), ...rest.filter(t => t.repo !== m.repo)];
+      return { ...m, queue_after: { tasks: order.slice(0, 5).map(t => ({ id: t.id, title: t.title, minutes: minutesOf(t, c) })),
+        count: rest.length, minutes: rest.reduce((a, t) => a + minutesOf(t, c), 0) } };
     } catch (e) {
       if (wtAdded) {
         try { git(m.repo, ['worktree', 'remove', '--force', wt], { allowFail: true }); } catch {}
@@ -258,7 +327,9 @@ export function takeTask(o, now = new Date()) {
 export function brief(m) {
   const node = JSON.stringify(process.execPath), bin = JSON.stringify(path.join(BIN, 'wk-task.mjs'));
   const text = (() => { try { return fs.readFileSync(path.join(taskDir(m.id), 'task.md'), 'utf8').trimEnd(); } catch { return `# ${m.title}`; } })();
+  const { head, tail } = briefFrame(m);
   return [
+    ...head,
     `Took task ${m.id}: ${m.title}`,
     `Worktree: ${wtOf(m)}`,
     `Kind: ${m.kind}. Suggested model: ${m.model}${m.fallback ? ` (fallback ${m.fallback})` : ''}. Antigravity's model menu sets the model; if yours differs, say so with --model-used on done.`,
@@ -276,7 +347,22 @@ export function brief(m) {
     '',
     '--- the task ---',
     text,
+    ...tail,
   ].join('\n');
+}
+// P2-282: the run's first and last lines, or the queue after a plain take. wk-takeover's brief uses the same lines.
+export function briefFrame(m) {
+  const head = [], tail = [];
+  const r = m && m.run;
+  if (r && RUN_ID.test(String(r.id))) {
+    head.push(`Run ${r.id}: budget ${r.budget_min} min, used ${r.used_min} min, task ${r.n} of ${r.max_tasks}.`, '');
+    tail.push('', `Next: when this task is done, run take --run ${r.id} again; it says when to stop.`);
+  } else if (m && m.queue_after && Array.isArray(m.queue_after.tasks) && m.queue_after.tasks.length) {
+    const q = m.queue_after;
+    tail.push('', 'Queue after this task:', ...q.tasks.map(t => `${t.id} · ${shortTitle(oneLine(t.title), 100)} · ~${t.minutes} min`),
+      `${q.count} task${q.count === 1 ? '' : 's'} waiting after this one, about ${q.minutes} min in all.`);
+  }
+  return { head, tail };
 }
 
 // ---------------------------------------------------------------- done
@@ -482,7 +568,7 @@ function list(o) {
   const all = listTasks().reverse();
   if (o.json) return console.log(JSON.stringify(all.map(t => (holdOf(t.id) ? { ...t, held: true } : t)), null, 2));
   if (!all.length) return console.log('No tasks yet.');
-  for (const t of all.slice(0, 30)) console.log(`${t.id}  ${(holdOf(t.id) ? t.status + ',held' : t.status).padEnd(12)} ${t.kind.padEnd(6)} ${t.model}${t.model_used ? ` (used ${t.model_used})` : ''}  ${ago(t.created_at)} ago  ${shortTitle(t.title, 80)}`);
+  for (const t of all.slice(0, 30)) console.log(`${t.id}  ${(holdOf(t.id) ? t.status + ',held' : t.status).padEnd(12)} ${t.kind.padEnd(6)} ${t.model}${t.model_used ? ` (used ${t.model_used})` : ''}  ${ago(t.created_at)} ago  ~${minutesOf(t)} min  ${shortTitle(t.title, 80)}`);
 }
 // P2-279: the Gemini Desk automation's first step. Queued tasks without an owner's hold, oldest first; reads only, takes nothing.
 // With the Stop switch on (~/.wk/KILL) nothing waits, so an automation that follows the prompt stops at once.
@@ -490,7 +576,9 @@ export function inbox() {
   try {
     if (fs.existsSync(path.join(wkHome(), 'KILL'))) return ['0 waiting (the Stop switch is on)'];
     const q = listTasks().filter(t => t.status === 'queued' && !holdOf(t.id));
-    return [`${q.length} waiting`, ...q.slice(0, 5).map(t => `${t.id} · ${shortTitle(oneLine(t.title), 100)}`)];
+    if (!q.length) return ['0 waiting'];
+    const c = config();
+    return [`${q.length} waiting (about ${q.reduce((a, t) => a + minutesOf(t, c), 0)} min)`, ...q.slice(0, 5).map(t => `${t.id} · ${shortTitle(oneLine(t.title), 100)} · ~${minutesOf(t, c)} min`)];
   } catch { return ['0 waiting']; }
 }
 function show(o) {
@@ -505,7 +593,7 @@ function show(o) {
 
 const isMain = (() => { try { return !!process.argv[1] && fs.realpathSync(process.argv[1]) === fs.realpathSync(new URL(import.meta.url).pathname); } catch { return false; } })();
 if (isMain) {
-  const USAGE = 'usage: wk-task add|take|done|merge|discard|hold|release|sweep|list|show|inbox --brief (see the top of bin/wk-task.mjs)';
+  const USAGE = 'usage: wk-task add [--minutes <5-480>]|take [--run new|<run id>]|done|merge|discard|hold|release|sweep|list|show|inbox --brief (see the top of bin/wk-task.mjs)';
   let code = 0;
   try {
     const o = parseArgs(process.argv.slice(2));
@@ -524,7 +612,7 @@ if (isMain) {
   } catch (e) {
     code = e instanceof Stop ? e.code : 1;
     const msg = String(e.message || e).split('\n')[0];
-    (code === 5 || code === 4 || code === 3 ? console.log : console.error)(code >= 3 ? msg : `wk-task: ${msg}`);
+    (code >= 3 && code <= 6 ? console.log : console.error)(code >= 3 ? msg : `wk-task: ${msg}`);
   }
   process.exitCode = code;
 }

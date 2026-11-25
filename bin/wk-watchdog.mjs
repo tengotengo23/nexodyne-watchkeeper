@@ -3,6 +3,7 @@
 import path from 'node:path';
 import { execFileSync, spawn, spawnSync } from 'node:child_process';
 import { findPython } from './antigravity-lib.mjs';
+import { testShell } from './env-lib.mjs';
 
 const ROOT = path.resolve(path.dirname(new URL(import.meta.url).pathname), '..');
 const CPU_ACTIVE_THRESHOLD = 5.0;
@@ -237,7 +238,10 @@ const idleMs = Number(process.argv[3]) || timeoutMs;
 const maxBuf = 64 * 1024;
 let out = '', err = '', timedOut = false, stalled = false, settled = false;
 let lastAt = Date.now();
-const c = spawn('/bin/sh', ['-c', cmd], {
+// P2-282: the shell comes from the parent (env-lib testShell): /bin/sh -c here, cmd.exe /d /s /c on Windows
+const shFile = process.argv[4] || '/bin/sh';
+const shArgs = (process.argv[5] || '-c').split(' ').filter(Boolean);
+const c = spawn(shFile, [...shArgs, cmd], {
   cwd: process.cwd(),
   detached: process.platform !== 'win32',
   stdio: ['ignore', 'pipe', 'pipe'],
@@ -279,7 +283,8 @@ c.on('close', code => finish(code));
   const nodeEnv = { ...env };
   if (process.versions && process.versions.electron) nodeEnv.ELECTRON_RUN_AS_NODE = '1';
 
-  const r = spawnSync(process.execPath, ['-e', helperCode, cmd, String(effTimeout), String(effIdle)], {
+  const sh = testShell(process.platform);
+  const r = spawnSync(process.execPath, ['-e', helperCode, cmd, String(effTimeout), String(effIdle), sh.file, sh.args.join(' ')], {
     cwd,
     env: nodeEnv,
     encoding: 'utf8',

@@ -1,7 +1,10 @@
 // P2-277: Bridge (bin/wk-bridge.mjs): the wait, crossings, claims, holds, open, and the move of the old phone-link agent.
 // Everything runs in a temporary HOME and WK_HOME; launchctl, open and pbcopy are stubs; agy, claude, gemini and
 // antigravity on PATH are fakes that only write a marker. The agent markers must never appear.
-import test from 'node:test';
+import nodeTest from "node:test";
+// P2-282: these tests run sh stubs (launchctl, systemctl, sh -c); on Windows each one is skipped with the reason.
+const UNIX_ONLY = process.platform === "win32" && "needs sh stub scripts (launchctl, systemctl, sh -c), which Windows does not run";
+const test = UNIX_ONLY ? (name, o, f) => nodeTest(name, { ...(typeof o === "object" && o ? o : {}), skip: UNIX_ONLY }, typeof o === "function" ? o : f) : nodeTest;
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';

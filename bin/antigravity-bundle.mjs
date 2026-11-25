@@ -98,6 +98,58 @@ dir=$(CDPATH= cd -- "$(dirname -- "$self")/.." && pwd -P) || exit 1
 exec "$dir/libexec/wk-run" ${kind} "$dir/runtime/${rel}" "$@"
 `;
 
+// Windows twins (P2-282): cmd.exe and PowerShell find bin\<tool>.cmd through PATHEXT. Batch files need CRLF line ends.
+const crlf = s => s.replace(/\r?\n/g, '\r\n');
+export const WK_RUN_CMD = crlf(String.raw`@echo off
+rem Runs a Watchkeeper script with Node.js or Python 3 on Windows: WK_NODE or WK_PYTHON first, then PATH, then the usual places.
+rem Usage: wk-run.cmd node|python <script> [args...]   or   wk-run.cmd --find node|python (sets WK_BIN and WK_BINARG).
+rem Exits 127 with a plain message when the runtime is missing, 64 for anything but node or python.
+setlocal EnableExtensions DisableDelayedExpansion
+set "mode=run"
+if "%~1"=="--find" (set "mode=find" & shift)
+set "kind=%~1"
+set "bin=" & set "binarg="
+if /i "%kind%"=="node" goto node
+if /i "%kind%"=="python" goto python
+echo wk-run: use node or python, not '%kind%' 1>&2
+exit /b 64
+:node
+set "need=Node.js 20 or newer (nodejs.org)"
+if defined WK_NODE if exist "%WK_NODE%" set "bin=%WK_NODE%"
+if not defined bin for /f "delims=" %%i in ('where node 2^>nul') do if not defined bin set "bin=%%i"
+if not defined bin if exist "%ProgramFiles%\nodejs\node.exe" set "bin=%ProgramFiles%\nodejs\node.exe"
+goto found
+:python
+set "need=Python 3.9 or newer (python.org)"
+if defined WK_PYTHON if exist "%WK_PYTHON%" set "bin=%WK_PYTHON%"
+if not defined bin for /f "delims=" %%i in ('where python 2^>nul ^| findstr /v /i "\\WindowsApps\\"') do if not defined bin set "bin=%%i"
+if not defined bin for /f "delims=" %%i in ('where py 2^>nul ^| findstr /v /i "\\WindowsApps\\"') do if not defined bin (set "bin=%%i" & set "binarg=-3")
+goto found
+:found
+if not defined bin (
+  echo Watchkeeper needs %need%. Install it, then start a new conversation. 1>&2
+  exit /b 127
+)
+if "%mode%"=="find" (endlocal & set "WK_BIN=%bin%" & set "WK_BINARG=%binarg%" & exit /b 0)
+shift
+set "rest="
+:collect
+if "%~1"=="" goto go
+set rest=%rest% %1
+shift
+goto collect
+:go
+"%bin%" %binarg% %rest%
+exit /b %errorlevel%
+`);
+export const toolScriptCmd = (kind, rel) => crlf(`@echo off
+rem Watchkeeper tool: runs runtime\\${rel.replace(/\//g, '\\')} from this plugin's folder.
+setlocal
+call "%~dp0..\\libexec\\wk-run.cmd" --find ${kind} || exit /b
+"%WK_BIN%" %WK_BINARG% "%~dp0..\\runtime\\${rel.replace(/\//g, '\\')}" %*
+exit /b %errorlevel%
+`);
+
 const RULES_NOTE = `
 ## The tools of this plugin
 The commands in Watchkeeper's skills (${Object.keys(TOOLS).map(t => `\`${t}\``).join(', ')}) are tools in this plugin's \`bin/\` folder. If the shell does not find one, run it by its full path: \`${INSTALLED_AT}/bin/<name>\`.
@@ -150,9 +202,11 @@ export function buildBundle({ src = root(), out, zip = false } = {}) {
   if (!licence) throw new Error('no LICENSE in this checkout');
   put(path.join(dest, 'LICENSE'), read(licence));
   put(path.join(dest, 'libexec', 'wk-run'), WK_RUN, 0o755);
+  put(path.join(dest, 'libexec', 'wk-run.cmd'), WK_RUN_CMD);
   for (const [name, [kind, rel]] of Object.entries(TOOLS)) {
     if (!files.includes(rel)) throw new Error(`bin/${name}: ${rel} is not in this checkout`);
     put(path.join(dest, 'bin', name), toolScript(kind, rel), 0o755);
+    put(path.join(dest, 'bin', `${name}.cmd`), toolScriptCmd(kind, rel));
   }
   const problems = checkBundle(dest);
   if (problems.length) throw new Error(`the bundle failed its check:\n- ${problems.join('\n- ')}`);
@@ -219,8 +273,10 @@ export function checkBundle(dest) {
       }
     }
   }
+  if (!has('libexec/wk-run.cmd')) p.push('libexec/wk-run.cmd is missing');
   for (const [name, [, rel]] of Object.entries(TOOLS)) {
     if (!has(`bin/${name}`)) p.push(`bin/${name} is missing`);
+    if (!has(`bin/${name}.cmd`)) p.push(`bin/${name}.cmd is missing`);
     else if (!(fs.statSync(path.join(dest, 'bin', name)).mode & 0o100)) p.push(`bin/${name} is not executable`);
     if (!has(`runtime/${rel}`)) p.push(`runtime/${rel} is missing`);
   }

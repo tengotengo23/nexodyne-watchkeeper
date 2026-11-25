@@ -8,7 +8,8 @@ import os from 'node:os';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
-import { findPython } from './antigravity-lib.mjs';
+import { findPython, findNode } from './antigravity-lib.mjs';
+import { detectEnv, envText } from './env-lib.mjs';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const BIN = path.join(ROOT, 'bin');
@@ -39,12 +40,21 @@ const HELP = `Watchkeeper /wk command family
   /wk task "<text>"         queue a task as a file; starts nothing
   /wk take-task [id]        take the next queued task or the latest handoff
   /wk take-task --handoff --cwd <repo>   take only that repo's unread handoff (Bridge uses this)
+  /wk take-task --run new|<run id>      automation run: about 60 min, at most 6 tasks; exit 6 when it is used
   /wk watch [check|install|uninstall|status]   the 30 s checker: notifies, starts no agent
+  /wk env [--json]          this computer (system, shell, node, python, folders) and the commands that suit it
 
 Old names still work: /wk-status, /wk-take-task, /wk-add-task, /wk-suggest, and the
 subcommands overview, heal, tasks, handoff, watchdog, learn, mode, brain, skills, doctor.
 The Stop switch is the file KILL in the Watchkeeper home folder. While it is on, sync and task refuse.
 `;
+
+// P2-282: what computer this is and the commands that suit it (Linux, Windows, macOS). Read-only.
+function env(rest) {
+  const e = detectEnv({ argv0: findNode() });
+  process.stdout.write(rest.includes('--json') ? JSON.stringify(e, null, 2) + '\n' : envText(e) + '\n');
+  return 0;
+}
 
 function stop(rest) {
   const reason = rest.join(' ').replace(/\s+/g, ' ').trim() || 'stopped with /wk stop';
@@ -92,15 +102,17 @@ function takeTask(rest) {
   const engine = process.env.WK_ENGINE === 'antigravity' ? 'antigravity' : 'claude';
   // P2-277: `--cwd <dir>` takes the handoff for that repo (Bridge wakes name it); the default stays the current folder.
   // `--handoff` takes only that repo's unread handoff, never a queued task (every Bridge route uses it; exit 5 if gone).
-  let cwd = process.cwd(); let handoff = false; const left = [];
+  let cwd = process.cwd(); let handoff = false; let run = ''; const left = [];
   for (let i = 0; i < rest.length; i++) {
     if (rest[i] === '--cwd' && rest[i + 1]) cwd = rest[++i];
     else if (rest[i] === '--handoff') handoff = true;
+    else if (rest[i] === '--run' && rest[i + 1]) run = rest[++i];  // P2-282: --run new | <run id>
     else left.push(rest[i]);
   }
   if (handoff) return script('wk-takeover.mjs', ['brief', '--cwd', cwd, '--engine', engine, '--handoff', '--consume', '--model-used', engine]);
   const args = ['brief', '--cwd', cwd, '--engine', engine, '--claim', '--consume', '--model-used', engine];
   if (left[0]) args.push('--id', left[0]);
+  if (run) args.push('--run', run);
   return script('wk-takeover.mjs', args);
 }
 
@@ -116,6 +128,8 @@ const table = {
   'wk-add-task': () => task(rest),
   'take-task': () => takeTask(rest),
   'wk-take-task': () => takeTask(rest),
+  env: () => env(rest),
+  'wk-env': () => env(rest),
   watch: () => script('wk-watch.mjs', rest),
   'wk-watch': () => script('wk-watch.mjs', rest),
   status: () => script('wk-status.mjs', rest),

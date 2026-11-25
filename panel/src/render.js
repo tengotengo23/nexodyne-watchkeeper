@@ -602,6 +602,19 @@ function renderRoutes(m) {
     + `<p class="hint">In Antigravity you pick the model in the model menu, or in the automation; a plugin cannot set it. So the queue shows the suggested model and the one the session reported.</p></details>` + hookPassLine(m);
 }
 
+// P2-282: the automation prompt as the owner would paste it, and the commands that suit this computer. Both closed by default.
+function renderAutomation(m) {
+  const a = m.automation || {};
+  const env = a.env || null;
+  const prompt = a.text ? `<details class="automation-prompt" id="automation-prompt" data-id="wk-automation-prompt"><summary>Show the automation prompt</summary>`
+    + `<pre class="automation-text">${esc(a.text)}</pre></details>` : '';
+  const lines = D.envCommandsText(env);
+  const cmds = lines ? `<details class="env-commands" id="env-commands" data-id="wk-env-commands"><summary>Commands for this computer (${esc(env.name)}, ${esc(env.shell)})</summary>`
+    + `<pre class="automation-text">${esc(lines)}</pre>`
+    + `<div class="actions"><button type="button" class="btn btn-secondary" data-cmd="copyEnvCommands">Copy the commands</button></div></details>` : '';
+  return prompt + cmds;
+}
+
 // ---------------------------------------------------------------- P2-227: jobs, projects and the phone
 const JOB_WORDS = { queued: 'Waiting to start', running: 'Running', waiting: 'Waiting for your reply', done: 'Done', failed: 'Failed', stopped: 'Stopped' };
 const JOB_SHAPE = { queued: 'unknown', running: 'running', waiting: 'holding', done: 'done', failed: 'stopped', stopped: 'stopped' };
@@ -1253,7 +1266,7 @@ function renderSections(m, open) {
     mode: lite ? 'sessions' : 'full', untrusted, about: local ? renderAbout(m) : renderAboutWeb(m), status: (local ? renderStatus(m) : webStatus(m)) + (untrusted ? UNTRUSTED_NOTE : ''), pace: renderPace(m), spend: renderSpend(m), sessions: renderSessions(m, open), advice: renderAdvice(m), inbox: renderInbox(m), controls: renderControls(m), version: renderUpdate(m) + (local && !lite ? renderChannelUpdate(m) : ''),
     updated: `Updated ${when(m.now, m.now).replace('today ', '')}`,
     // P2-223: the new sections (data-needs="waiting" and "gemini") show only with the plugin
-    waiting: lite ? '' : renderWaiting(m), bridge: lite ? '' : renderBridge(m), gemini: lite ? '' : renderGemini(m), routes: lite ? '' : renderRoutes(m),
+    waiting: lite ? '' : renderWaiting(m), bridge: lite ? '' : renderBridge(m), gemini: lite ? '' : renderGemini(m), routes: lite ? '' : renderRoutes(m), automation: lite ? '' : renderAutomation(m),
     // P2-227: jobs, projects and the phone (data-needs "jobs", "projects", "phone"), also only with the plugin
     jobs: lite ? '' : renderJobs(m), projects: lite ? '' : renderProjects(m), phone: lite ? '' : renderPhone(m),
     // v0.8.0: active Re-Prompt / Carbon High Orchestrator / Skills Library / Wide Rail
@@ -1293,6 +1306,7 @@ ${styleUris.map(u => `<link rel="stylesheet" href="${esc(u)}">`).join('\n')}
   <header class="top">
     <div class="slot" data-slot="status"><p class="status status-unknown">${SHAPES.unknown}<span class="status-word">Reading…</span></p></div>
     <div class="top-actions">
+      <button type="button" class="btn btn-small" data-cmd="chatTakeTask" data-where="top" data-plugin-only="1" hidden title="Take the next queued task; Gemini works on it in the chat section">/wk-take-task</button>
       <button type="button" class="btn btn-secondary btn-small wk-only-sidebar" data-cmd="openWorkspace">Full IDE</button>
       <button type="button" class="btn btn-secondary btn-small wk-only-full" data-cmd="toggleMaximize">Maximize</button>
       <button type="button" class="btn btn-secondary btn-small wk-only-full" data-cmd="popOutWorkspace">Pop Out</button>
@@ -1301,6 +1315,7 @@ ${styleUris.map(u => `<link rel="stylesheet" href="${esc(u)}">`).join('\n')}
       <span class="updated slot" data-slot="updated"></span>
     </div>
   </header>
+  <p class="feedback" id="feedback-top" aria-live="polite"></p>
   <div class="wk-statusbar slot" data-slot="statusbar" data-plugin-only="1" hidden></div>
   <div id="wk-waiting-panel" class="wk-inline-panel" hidden>
   <section aria-labelledby="h-waiting" data-needs="waiting" hidden><h2 id="h-waiting">Waiting for you</h2><div class="slot" data-slot="waiting"></div>
@@ -1348,6 +1363,7 @@ ${styleUris.map(u => `<link rel="stylesheet" href="${esc(u)}">`).join('\n')}
     <p class="hint">Gemini takes tasks when you type /wk-take-task in Antigravity, or from an automation you set up once.</p>
     <button type="button" class="btn btn-secondary" data-cmd="copyAutomation">Copy the automation prompt</button>
     <p class="feedback" id="feedback-copy" aria-live="polite"></p>
+    <div class="slot" data-slot="automation"></div>
     <div class="slot" data-slot="routes"></div>
   </section>
   </details>
@@ -1484,4 +1500,4 @@ ${styleUris.map(u => `<link rel="stylesheet" href="${esc(u)}">`).join('\n')}
 </html>`;
 }
 
-module.exports = { renderApiKeys, GEMINI_FREE_NOTICE, renderBridge, BRIDGE_TONE, dagCard, renderChannel, renderChannelUpdate, statusLineText, renderUsage, resetLine, promptBadge, repromptDrawer, ICONS, geminiLabelOf, renderStatusBar, waitingCount, renderSkillReview, limitsLabel, isArchivedWk, graphBadgeText, renderJobs, renderProjects, renderPhone, renderOrchestrator, renderSkills, renderRail, renderChatThread, eventLine, isLocal, LOCAL_LINE, JOB_WORDS, renderWaiting, renderGemini, renderRoutes, expandable, sessionsOnly, renderAbout, esc, when, ago, span, pct, usd, tok, lockSince, reasonWords, status, paceSentence, renderStatus, renderPace, renderSpend, renderSessions, renderAdvice, renderUpdate, renderInbox, renderControls, renderSections, renderPage };
+module.exports = { renderAutomation, renderApiKeys, GEMINI_FREE_NOTICE, renderBridge, BRIDGE_TONE, dagCard, renderChannel, renderChannelUpdate, statusLineText, renderUsage, resetLine, promptBadge, repromptDrawer, ICONS, geminiLabelOf, renderStatusBar, waitingCount, renderSkillReview, limitsLabel, isArchivedWk, graphBadgeText, renderJobs, renderProjects, renderPhone, renderOrchestrator, renderSkills, renderRail, renderChatThread, eventLine, isLocal, LOCAL_LINE, JOB_WORDS, renderWaiting, renderGemini, renderRoutes, expandable, sessionsOnly, renderAbout, esc, when, ago, span, pct, usd, tok, lockSince, reasonWords, status, paceSentence, renderStatus, renderPace, renderSpend, renderSessions, renderAdvice, renderUpdate, renderInbox, renderControls, renderSections, renderPage };

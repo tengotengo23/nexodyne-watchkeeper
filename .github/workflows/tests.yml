@@ -1,0 +1,42 @@
+# P2-282: the tests on Linux, Windows and macOS. Nothing here publishes, signs or deploys.
+name: tests
+on:
+  push:
+  pull_request:
+permissions:
+  contents: read
+jobs:
+  node:
+    name: node (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: git identity for the tests that make commits
+        run: |
+          git config --global user.name "watchkeeper-ci"
+          git config --global user.email "ci@invalid.example"
+          git config --global init.defaultBranch main
+      - name: wk env
+        run: node bin/wk.mjs env
+      - name: node tests
+        # Node expands the glob itself, so the same line works in bash and in PowerShell.
+        run: node --test "test/*.test.mjs"
+  python:
+    name: python (ubuntu-latest)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: python tests
+        run: python -m unittest discover -s tests -p 'test_*.py'

@@ -2,7 +2,10 @@
 // developer's clone and the other computer's clone, made from this folder's files. HOME, WK_HOME, the Gemini plugin
 // folder, the editors (fake command lines) and launchd (a fake launchctl) all point into it, so the real ~/.wk,
 // LaunchAgents, ~/.gemini and editors are never touched.
-import test from 'node:test';
+import nodeTest from "node:test";
+// P2-282: these tests run sh stubs (launchctl, systemctl, sh -c); on Windows each one is skipped with the reason.
+const UNIX_ONLY = process.platform === "win32" && "needs sh stub scripts (launchctl, systemctl, sh -c), which Windows does not run";
+const test = UNIX_ONLY ? (name, o, f) => nodeTest(name, { ...(typeof o === "object" && o ? o : {}), skip: UNIX_ONLY }, typeof o === "function" ? o : f) : nodeTest;
 import assert from 'node:assert';
 import fs from 'node:fs';
 import os from 'node:os';

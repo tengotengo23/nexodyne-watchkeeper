@@ -2,7 +2,10 @@
 // Built into a temp folder from this checkout, then run the way Antigravity runs it: hooks through `sh -c` in the plugin
 // folder with PLUGIN_ROOT and PLUGIN_DATA set, the MCP server through sh, the bin/ tools by path and through a symlink.
 // A temp HOME and WK_HOME for every run; the real ~/.gemini and ~/.wk are never touched; nothing here runs agy.
-import test from 'node:test';
+import nodeTest from "node:test";
+// P2-282: these tests run sh stubs (launchctl, systemctl, sh -c); on Windows each one is skipped with the reason.
+const UNIX_ONLY = process.platform === "win32" && "needs sh stub scripts (launchctl, systemctl, sh -c), which Windows does not run";
+const test = UNIX_ONLY ? (name, o, f) => nodeTest(name, { ...(typeof o === "object" && o ? o : {}), skip: UNIX_ONLY }, typeof o === "function" ? o : f) : nodeTest;
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';

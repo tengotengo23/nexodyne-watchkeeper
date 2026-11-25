@@ -21,17 +21,23 @@ test('automationText: an older config without Desk rules copies exactly as befor
 });
 
 test('automationText: the shipped prompt carries the Desk rules, inbox --brief and the setup lines', () => {
-  const t = D.automationText({ prompt: real.automation_prompt, desk_rules: real.desk_rules }, '/opt/wk', 'Asia/Tbilisi');
+  const t = D.automationText({ prompt: real.automation_prompt, desk_rules: real.desk_rules, automation_schedule: real.automation_schedule,
+    run_budget_minutes: real.run_budget_minutes, max_tasks_per_run: real.max_tasks_per_run, max_tasks_per_day: real.max_tasks_per_day }, '/opt/wk', 'Asia/Tbilisi');
   assert.ok(t.startsWith('Watchkeeper Gemini Desk. First run `node /opt/wk/bin/wk-task.mjs inbox --brief`.'));
-  assert.ok(t.includes(real.desk_rules + ' If /wk-take-task is not available here, use the commands instead: `node /opt/wk/bin/wk-task.mjs take` to take the task and read its brief, and `node /opt/wk/bin/wk-task.mjs done <id> --note "<one line>"` when finished. Take at most one task in this run.'), 'rules inserted once, no double full stop, then the fallback commands');
+  assert.ok(t.includes(real.desk_rules + ' Take the first task with /wk-take-task --run new (without the skill: `node /opt/wk/bin/wk-task.mjs take --run new`), read the brief whole, do the work in its worktree, and finish it with `node /opt/wk/bin/wk-task.mjs done <id> --note "<one line>"`.'), 'rules inserted once, no double full stop, then the run commands');
   assert.equal(t.split(real.desk_rules).length, 2, 'the Desk rules appear exactly once');
   assert.ok(!t.includes('<desk_rules>') && !t.includes('<ABS>'));
-  assert.match(t, /Custom cron schedule: CRON_TZ=Asia\/Tbilisi 0 8-23 \* \* \*/);
-  assert.match(t, /Model: Pro/);
+  const sc = real.automation_schedule;
+  assert.ok(t.includes(`Schedule (custom cron): CRON_TZ=Asia/Tbilisi ${sc.default}`));
+  assert.ok(t.includes(`Quieter: ${sc.quiet}`));
+  assert.ok(!t.includes('<budget>') && t.includes(`about ${real.run_budget_minutes} minutes`));
+  assert.match(t, /Watchkeeper never installs or switches on an automation/);
+  assert.match(t, /Model: the strongest one your plan offers/);
+  assert.ok(!/Agent Manager|Flash|Pro \(/.test(t), 'no claims about the IDE\'s menus or model names');
 });
 
 test('automationText: a path with a space or a quote is shell-quoted; a bad zone falls back to UTC', () => {
-  const g = { prompt: real.automation_prompt, desk_rules: real.desk_rules };
+  const g = { prompt: real.automation_prompt, desk_rules: real.desk_rules, automation_schedule: real.automation_schedule };
   assert.ok(D.automationText(g, '/Users/x/My Plugins/wk', 'UTC').includes("`node '/Users/x/My Plugins/wk'/bin/wk-task.mjs inbox --brief`"));
   assert.ok(D.automationText(g, "/tmp/it's", 'UTC').includes(`'/tmp/it'\\''s'/bin`));
   assert.match(D.automationText(g, '/opt/wk', 'Bad Zone; rm -rf'), /CRON_TZ=UTC /);

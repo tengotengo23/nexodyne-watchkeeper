@@ -1,5 +1,8 @@
 // Tests bin/wk-skill-sync.mjs: 24h launchd plist generation, status reporting, KILL switch gating, and install/uninstall.
-import test, { after } from 'node:test';
+import nodeTest, { after } from "node:test";
+// P2-282: these tests run sh stubs (launchctl, systemctl, sh -c); on Windows each one is skipped with the reason.
+const UNIX_ONLY = process.platform === "win32" && "needs sh stub scripts (launchctl, systemctl, sh -c), which Windows does not run";
+const test = UNIX_ONLY ? (name, o, f) => nodeTest(name, { ...(typeof o === "object" && o ? o : {}), skip: UNIX_ONLY }, typeof o === "function" ? o : f) : nodeTest;
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';

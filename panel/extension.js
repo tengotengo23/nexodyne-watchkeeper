@@ -66,7 +66,7 @@ const WORKSPACE_VIEW = 'watchkeeper.workspacePanel';
 const EVERY_MS = 30 * 1000;
 // P2-223: where a command's result shows (under the section it came from)
 const WHERE = {
-  answerQuestion: 'waiting', laterQuestion: 'waiting', decideSuggestion: 'waiting', openTaskDiff: 'gemini', addTask: 'task', copyAutomation: 'copy',
+  answerQuestion: 'waiting', laterQuestion: 'waiting', decideSuggestion: 'waiting', openTaskDiff: 'gemini', addTask: 'task', copyAutomation: 'copy', copyEnvCommands: 'copy',
   // P2-227
   jobStart: 'jobs', jobReply: 'jobs', jobStop: 'jobs', removal: 'waiting', watchdogScan: 'jobs', watchdogRecover: 'jobs', trustKey: 'phone', rejectKey: 'phone', remoteOn: 'phone', remoteOff: 'phone',
   // v0.8.0 + v2.1.0
@@ -394,25 +394,26 @@ class Panel {
     });
   }
 
-  async takeWatchkeeperTaskIntoSession(paths, { taskId = '', source = 'manual' } = {}) {
+  // P2-282: `where` names the feedback line a manual press reports to ('top' for the button at the top of the panel, else the chat's)
+  async takeWatchkeeperTaskIntoSession(paths, { taskId = '', source = 'manual', where = 'reprompt' } = {}) {
     if (!trusted()) {
-      if (source === 'manual') this.reply(false, UNTRUSTED, false, 'reprompt');
+      if (source === 'manual') this.reply(false, UNTRUSTED, false, where);
       return { taken: false };
     }
     if (!D.pluginInstalled(paths.pluginPath)) {
-      if (source === 'manual') this.reply(false, 'This needs the Watchkeeper plugin. Nothing was changed.', false, 'reprompt');
+      if (source === 'manual') this.reply(false, 'This needs the Watchkeeper plugin. Nothing was changed.', false, where);
       return { taken: false };
     }
     if (this.takingTaskBusy) {
-      if (source === 'manual') this.reply(false, 'Watchkeeper is already running a queued task.', false, 'reprompt');
+      if (source === 'manual') this.reply(false, 'Watchkeeper is already running a queued task.', false, where);
       return { taken: false };
     }
     if (D.killState(D.killFilePath(paths.pluginPath, paths.home)).on) {
-      if (source === 'manual') this.reply(false, 'Wake-ups are stopped (the Stop switch is on).', false, 'reprompt');
+      if (source === 'manual') this.reply(false, 'Wake-ups are stopped (the Stop switch is on).', false, where);
       return { taken: false };
     }
     if (!this.reprompt || !this.reprompt.orchestrator) {
-      if (source === 'manual') this.reply(false, 'Orchestrator is not ready.', false, 'reprompt');
+      if (source === 'manual') this.reply(false, 'Orchestrator is not ready.', false, where);
       return { taken: false };
     }
 
@@ -424,8 +425,8 @@ class Panel {
       });
       if (!claimed.ok || !claimed.meta) {
         if (source === 'manual') {
-          if (claimed.code === 5) this.reply(true, 'No queued Watchkeeper tasks right now.', false, 'reprompt');
-          else this.reply(false, claimed.error || 'Could not claim Watchkeeper task.', false, 'reprompt');
+          if (claimed.code === 5) this.reply(true, 'No queued Watchkeeper tasks right now.', false, where);
+          else this.reply(false, claimed.error || 'Could not claim Watchkeeper task.', false, where);
         }
         return { taken: false };
       }
@@ -555,9 +556,13 @@ class Panel {
         } catch { /* best-effort */ }
         this.postChatState(paths, !trusted());
         await this.refresh();
+        if (source === 'manual' && where === 'top') {
+          this.reply(doneRes.ok, doneRes.ok ? `Task ${meta.id} is done; the result is in the chat section.`
+            : `Task ${meta.id} finished, but wk-task done reported a problem; see the chat section.`, false, where);
+        }
       } else {
         if (source === 'manual') {
-          this.reply(false, (updatedTurn && updatedTurn.error) || 'Task execution did not complete.', false, 'reprompt');
+          this.reply(false, (updatedTurn && updatedTurn.error) || 'Task execution did not complete.', false, where);
         }
         this.postChatState(paths, !trusted());
         await this.refresh();
@@ -915,7 +920,7 @@ class Panel {
       if (m.cmd === 'ready' || m.cmd === 'refresh') return this.refresh();
       // Everything below writes or runs the plugin's code: only with the plugin, so "writes nothing" holds by code, not by hidden buttons.
       if (!D.pluginInstalled(paths.pluginPath)) { this.reply(false, 'This needs the Watchkeeper plugin. Nothing was changed.'); return; }
-      if (RUNS.has(m.cmd) && !trusted()) { this.reply(false, UNTRUSTED, false, WHERE[m.cmd]); return; }
+      if (RUNS.has(m.cmd) && !trusted()) { this.reply(false, UNTRUSTED, false, m.cmd === 'chatTakeTask' && m.where === 'top' ? 'top' : WHERE[m.cmd]); return; }
       if (m.cmd === 'send') return this.answer(A.send(paths, m));
       // P2-278: the key goes from the box to the key store and nowhere else; the answer carries only provider, saved and the last four characters
       if (m.cmd === 'apiKeySave' || m.cmd === 'apiKeyCheck' || m.cmd === 'apiKeyRemove') return this.answer(await A.apiKey(paths, m));
@@ -956,8 +961,17 @@ class Panel {
         const g = D.readGeminiConfig(paths.pluginPath);
         if (!g.prompt) { this.reply(false, 'No automation prompt found in the plugin\'s config/gemini.json.', false, 'copy'); return; }
         let tz = 'UTC'; try { tz = Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC'; } catch { }
-        await vscode.env.clipboard.writeText(D.automationText(g, paths.pluginPath, tz));
+        const env = D.envSummary({ home: paths.home, wkHome: paths.dataDir, pluginPath: paths.pluginPath, platforms: D.readPlatforms(paths.pluginPath) });
+        await vscode.env.clipboard.writeText(D.automationText(g, paths.pluginPath, tz, env));
         this.reply(true, 'Copied. In Antigravity, make a new automation and paste this as its prompt.', false, 'copy');
+        return;
+      }
+      if (m.cmd === 'copyEnvCommands') {
+        const env = D.envSummary({ home: paths.home, wkHome: paths.dataDir, pluginPath: paths.pluginPath, platforms: D.readPlatforms(paths.pluginPath) });
+        const text = D.envCommandsText(env);
+        if (!text) { this.reply(false, 'No commands found for this computer in the plugin\'s config/platforms.json.', false, 'copy'); return; }
+        await vscode.env.clipboard.writeText(text);
+        this.reply(true, 'Copied the commands for this computer.', false, 'copy');
         return;
       }
       const file = D.killFilePath(paths.pluginPath, paths.home);
@@ -1102,7 +1116,7 @@ class Panel {
       }
       if (m.cmd === 'bridgeOpenAntigravity') return this.answer(await A.bridgeOpen(paths, m.taskId));
       if (m.cmd === 'chatTakeTask') {
-        await this.takeWatchkeeperTaskIntoSession(paths, { taskId: m.taskId || '', source: 'manual' });
+        await this.takeWatchkeeperTaskIntoSession(paths, { taskId: m.taskId || '', source: 'manual', where: m.where === 'top' ? 'top' : 'reprompt' });
         return;
       }
       if (m.cmd === 'chatHandoffToClaude') {

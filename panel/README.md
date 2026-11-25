@@ -10,6 +10,8 @@ Watchkeeper sits in the side bar by default (click **W** on the Activity Bar). I
 
 While the panel is open it reads again every 30 seconds; **Refresh** reads at once.
 
+At the top, **/wk-take-task** takes the next queued task and lets Gemini work on it in the chat section; what happened shows under the header. It needs the plugin and a trusted folder, and it does nothing while the Stop switch is on.
+
 ## Private by design
 
 - It reads files on your computer only: the session files in `~/.claude/projects` (of a long file only its start and its end), the locks folder if there is one, and one check whether the Watchkeeper plugin is installed. Without the plugin it reads nothing else.
@@ -40,7 +42,7 @@ The panel finds the installed plugin by itself. With it, the panel also shows:
 - **This week**: usage pace against your plan's weekly limit, read from the last headless run (empty until the steward or a job has run once), and the steward's wake-ups with their spend once you schedule it.
 - **Jobs** and **Projects**: start, reply to and stop `claude -p` jobs in a project you listed, with the model and mode you choose. Never with a flag that skips Claude Code's permission checks.
 - **Spend, last 7 days**: cost and calls per item and model from the ledger.
-- **Gemini**: the tasks queued for Gemini in Antigravity, their status and the model each kind suggests, Gemini's last sessions, and a form to hand Gemini a task. **Show the change** opens a finished task's diff before you decide; **OK** merges it.
+- **Gemini**: the tasks queued for Gemini in Antigravity, their status and the model each kind suggests, Gemini's last sessions, and a form to hand Gemini a task. Under it, **Show the automation prompt** (opt-in; Watchkeeper never switches an automation on) reads out the whole text the copy button gives, and **Commands for this computer** lists the stop, resume, inbox, take, done, watch, status and log commands filled in for this system, with a copy button. **Show the change** opens a finished task's diff before you decide; **OK** merges it.
 - **Answered for you**: the last questions Gemini put to Claude, with their answers.
 - A box for your notes, a **Wake-up switch** that stops all unattended work (it writes `~/.wk/KILL`), and **Updates**.
 

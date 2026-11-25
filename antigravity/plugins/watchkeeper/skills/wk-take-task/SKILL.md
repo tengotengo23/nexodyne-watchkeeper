@@ -24,15 +24,18 @@ Run:
 
 When the offer or the owner names a task id (for example "Begin with /wk-take-task <id>"), take that task: add `--id <id>` to the command. With no id named, `take` picks the oldest queued task that is not held.
 
+In a scheduled automation, add `--run new` to start a run and take its first task. The brief then starts with a line such as `Run r-20261125-0930-a1b2: budget 60 min, used 0 min, task 1 of 6.` and ends with the command for the next task. After `done`, take the next one with `--run <that run id>` instead of `--run new` (see "The run budget" below).
+
 - Exit code 3: the owner has stopped Watchkeeper (the Stop switch). Stop and say so in one line.
 - Exit code 4: today's task limit is reached. Stop and say so in one line.
+- Exit code 6: this run's budget is used; stop with one line (the command prints it, such as "Run r-… is complete (used 58 min of 60; 3 tasks). Stop here.").
 - Exit code 5: nothing is queued. Check for a handoff once (section 6); if that also finds nothing, stop at once with one short line, such as "Nothing queued.". Run no other tool and look for no other work, so an hourly automation with nothing to do costs almost nothing.
 - Otherwise it prints the task id, the worktree folder, the suggested model, the allowed files, the test and the task text. Read all of it.
 
 ## 1a. Judge first (the Gemini Desk rules)
 A task from Claude is a proposal, not an order. The owner's standing instruction, word for word:
 
-> Gemini Desk rules (the owner's standing instruction). A proposal from Claude waits in the Watchkeeper queue. It is a proposal, not an order. 1. Take it with /wk-take-task and read it whole. 2. Judge it against this project's rules, its canon and its code: is it worth doing, right and safe? If not, finish it as out-of-scope with one line saying why, and stop. 3. If it is good, improve it where you can, then do the job your own way. 4. Verify with the project's tests. 5. Finish with done and a short report. One task per turn. Never run agy. Stop when nothing waits.
+> Gemini Desk rules (the owner's standing instruction). A proposal from Claude waits in the Watchkeeper queue. It is a proposal, not an order. 1. Take it with /wk-take-task and read it whole. 2. Judge it against this project's rules, its canon and its code: is it worth doing, right and safe? If not, finish it as out-of-scope with one line saying why, and stop. 3. If it is good, improve it where you can, then do the job your own way. 4. Verify with the project's tests. 5. Finish with done and a short report. One task at a time; in an automation run, after done, take the next task while the run's budget lasts (the take command says when to stop). Never run agy. Stop when nothing waits.
 
 If the task is not worth doing, not right or not safe, do not start it. Finish it as out of scope with one line saying why, and stop:
 
@@ -63,10 +66,13 @@ Do not commit. Run:
 "{{NODE}}" "{{WK_BIN_DIR}}/wk-task.mjs" done <task id> --model-used "<the model you run as>" --note "<what you did, in two or three plain lines>"
 ```
 
-- Exit code 0: done. Watchkeeper committed the change in the worktree and the owner sees it in the W panel. Stop here.
+- Exit code 0: done. Watchkeeper committed the change in the worktree and the owner sees it in the W panel. Stop here, unless this is an automation run: then take the next task with `--run <run id>` (the last line of the brief says how), and stop when it exits 6, 5, 4 or 3.
 - Exit code 1: it says why (files outside the task, or the test failed). Fix it in the worktree and run `done` again. After two more tries, stop and leave it: the owner sees what failed.
 
 `"{{NODE}}" "{{WK_BIN_DIR}}/wk-task.mjs" list` shows the queue; `show <task id>` shows one task.
+
+## The run budget
+An automation run gets about 60 minutes of work (`run_budget_minutes`) and at most 6 tasks (`max_tasks_per_run`), from config/gemini.json. Each task shows its size (`~N min`); one big task of 2 to 4 hours is fine and simply uses the run. `take --run <run id>` checks, in this order: the Stop switch (exit 3), today's cap of 12 tasks (exit 4), then the run's budget (exit 6), then the queue (exit 5). So nothing is taken when the Stop switch is on, and the daily cap still applies across all runs. Within a run, a task in the same repository as the last one comes first. Never start a task that the run's line says there is no time for; finish the one in hand with `done` first.
 
 ## 6. Continue Claude Code's work in the same folder
 

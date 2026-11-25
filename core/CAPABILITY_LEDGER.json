@@ -2,7 +2,7 @@
   "schema_version": "2.0.0",
   "generated_at": "2026-11-22T16:34:55.625868+00:00",
   "summary": {
-    "total_capabilities": 161,
+    "total_capabilities": 162,
     "watchkeeper_counts": {
       "bin": 37,
       "hooks": 8,
@@ -10,7 +10,7 @@
       "agents": 4,
       "skills": 8,
       "panel": 25,
-      "antigravity": 28
+      "antigravity": 29
     },
     "reprompt_v130_files": 45,
     "graphify_status": {
@@ -1085,6 +1085,17 @@
       "lifecycle_trigger": "AntigravityPluginInstall",
       "target_unified_module": "antigravity/plugins/watchkeeper/plugin.json",
       "verification_assertion": "file_exists('antigravity/plugins/watchkeeper/plugin.json')"
+    },
+    {
+      "id": "agy-antigravity/plugins/watchkeeper/rules/bedrock.md",
+      "origin_component": "watchkeeper",
+      "source_file": "antigravity/plugins/watchkeeper/rules/bedrock.md",
+      "symbols_or_entrypoints": [
+        "bedrock.md"
+      ],
+      "lifecycle_trigger": "AntigravityPluginInstall",
+      "target_unified_module": "antigravity/plugins/watchkeeper/rules/bedrock.md",
+      "verification_assertion": "file_exists('antigravity/plugins/watchkeeper/rules/bedrock.md')"
     },
     {
       "id": "agy-antigravity/plugins/watchkeeper/rules/graphify.md",

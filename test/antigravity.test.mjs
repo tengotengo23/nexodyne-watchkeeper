@@ -30,7 +30,7 @@ test('the plugin source: one version, the named parts, valid front matter', () =
     'agents/wk-builder.md', 'agents/wk-reviewer.md', 'agents/wk-scout.md',
     'assets/logo.svg',
     'hooks.json', 'mcp_config.json', 'plugin.json',
-    'rules/graphify.md', 'rules/re-prompt.md', 'rules/watchkeeper.md',
+    'rules/bedrock.md', 'rules/graphify.md', 'rules/re-prompt.md', 'rules/watchkeeper.md',
     'skills/ask-api/SKILL.md', 'skills/ask-claude/SKILL.md', 'skills/duo-orchestrator/SKILL.md',
     'skills/graphify/SKILL.md',
     'skills/graphify/references/add-watch.md', 'skills/graphify/references/exports.md',
@@ -57,6 +57,7 @@ test('the plugin source: one version, the named parts, valid front matter', () =
   assert.equal(front(fs.readFileSync(path.join(SRC, 'rules', 'watchkeeper.md'), 'utf8')).trigger, 'always_on');
   assert.equal(front(fs.readFileSync(path.join(SRC, 'rules', 'graphify.md'), 'utf8')).trigger, 'always_on');
   assert.equal(front(fs.readFileSync(path.join(SRC, 'rules', 're-prompt.md'), 'utf8')).trigger, 'always_on');
+  assert.equal(front(fs.readFileSync(path.join(SRC, 'rules', 'bedrock.md'), 'utf8')).trigger, 'always_on', 'P2-287: the bedrock rule is always on');
   const rules = fs.readFileSync(path.join(SRC, 'rules', 'watchkeeper.md'), 'utf8');
   assert.match(rules, /[Nn]ever push/);
   const hooks = JSON.parse(fs.readFileSync(path.join(SRC, 'hooks.json'), 'utf8'));
@@ -76,12 +77,12 @@ test('the plugin source: one version, the named parts, valid front matter', () =
 test('install into a temp home: every part, absolute paths, no placeholder left, hooks.json valid', () => {
   const s = sandbox();
   const dry = s.run('wk-antigravity.mjs', ['install', '--dry-run']);
-  assert.equal(dry.status, 0, dry.stderr); assert.match(dry.stdout, /would be installed: ~\/\.gemini\/config\/plugins\/watchkeeper \(29 files\)/);
+  assert.equal(dry.status, 0, dry.stderr); assert.match(dry.stdout, /would be installed: ~\/\.gemini\/config\/plugins\/watchkeeper \(30 files\)/);
   assert.ok(!fs.existsSync(s.target), 'a dry run writes nothing');
   const st0 = JSON.parse(s.run('wk-antigravity.mjs', ['status', '--json']).stdout); assert.equal(st0.installed, false);
   assert.match(s.run('wk-antigravity.mjs', ['status']).stdout, /Not installed/);
   const r = s.run('wk-antigravity.mjs', ['install']);
-  assert.equal(r.status, 0, r.stderr); assert.match(r.stdout, /installed: ~\/\.gemini\/config\/plugins\/watchkeeper \(29 files\)\./); assert.match(r.stdout, /next conversation/);
+  assert.equal(r.status, 0, r.stderr); assert.match(r.stdout, /installed: ~\/\.gemini\/config\/plugins\/watchkeeper \(30 files\)\./); assert.match(r.stdout, /next conversation/);
   assert.deepEqual(walk(s.target), walk(SRC));
   for (const f of walk(s.target)) assert.ok(!fs.readFileSync(path.join(s.target, f), 'utf8').includes('{{'), `${f} has a placeholder left`);
   const bin = path.join(root, 'bin');
@@ -115,7 +116,7 @@ test('install into a temp home: every part, absolute paths, no placeholder left,
   assert.equal(fs.readFileSync(path.join(s.target, 'skills', 'ask-claude', 'SKILL.md'), 'utf8'), fs.readFileSync(path.join(SRC, 'skills', 'ask-claude', 'SKILL.md'), 'utf8').split('{{NODE}}').join(process.execPath).split('{{WK_BIN}}').join(path.join(bin, 'wk-ask-claude.mjs')), 'ask-claude unchanged apart from its paths');
   const st = JSON.parse(s.run('wk-antigravity.mjs', ['status', '--json']).stdout);
   assert.deepEqual({ ...st, target: 'x' }, { target: 'x', installed: true, current: true, self_contained: false, version: st.source_version, source_version: st.source_version,
-    skills: ['ask-api', 'ask-claude', 'duo-orchestrator', 'graphify', 'profession-skill-vault', 're-prompt', 'wk', 'wk-add-task', 'wk-status', 'wk-suggest', 'wk-take-task'], agents: ['wk-builder', 'wk-reviewer', 'wk-scout'], rules: ['graphify.md', 're-prompt.md', 'watchkeeper.md'], hooks: true, mcp: true, pass: st.pass });
+    skills: ['ask-api', 'ask-claude', 'duo-orchestrator', 'graphify', 'profession-skill-vault', 're-prompt', 'wk', 'wk-add-task', 'wk-status', 'wk-suggest', 'wk-take-task'], agents: ['wk-builder', 'wk-reviewer', 'wk-scout'], rules: ['bedrock.md', 'graphify.md', 're-prompt.md', 'watchkeeper.md'], hooks: true, mcp: true, pass: st.pass });
   assert.equal(st.pass.pass, 'ask', 'no Antigravity settings in this home: ask'); assert.equal(st.pass.source, 'detected');
   assert.match(s.run('wk-antigravity.mjs', ['status']).stdout, /up to date/);
   assert.match(s.run('wk-antigravity.mjs', ['install']).stdout, /already up to date/);

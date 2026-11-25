@@ -1,4 +1,4 @@
-# Watchkeeper · v3.7.1
+# Watchkeeper · v3.8.0
 
 **Watchkeeper is an open-source (MIT), local-first AI coding control plane and full-IDE workspace for Claude Code and Google Antigravity.** It unifies fail-closed tool & secret guards, test-verified completion gates (`done` evidence), an integrated **Re-Prompt** prompt-normalization studio, a **Running Tasks** cockpit, an auto-updating **Skills Library** that discovers trending GitHub agent skills daily, and a Claude-limit handover (the Gemini lane by quota, or the task queue for Antigravity) so work is not lost when Claude Code plan or rate limits run out. Everything stays in local files on your machine — zero Nexodyne servers, zero accounts, and zero telemetry.
 
@@ -99,7 +99,7 @@ Each release from 3.2.0 also carries `watchkeeper-antigravity-<version>.zip`: th
 node <plugin>/bin/wk-graphify.mjs install
 ```
 
-This installs pinned Graphify (`graphifyy[mcp]==0.9.115`) via `uv`/`pipx`, copies the unified Watchkeeper Antigravity plugin (skills including `/graphify`, `/re-prompt`, `/duo-orchestrator`, `/profession-skill-vault`, `/wk-status`, three subagents, always-on rules, MCP server, and Watchkeeper + Re-Prompt hooks) to `~/.gemini/config/plugins/watchkeeper`, registers `/graphify` globally for Claude Code, and locally bootstraps `~/.gemini/skill-vault/index.json` offline. To install only the Antigravity plugin, run `node <plugin>/bin/wk-antigravity.mjs install` (`--dry-run` shows what it would do; `node <plugin>/bin/wk-status.mjs` prints the full unified status). Run again after each plugin update.
+This installs pinned Graphify (`graphifyy[mcp]==0.9.115`) via `uv`/`pipx`, copies the unified Watchkeeper Antigravity plugin (skills including `/graphify`, `/re-prompt`, `/duo-orchestrator`, `/profession-skill-vault`, `/wk-status`, three subagents, four always-on rules (bedrock: evidence before claims, open source first, Graphify and lean reads, skills on demand; Watchkeeper; graphify; re-prompt), MCP server, and Watchkeeper + Re-Prompt hooks) to `~/.gemini/config/plugins/watchkeeper`, registers `/graphify` globally for Claude Code, and locally bootstraps `~/.gemini/skill-vault/index.json` offline. To install only the Antigravity plugin, run `node <plugin>/bin/wk-antigravity.mjs install` (`--dry-run` shows what it would do; `node <plugin>/bin/wk-status.mjs` prints the full unified status). Run again after each plugin update.
 
 ## What the panel does
 

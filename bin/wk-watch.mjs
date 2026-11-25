@@ -14,7 +14,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { execFile, spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
-import { holdOf, heldTasks, pruneBridge, readCrossings, waitRoute, isOn } from './wk-bridge.mjs';
+import { holdOf, heldTasks, pruneBridge, readCrossings, waitRoute, isOn, geminiChainOn, offered1h } from './wk-bridge.mjs';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const SCRIPT = path.join(HERE, 'wk-watch.mjs');
@@ -81,7 +81,8 @@ export function bridgeState({ now = new Date(), queued = 0, forClaude = 0 } = {}
     on: isOn(),
     counts: { queued_for_gemini: queued, waiting_for_claude: forClaude, in_flight: inFlight.length, done_24h: done24, stalled: stalled.length },
     stalled_ids: stalled,
-    routes: { claude_wait: waitRoute('claude'), hooks: isOn() ? 'on' : 'off', last_automation_run: autoMark ? new Date(autoMark).toISOString() : null },
+    routes: { claude_wait: waitRoute('claude'), hooks: isOn() ? 'on' : 'off', last_automation_run: autoMark ? new Date(autoMark).toISOString() : null,
+      gemini_chain: { on: geminiChainOn(), offered_1h: offered1h(now.getTime()) } },
     last_crossings: readCrossings(10),
   };
 }

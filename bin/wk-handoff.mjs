@@ -14,6 +14,9 @@
 //     wk-handoff request --why "<text>" [--hours N]  W's request to every session (default 2 hours); sessions answer at their next Stop
 //     wk-handoff request --off                       withdraw it
 //     wk-handoff install [--apply] | uninstall [--apply]   add or remove the hooks (and the status line, only when you have none) in ~/.claude/settings.json (dry run without --apply; backup first)
+//       (P2-279: install also registers the Re-Prompt MCP server for Claude Code with `claude mcp add --scope user`, when
+//        `claude` is on PATH, ~/.claude.json has no re-prompt server yet and the Watchkeeper Claude Code plugin is not enabled,
+//        after a backup of ~/.claude.json; uninstall removes it only when install added it, marker <WK_HOME>/handoff/mcp-added)
 //     wk-handoff install --statusline-only [--apply]       add only the status line (no hooks); uninstall --statusline-only removes only ours
 // What W does after the file exists is /clear and nothing else: a hook cannot type /clear into a running Claude Code window, so for the
 // owner's own tabs W tells the owner (the Stop message) and the SessionStart hook does the loading afterwards; for jobs W runs itself
@@ -24,6 +27,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createRequire } from 'node:module';
+import { spawnSync } from 'node:child_process';
 import { wkHome, writePrivate, readJsonFile } from './remote-lib.mjs';
 import { resolveDataDir } from './rp-dir.mjs';
 
@@ -312,11 +316,60 @@ function settingsCmd(add, apply, hooks = true) {
   }
   const what = hooks ? 'the Stop and SessionStart (clear) hooks of wk-handoff' : 'the Watchkeeper status line (no hooks)';
   if (!apply) { console.log(`${add ? 'Would add' : 'Would remove'} ${what} in ${f}. Run again with --apply; the old file is backed up first.`); return 0; }
-  const bk = path.join(wkHome(), 'backups', `settings.json.${stamp()}-before-handoff`); ensure(path.dirname(bk)); if (fs.existsSync(f)) fs.copyFileSync(f, bk);
+  const bk = path.join(wkHome(), 'backups', `settings.json.${stamp()}-before-handoff`); ensure(path.dirname(bk));
+  const bkNote = fs.existsSync(f) ? (fs.copyFileSync(f, bk), bk) : `none (${f} did not exist before)`;
   ensure(path.dirname(f));
   const tmp = `${f}.${process.pid}.tmp`; fs.writeFileSync(tmp, JSON.stringify(next, null, 2) + '\n', { mode: 0o600 }); fs.renameSync(tmp, f);
-  if (!hooks) { console.log(`${add ? 'Added' : 'Removed'} the Watchkeeper status line in ${f}. Backup: ${bk}. New Claude Code sessions ${add ? 'show' : 'no longer show'} it.`); return 0; }
-  console.log(`${add ? 'Installed' : 'Removed'} the wk-handoff hooks in ${f}. Backup: ${bk}. New Claude Code sessions use them.${add && cur.statusLine && !String(cur.statusLine.command || '').includes('wk-handoff.mjs') ? ' You already have a status line, so it was left alone: without wk-handoff statusline the usage limits are not seen.' : ''}`); return 0;
+  if (!hooks) { console.log(`${add ? 'Added' : 'Removed'} the Watchkeeper status line in ${f}. Backup: ${bkNote}. New Claude Code sessions ${add ? 'show' : 'no longer show'} it.`); return 0; }
+  console.log(`${add ? 'Installed' : 'Removed'} the wk-handoff hooks in ${f}. Backup: ${bkNote}. New Claude Code sessions use them.${add && cur.statusLine && !String(cur.statusLine.command || '').includes('wk-handoff.mjs') ? ' You already have a status line, so it was left alone: without wk-handoff statusline the usage limits are not seen.' : ''}`); return 0;
+}
+
+// P2-279: the Re-Prompt MCP server (ask_gemini, ask_claude, the rewrite tools) for Claude Code. Only the real ~/.claude.json is
+// handled, and only when the Claude home is the real one, so a test or a custom WK_CLAUDE_HOME never reaches the user's file.
+export const mcpServerScript = () => path.join(path.dirname(SELF), '..', 'reprompt', 'claude-code-plugin', 'bin', 'run-mcp.py');
+function onPath(name) {
+  for (const d of String(process.env.PATH || '').split(path.delimiter)) {
+    if (!d) continue; const f = path.join(d, name);
+    try { fs.accessSync(f, fs.constants.X_OK); if (fs.statSync(f).isFile()) return f; } catch { }
+  }
+  return null;
+}
+export const mcpMarker = () => path.join(dir(), 'mcp-added');
+function pluginEnabled() {
+  const st = readJsonFile(path.join(claudeHome(), 'settings.json'), {});
+  const ep = st && typeof st === 'object' ? st.enabledPlugins : null;
+  return !!(ep && typeof ep === 'object' && Object.keys(ep).some(k => k.startsWith('watchkeeper@') && ep[k] !== false));
+}
+export function mcpPlan(add) {
+  const realHome = path.resolve(claudeHome()) === path.resolve(os.homedir(), '.claude');
+  if (!realHome) return null;
+  const claude = onPath('claude'); if (!claude) return null;
+  const json = path.join(os.homedir(), '.claude.json'); let cur = {};
+  try { cur = JSON.parse(fs.readFileSync(json, 'utf8')); } catch (e) { if (e.code !== 'ENOENT') return { skip: `${json} is not valid JSON, so the Re-Prompt MCP server was left alone.` }; }
+  const has = !!(cur && typeof cur === 'object' && cur.mcpServers && typeof cur.mcpServers === 'object' && cur.mcpServers['re-prompt']);
+  if (add && has) return { skip: 'The Re-Prompt MCP server is already registered for Claude Code.' };
+  // The Watchkeeper Claude Code plugin brings its own re-prompt server; a second registration would duplicate the tools.
+  if (add && pluginEnabled()) return { skip: 'The Watchkeeper plugin for Claude Code is enabled and brings the Re-Prompt MCP server, so none was added.' };
+  if (!add && !has) return null;
+  // Uninstall removes only a server this command added (marker written on a successful add), never the owner's own.
+  if (!add && !fs.existsSync(mcpMarker())) return { skip: 'The Re-Prompt MCP server was not added by wk-handoff, so it was left in place.' };
+  const py = onPath('python3') || 'python3';
+  const args = add ? ['mcp', 'add', '--scope', 'user', 're-prompt', '--', py, path.resolve(mcpServerScript())] : ['mcp', 'remove', '--scope', 'user', 're-prompt'];
+  return { claude, json, args };
+}
+function mcpCmd(add, apply) {
+  const p = mcpPlan(add); if (!p) return 0;
+  if (p.skip) { console.log(p.skip); return 0; }
+  const shown = `claude ${p.args.map(x => (/^[\w./@+=-]+$/.test(x) ? x : JSON.stringify(x))).join(' ')}`;
+  if (!apply) { console.log(`Would ${add ? 'register' : 'remove'} the Re-Prompt MCP server for Claude Code: ${shown} (${p.json} is backed up first).`); return 0; }
+  const bk = path.join(wkHome(), 'backups', `claude.json.${stamp()}-before-handoff`); ensure(path.dirname(bk));
+  let bkNote = `none (${p.json} did not exist before)`;
+  try { if (fs.existsSync(p.json)) { fs.copyFileSync(p.json, bk); fs.chmodSync(bk, 0o600); bkNote = bk; } } catch { console.error(`Could not back up ${p.json}; the MCP server was left alone.`); return 1; }
+  const r = spawnSync(p.claude, p.args, { encoding: 'utf8', timeout: 60000, stdio: ['ignore', 'pipe', 'pipe'] });
+  if (r.status !== 0) { console.error(`${shown} failed (exit ${r.status === null ? 'timeout' : r.status}); nothing else changed. Backup: ${bkNote}.`); return 1; }
+  try { if (add) { ensure(dir()); fs.writeFileSync(mcpMarker(), `${new Date().toISOString()}\n`); } else fs.rmSync(mcpMarker(), { force: true }); } catch { }
+  console.log(`${add ? 'Registered' : 'Removed'} the Re-Prompt MCP server for Claude Code. Backup: ${bkNote}. New Claude Code sessions ${add ? 'have' : 'no longer have'} ask_gemini and ask_claude.`);
+  return 0;
 }
 
 export function main(argv) {
@@ -343,7 +396,10 @@ export function main(argv) {
     ensure(dir()); writePrivate(requestFile(), JSON.stringify({ at: new Date().toISOString(), why, until: Date.now() + h * 36e5 })); log({ kind: 'request', why, hours: h });
     console.log(`Every session is asked for a continue file at its next Stop, for ${h} hour(s).`); return 0;
   }
-  if (cmd === 'install' || cmd === 'uninstall') return settingsCmd(cmd === 'install', a.includes('--apply'), !a.includes('--statusline-only'));
+  if (cmd === 'install' || cmd === 'uninstall') {
+    const hooks = !a.includes('--statusline-only'), code = settingsCmd(cmd === 'install', a.includes('--apply'), hooks);
+    return code === 0 && hooks ? mcpCmd(cmd === 'install', a.includes('--apply')) : code;
+  }
   console.error('usage: wk-handoff stop | start | statusline | status [--json] | request --why "<text>" [--hours N] | request --off | install [--apply] [--statusline-only] | uninstall [--apply] [--statusline-only]'); return 2;
 }
 

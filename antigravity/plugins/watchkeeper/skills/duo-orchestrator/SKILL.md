@@ -32,3 +32,4 @@ Use this skill when the user wants to inspect quota/pacing across Gemini and Cla
      ```
    - Always surface which provider and model handled the step, `reason_summary`, and any `[Skills: ...]` directives.
    - When Claude Code usage/rate limits run out (`~/.wk/steward/meter.json` exhausted or limit error), Watchkeeper (`wk-carbon-fallback.mjs`) queues the task for Antigravity in the `wk-task` file queue. Watchkeeper never runs `agy` or Gemini itself; the task waits until the owner runs `/wk-take-task` in Antigravity.
+   - Asking Claude: one hard point that needs an answer now goes through the API (the ask-api skill). A whole review or a long job goes to Claude through the handoff (`wk-takeover.mjs publish --to claude`), where it runs on the user's Claude plan.

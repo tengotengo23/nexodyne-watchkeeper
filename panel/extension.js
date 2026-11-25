@@ -955,7 +955,8 @@ class Panel {
       if (m.cmd === 'copyAutomation') {
         const g = D.readGeminiConfig(paths.pluginPath);
         if (!g.prompt) { this.reply(false, 'No automation prompt found in the plugin\'s config/gemini.json.', false, 'copy'); return; }
-        await vscode.env.clipboard.writeText(g.prompt);
+        let tz = 'UTC'; try { tz = Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC'; } catch { }
+        await vscode.env.clipboard.writeText(D.automationText(g, paths.pluginPath, tz));
         this.reply(true, 'Copied. In Antigravity, make a new automation and paste this as its prompt.', false, 'copy');
         return;
       }

@@ -32,3 +32,4 @@ Use this skill when the user wants to run, plan, inspect, or balance tasks autom
      ```
    - Always surface which provider/model handled the work, `reason_summary`, and `[Skills: ...]`.
    - When Watchkeeper's weekly/5h Claude Code limits are exhausted (`meter.json` or Claude rate-limit errors), Watchkeeper (`wk-carbon-fallback.mjs`) queues the task for Antigravity in the `wk-task` file queue. Watchkeeper never runs `agy` or Gemini itself; the task waits until the owner runs `/wk-take-task` in Antigravity.
+   - Asking Gemini: a small, quick question that cannot wait goes through the API (`ask_gemini`, `/wk-ask gemini`: an answer under about 1,000 tokens, at most about 50 KB of files). Big or long work that can wait goes to the queue with `wk-task add`: Gemini judges it by the Desk rules and does it on the user's Antigravity plan at no API cost.

@@ -38,6 +38,7 @@ const DEFAULTS = {
   routes: { code: { model: 'gemini-4-hydrogen-xhigh', fallback: 'gemini-4-hydrogen-high', for: 'everyday coding' } },
   keywords: {},
   automation_prompt: '',
+  desk_rules: '',
 };
 export function config() {
   let c = {};

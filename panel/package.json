@@ -2,7 +2,7 @@
   "name": "watchkeeper-panel",
   "displayName": "Watchkeeper",
   "description": "Full-IDE Watchkeeper workspace for Claude Code & Gemini: Re-Prompt studio, live Running Tasks & subagents, Skills Library with daily trending GitHub sync, Gemini work queued for Antigravity when Claude limits run out, and fail-closed safety guards. Local-only; zero telemetry.",
-  "version": "3.5.0",
+  "version": "3.6.0",
   "publisher": "nexodyne",
   "license": "MIT",
   "homepage": "https://github.com/tengotengo23/nexodyne-watchkeeper",

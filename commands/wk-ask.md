@@ -4,7 +4,7 @@ description: API drive: hand one task to Gemini (or Claude) through the user's o
 
 Hand one self-contained task to the other model through the official API, with the key the user pasted in the W panel's API keys card. You never see or need the key.
 
-When to use it: easy, bulky or long-context work for Gemini Flash (summarizing or searching long files, first drafts, boilerplate, test data). Keep hard reasoning and careful edits yourself. The answer is text only (an answer, a plan or a unified diff); you review it and apply it yourself.
+When to use it: a small, quick question for Gemini Flash-Lite (an answer of under about 1,000 tokens over at most about 50 KB of files) when waiting is not an option. Big or long work (long files, large drafts, many steps, anything that can wait) does not go here: queue it with `wk-task add`, and Gemini does it on the user's Antigravity plan at no API cost. Keep hard reasoning and careful edits yourself. The answer is text only (an answer, a plan or a unified diff); you review it and apply it yourself.
 
 The first word of the arguments is the provider (`gemini` or `claude`); the rest is the task. Add project files with `--file <path>` (repeat it), a model with `--model flash|mid|pro` (Gemini) or `--model haiku|sonnet|opus` (Claude).
 

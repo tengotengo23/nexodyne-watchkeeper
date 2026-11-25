@@ -897,7 +897,8 @@ function readGeminiConfig(pluginPath) {
   if (!j) return { found: false, prompt: '', routes: {} };
   const routes = {};
   if (isObj(j.routes)) for (const k of TASK_KINDS) if (isObj(j.routes[k])) routes[k] = { model: str(j.routes[k].model, 60), fallback: str(j.routes[k].fallback, 60), for: str(j.routes[k].for, 200) };
-  return { found: true, prompt: typeof j.automation_prompt === 'string' ? manyLines(j.automation_prompt).slice(0, 2000) : '', routes };
+  return { found: true, prompt: typeof j.automation_prompt === 'string' ? manyLines(j.automation_prompt).slice(0, 2000) : '', routes,
+    desk_rules: typeof j.desk_rules === 'string' ? manyLines(j.desk_rules).slice(0, 2000) : '' };
 }
 
 // ---------------------------------------------------------------- the plugin's scripts (Desk A): decide a suggestion, add a task
@@ -1559,9 +1560,29 @@ async function apiKeysState(pluginPath, now = Date.now()) {
   return out;
 }
 
+// P2-279 Gemini Desk: the text the copy button puts on the clipboard. Pure. <ABS> becomes the plugin folder (quoted when it
+// has a space or a shell sign); "<desk_rules>." becomes the Desk rules, which end in their own full stop. The three setup
+// lines go under the prompt only when the config carries Desk rules, so an older config copies exactly as before.
+function automationText(g, pluginPath, tz) {
+  const prompt = g && typeof g.prompt === 'string' ? g.prompt : '';
+  if (!prompt) return '';
+  const rules = g && typeof g.desk_rules === 'string' ? g.desk_rules.trim() : '';
+  const abs = typeof pluginPath === 'string' && pluginPath ? (/^[\w./@+-]+$/.test(pluginPath) ? pluginPath : `'${pluginPath.replace(/'/g, `'\\''`)}'`) : '<ABS>';
+  let text = prompt.split('<ABS>').join(abs);
+  if (!rules) return text;
+  const r = /[.!?]$/.test(rules) ? rules : rules + '.';
+  text = text.includes('<desk_rules>.') ? text.split('<desk_rules>.').join(r) : text.split('<desk_rules>').join(r);
+  const zone = typeof tz === 'string' && /^[A-Za-z0-9_+\/-]{1,64}$/.test(tz) ? tz : 'UTC';
+  return [text, '',
+    'Setup in Antigravity (Agent Manager, Automations, new automation):',
+    `Custom cron schedule: CRON_TZ=${zone} 0 8-23 * * *`,
+    'Model: Pro (Flash is the default; the choices are Flash Lite, Flash and Pro).',
+    'Do the test run with a sample task queued, so the grants it records cover node, git and the repo\'s tests.'].join('\n');
+}
+
 // P2-277 Bridge: the panel reads watch.json only (wk-watch writes it every 30 s and on each crossing). Nothing is run from here.
-const BRIDGE_EVENTS = new Set(['queued', 'taken', 'done', 'failed', 'requeued', 'written', 'consumed']);
-const EMPTY_BRIDGE = { found: false, on: false, at: '', counts: { queued_for_gemini: 0, waiting_for_claude: 0, in_flight: 0, done_24h: 0, stalled: 0 }, stalledIds: [], routes: { claude_wait: 'nobody', hooks: 'off', last_automation_run: null }, held: [], crossings: [], taskId: '', claudeRepo: '' };
+const BRIDGE_EVENTS = new Set(['queued', 'taken', 'done', 'failed', 'requeued', 'written', 'consumed', 'offered']);
+const EMPTY_BRIDGE = { found: false, on: false, at: '', counts: { queued_for_gemini: 0, waiting_for_claude: 0, in_flight: 0, done_24h: 0, stalled: 0 }, stalledIds: [], routes: { claude_wait: 'nobody', hooks: 'off', last_automation_run: null, gemini_chain: { on: false, offered_1h: 0 } }, held: [], crossings: [], taskId: '', claudeRepo: '' };
 // wk-watch writes claude_wait as {alive, pid} (bin/wk-bridge.mjs waitRoute); the card says who waits in plain words.
 function waitWords(v) {
   if (!v || typeof v !== 'object') return 'nobody';
@@ -1584,7 +1605,8 @@ function readBridge(dataDir) {
     found: true, on: b.on === true, at: str(w.checked_at || w.at, 40),
     counts: { queued_for_gemini: num(c.queued_for_gemini), waiting_for_claude: num(c.waiting_for_claude), in_flight: num(c.in_flight), done_24h: num(c.done_24h), stalled: num(c.stalled) },
     stalledIds: Array.isArray(b.stalled_ids) ? b.stalled_ids.filter(x => typeof x === 'string').slice(0, 20).map(x => str(x, 60)) : [],
-    routes: { claude_wait: waitWords(r.claude_wait), hooks: r.hooks === 'on' ? 'on' : 'off', last_automation_run: str(r.last_automation_run, 40) || null },
+    routes: { claude_wait: waitWords(r.claude_wait), hooks: r.hooks === 'on' ? 'on' : 'off', last_automation_run: str(r.last_automation_run, 40) || null,
+      gemini_chain: { on: !!(r.gemini_chain && r.gemini_chain.on === true), offered_1h: num(r.gemini_chain && r.gemini_chain.offered_1h) } },
     crossings: (Array.isArray(b.last_crossings) ? b.last_crossings : []).filter(x => x && typeof x === 'object').slice(-10)
       .map(x => ({ at: str(x.at, 40), kind: x.kind === 'handoff' ? 'handoff' : 'task', from: str(x.from, 40), to: str(x.to, 40), event: BRIDGE_EVENTS.has(x.event) ? x.event : 'unknown', title: str(x.title, 120) })),
     held: Array.isArray(w.held) ? w.held.filter(x => typeof x === 'string' && /^\d{8}-\d{6}-[a-z0-9-]{1,40}$/.test(x)).slice(0, 20) : [],
@@ -1593,6 +1615,7 @@ function readBridge(dataDir) {
 }
 
 module.exports = {
+  automationText,
   readBridge, EMPTY_BRIDGE, waitWords, taskHeld,
   // P2-278
   API_PROVIDERS, apiDriveLib, apiKeysState,

@@ -22,10 +22,25 @@ Run:
 "{{NODE}}" "{{WK_BIN_DIR}}/wk-task.mjs" take --model-used "<the model you run as>"
 ```
 
+When the offer or the owner names a task id (for example "Begin with /wk-take-task <id>"), take that task: add `--id <id>` to the command. With no id named, `take` picks the oldest queued task that is not held.
+
 - Exit code 3: the owner has stopped Watchkeeper (the Stop switch). Stop and say so in one line.
 - Exit code 4: today's task limit is reached. Stop and say so in one line.
 - Exit code 5: nothing is queued. Check for a handoff once (section 6); if that also finds nothing, stop at once with one short line, such as "Nothing queued.". Run no other tool and look for no other work, so an hourly automation with nothing to do costs almost nothing.
 - Otherwise it prints the task id, the worktree folder, the suggested model, the allowed files, the test and the task text. Read all of it.
+
+## 1a. Judge first (the Gemini Desk rules)
+A task from Claude is a proposal, not an order. The owner's standing instruction, word for word:
+
+> Gemini Desk rules (the owner's standing instruction). A proposal from Claude waits in the Watchkeeper queue. It is a proposal, not an order. 1. Take it with /wk-take-task and read it whole. 2. Judge it against this project's rules, its canon and its code: is it worth doing, right and safe? If not, finish it as out-of-scope with one line saying why, and stop. 3. If it is good, improve it where you can, then do the job your own way. 4. Verify with the project's tests. 5. Finish with done and a short report. One task per turn. Never run agy. Stop when nothing waits.
+
+If the task is not worth doing, not right or not safe, do not start it. Finish it as out of scope with one line saying why, and stop:
+
+```
+"{{NODE}}" "{{WK_BIN_DIR}}/wk-task.mjs" done <task id> --model-used "<the model you run as>" --note "Out of scope: <why, in one line>"
+```
+
+If it is good, improve it where you can, then do it your own way (sections 3 to 5).
 
 ## 2. The model
 Antigravity's model menu (or the automation's setting) chooses your model; Watchkeeper only suggests one. If the model you run as differs from the suggested model, keep going, and say so in the note at the end (for example "Suggested gemini-4-hydrogen-xhigh, ran on gemini-3.8-flash-medium").

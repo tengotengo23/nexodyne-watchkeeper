@@ -1183,8 +1183,8 @@ const UNTRUSTED_NOTE = '<p class="hint" data-untrusted="1">This folder is not tr
 // P2-277 Bridge: Claude's tower on the left, Gemini's on the right; the last crossings walk across as dots.
 // Colours by event: amber queued/written, blue taken/consumed, green done, red stalled/requeued/failed.
 // Under reduced motion (main.css) the dots stand still and the arrow shows the direction. Data: watch.json only.
-const BRIDGE_TONE = { queued: 'amber', written: 'amber', taken: 'blue', consumed: 'blue', done: 'green', failed: 'red', requeued: 'red', stalled: 'red' };
-const BRIDGE_WORD = { queued: 'queued', written: 'handoff written', taken: 'taken', consumed: 'handoff taken', done: 'done', failed: 'failed', requeued: 'requeued', unknown: 'crossed' };
+const BRIDGE_TONE = { queued: 'amber', written: 'amber', taken: 'blue', consumed: 'blue', done: 'green', failed: 'red', requeued: 'red', stalled: 'red', offered: 'blue' };
+const BRIDGE_WORD = { queued: 'queued', written: 'handoff written', taken: 'taken', consumed: 'handoff taken', done: 'done', failed: 'failed', requeued: 'requeued', offered: 'offered to Gemini', unknown: 'crossed' };
 const sideOf = v => (/claude/i.test(String(v || '')) ? 'claude' : /gemini|antigravity|agy/i.test(String(v || '')) ? 'gemini' : '');
 function renderBridge(m) {
   const b = (m && m.bridge) || {};
@@ -1206,6 +1206,8 @@ function renderBridge(m) {
   ${dots}</svg>`;
   const status = !b.on ? '<p class="bridge-state">Bridge is off. <code>wk-bridge on</code> turns it on.</p>'
     : `<p class="bridge-state">Bridge is on. Waiting in Claude: <strong>${esc(b.routes && b.routes.claude_wait || 'nobody')}</strong>; hooks are ${esc(b.routes && b.routes.hooks || 'off')}.</p>`;
+  const gc = (b.routes && b.routes.gemini_chain) || { on: false, offered_1h: 0 };
+  const chainLine = `<p class="bridge-chain">Gemini chain: ${gc.on ? 'on' : 'off'}${gc.on ? ` (${esc(String(gc.offered_1h || 0))} offers in the last hour, all conversations)` : ''} · <code>wk-bridge gemini-chain ${gc.on ? 'off' : 'on'}</code></p>`;
   const heldIds = Array.isArray(b.held) ? b.held : [];
   const heldLine = heldIds.length ? `<p class="bridge-held"><span class="bridge-chip tone-amber held-chip">held</span> ${esc(heldIds.length === 1 ? '1 task on hold' : heldIds.length + ' tasks on hold')}: ${heldIds.map(id => `<code>${esc(id)}</code>`).join(', ')}. <code>wk-task release &lt;id&gt;</code> lifts a hold.</p>` : '';
   const towers = `<div class="bridge-counts">
@@ -1219,7 +1221,7 @@ function renderBridge(m) {
   }).join('')}</ol>` : '<p class="empty">Nothing has crossed yet.</p>';
   const buttons = !isLocal(m) ? localLine()
     : `<div class="btn-row">${c.waiting_for_claude ? `<button type="button" class="btn btn-primary" data-cmd="bridgeOpenClaude" data-repo="${esc(b.claudeRepo || '')}">Open in Claude</button>` : ''}${b.taskId ? `<button type="button" class="btn btn-secondary" data-cmd="bridgeOpenAntigravity" data-task-id="${esc(b.taskId)}">Open in Antigravity</button>` : ''}</div>`;
-  return status + heldLine + svg + towers + list + buttons;
+  return status + chainLine + heldLine + svg + towers + list + buttons;
 }
 
 // P2-278 API drive: the keys card, the Mac's panel only. The model carries saved or not, the last four characters, the last check and today's spend; never a key.

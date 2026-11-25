@@ -138,3 +138,26 @@ test('installed where Antigravity puts it, status calls the copy current', () =>
   assert.deepEqual([agy.installed, agy.current, agy.self_contained, agy.version], [true, true, true, res.version]);
   assert.ok(agy.skills.length >= 10 && agy.hooks && agy.mcp);
 });
+
+test('P2-279 review M1: the bundled gemini-chain Stop entry offers the queued task with the Desk rules, and {} when the chain is off', () => {
+  const hooks = JSON.parse(fs.readFileSync(path.join(dest, 'hooks.json'), 'utf8'));
+  const entries = hooks['watchkeeper-gemini-chain'].Stop;
+  assert.equal(entries.length, 1);
+  assert.equal(entries[0].command, './libexec/wk-run python runtime/bin/wk-gemini-chain-hook.py');
+  assert.ok(fs.existsSync(path.join(dest, 'runtime', 'bin', 'wk-gemini-chain-hook.py')));
+  const wk = path.join(base, 'chain-wk'), id = '20261125-090000-bundle-job';
+  fs.mkdirSync(path.join(wk, 'bridge'), { recursive: true }); fs.mkdirSync(path.join(wk, 'tasks', id), { recursive: true });
+  fs.writeFileSync(path.join(wk, 'tasks', id, 'meta.json'), JSON.stringify({ id, status: 'queued', title: 'Bundle job' }));
+  const stop = JSON.stringify({ conversationId: 'chain-1', terminationReason: 'model_stop', fullyIdle: true, continuationActive: false, workspace: proj });
+  const off = sh(entries[0].command, stop, { WK_HOME: wk });
+  assert.equal(off.status, 0, off.stderr); assert.deepEqual(JSON.parse(off.stdout), {}, 'chain off: {}');
+  fs.writeFileSync(path.join(wk, 'bridge', 'gemini-chain-on'), 'on\n');
+  const t0 = Date.now(), on = sh(entries[0].command, stop, { WK_HOME: wk }), took = Date.now() - t0;
+  assert.equal(on.status, 0, on.stderr);
+  const o = JSON.parse(on.stdout);
+  assert.equal(o.decision, 'continue');
+  assert.match(o.reason, new RegExp(`Begin with /wk-take-task ${id}\\.$`));
+  const rules = JSON.parse(fs.readFileSync(path.join(root, 'config', 'gemini.json'), 'utf8')).desk_rules;
+  assert.ok(o.reason.startsWith(rules), 'the Desk rules ride along word for word');
+  assert.ok(took < 3000, `ran in ${took} ms`);
+});

@@ -12,6 +12,7 @@ The user pasted a Claude API key in the W panel's API keys card. Watchkeeper sen
 
 ## When to use it
 - Hard reasoning, careful code, a tricky bug, a review of your plan or diff, a second opinion.
+- One hard point that needs an answer now. A whole review or a long job does not go here: hand it to Claude through the handoff (`wk-takeover.mjs publish --from antigravity --to claude`), where it runs on the user's Claude plan at no API cost.
 - Not for easy or bulky work: do that yourself. Not for the owner's decisions (scope, names, design, legal wording): those go to the ask-claude skill.
 - One-shot: Claude cannot run tools. It returns text (an answer, a plan or a unified diff); you review it and apply it yourself.
 

@@ -575,9 +575,13 @@ TOOLS: list[dict[str, Any]] = [
         "name": "ask_gemini",
         "title": "Ask Gemini (API drive)",
         "description": (
-            "Hand one easy, bulky or long-context task to Gemini through the user's own Gemini API key "
-            "(default model: Gemini Flash, the cheapest). Good for: summarizing or searching long files, "
-            "first drafts, boilerplate, bulk renames, test data. One-shot: Gemini cannot run tools; it "
+            "Ask Gemini a small, quick question through the user's own Gemini API key (default model: Gemini Flas"
+            "h-Lite, the cheapest): an answer of under about 1,000 tokens over at most about 50 KB of files, when"
+            " waiting is not an option. For big or long work (long files, large drafts, many steps, anything that"
+            " can wait) do not use this tool: queue it for Gemini with `wk-task add` instead; it then runs on the"
+            " user's Antigravity plan at no API cost, and Gemini judges and does it at the end of the user's next"
+            " Antigravity turn, by the user's automation, or at one click. "
+            "One-shot: Gemini cannot run tools; it "
             "returns text (an answer, a plan or a unified diff) that you review and apply yourself. "
             "Files must be inside the project; key files and anything gates.json denies are refused. "
             "Every call shows its cost and counts towards a daily cap. Do not send confidential or "

@@ -10,6 +10,7 @@
 //   wk-task discard <id>                                            -> removes the worktree, keeps change.diff
 //   wk-task sweep [--recover] [--json]                              -> scans or recovers hung tasks via watchdog
 //   wk-task list [--json] · wk-task show <id> [--json]
+//   wk-task inbox --brief                                           -> "N waiting" and up to 5 "<id> · <title>" lines; takes nothing, exit 0
 //   wk-task hold <id> [--hours <n>] [--note "<why>"] · wk-task release <id>   -> the owner's hold: the checker never requeues a held task
 // Exit: 0 done, 1 failed or refused, 2 bad input, 3 the Stop switch is on, 4 today's cap is reached, 5 nothing is queued.
 // Files: ~/.wk/tasks/<id>/ and ~/.wk/worktrees/<id>/ (or $WK_HOME); see docs/DATA-CONTRACT.md. Every git call uses execFile
@@ -40,6 +41,7 @@ export function parseArgs(argv) {
     if (x === '--allow') { const v = a.shift(); if (v === undefined) bad('--allow needs a glob'); o.allow.push(v); }
     else if (x === '--json') o.json = true;
     else if (x === '--recover') o.recover = true;
+    else if (x === '--brief') o.brief = true;
     else if (VAL[x]) { const v = a.shift(); if (v === undefined) bad(`${x} needs a value`); o[VAL[x]] = v; }
     else if (!x.startsWith('--') && !o.id) o.id = x;
     else bad(`unknown option ${x.slice(0, 40)}`);
@@ -212,7 +214,7 @@ export function takeTask(o, now = new Date()) {
     if (today >= c.max_tasks_per_day) throw new Stop(4, `Today's cap of ${c.max_tasks_per_day} tasks is reached (config/gemini.json max_tasks_per_day). Stop here; the queue waits for tomorrow.`);
     let m;
     if (o.id) { m = metaOf(o.id); if (m.status !== 'queued') fail(`task ${m.id} is ${m.status}, not queued`); }
-    else { m = all.find(t => t.status === 'queued'); if (!m) throw new Stop(5, 'Nothing is queued. Stop here.'); }
+    else { m = all.find(t => t.status === 'queued' && !holdOf(t.id, now.getTime())); if (!m) throw new Stop(5, 'Nothing is queued. Stop here.'); }
     // the claim file is made once ('wx'): two sessions can never take the same task, even with the lock taken over
     return withTaskLock(m.id, () => {
     m = metaOf(m.id);   // read again under the task lock: the watchdog may have changed it meanwhile
@@ -482,6 +484,15 @@ function list(o) {
   if (!all.length) return console.log('No tasks yet.');
   for (const t of all.slice(0, 30)) console.log(`${t.id}  ${(holdOf(t.id) ? t.status + ',held' : t.status).padEnd(12)} ${t.kind.padEnd(6)} ${t.model}${t.model_used ? ` (used ${t.model_used})` : ''}  ${ago(t.created_at)} ago  ${shortTitle(t.title, 80)}`);
 }
+// P2-279: the Gemini Desk automation's first step. Queued tasks without an owner's hold, oldest first; reads only, takes nothing.
+// With the Stop switch on (~/.wk/KILL) nothing waits, so an automation that follows the prompt stops at once.
+export function inbox() {
+  try {
+    if (fs.existsSync(path.join(wkHome(), 'KILL'))) return ['0 waiting (the Stop switch is on)'];
+    const q = listTasks().filter(t => t.status === 'queued' && !holdOf(t.id));
+    return [`${q.length} waiting`, ...q.slice(0, 5).map(t => `${t.id} · ${shortTitle(oneLine(t.title), 100)}`)];
+  } catch { return ['0 waiting']; }
+}
 function show(o) {
   const m = metaOf(o.id);
   const v = readJSON(path.join(taskDir(m.id), 'verify.json'));
@@ -494,7 +505,7 @@ function show(o) {
 
 const isMain = (() => { try { return !!process.argv[1] && fs.realpathSync(process.argv[1]) === fs.realpathSync(new URL(import.meta.url).pathname); } catch { return false; } })();
 if (isMain) {
-  const USAGE = 'usage: wk-task add|take|done|merge|discard|hold|release|sweep|list|show (see the top of bin/wk-task.mjs)';
+  const USAGE = 'usage: wk-task add|take|done|merge|discard|hold|release|sweep|list|show|inbox --brief (see the top of bin/wk-task.mjs)';
   let code = 0;
   try {
     const o = parseArgs(process.argv.slice(2));
@@ -508,6 +519,7 @@ if (isMain) {
     else if (o.cmd === 'sweep') code = runWatchdogCli([o.recover ? 'recover' : 'scan', ...(o.json ? ['--json'] : [])]);
     else if (o.cmd === 'list') list(o);
     else if (o.cmd === 'show') show(o);
+    else if (o.cmd === 'inbox') console.log(inbox().join('\n'));
     else throw new Stop(2, USAGE);
   } catch (e) {
     code = e instanceof Stop ? e.code : 1;

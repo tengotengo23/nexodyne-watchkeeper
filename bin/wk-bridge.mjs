@@ -6,6 +6,10 @@
 //                                        JSON line {kind,id,title,repo} and exit 0; exit 2 on the kill switch or `off`; 1 at --max
 //   on | off                             Bridge on or off (marker ~/.wk/bridge/off); the kill switch (~/.wk/KILL) beats both
 //   crossings [--json]                   the last 20 crossings (~/.wk/bridge/crossings.jsonl)
+//   gemini-chain on|off|status           the Gemini chain (3.6.0, off by default; marker ~/.wk/bridge/gemini-chain-on):
+//                                        Antigravity's Stop hook offers the next queued task with the owner's Desk rules,
+//                                        at most 3 an hour per conversation and max_tasks_per_day (config/gemini.json,
+//                                        12 by default) a day; the user's own decision
 //   open --task <id> | --handoff <ws> [--json]
 //                                        Claude side: print the exact command for a terminal in the repo; Antigravity side:
 //                                        `open -a Antigravity <repo>` and `/wk-take-task` on the clipboard. Never types into an app.
@@ -26,12 +30,22 @@ export const inboxDir = () => path.join(bridgeDir(), 'inbox');
 export const claimsDir = () => path.join(bridgeDir(), 'claims');
 export const chainsDir = () => path.join(bridgeDir(), 'chains');
 export const offFile = () => path.join(bridgeDir(), 'off');
+export const geminiChainFile = () => path.join(bridgeDir(), 'gemini-chain-on');
 export const waitPidFile = side => path.join(bridgeDir(), `wait-${side}.pid`);
 export const killed = () => fs.existsSync(path.join(wkHome(), 'KILL'));
 export const isOn = () => !fs.existsSync(offFile());
+export const geminiChainOn = () => fs.existsSync(geminiChainFile());
 export const MAX_CROSSINGS = 2000;
 export const CLAIM_TTL_MS = 15 * 60 * 1000;
 export const CHAIN_CAP = 3;            // chained tasks an hour per Claude session (Stop hook)
+// P2-279: the daily Gemini cap, read the way core/hook_bus.py reads it (1..1000, else 12).
+export function geminiDayCap() {
+  try {
+    const j = JSON.parse(fs.readFileSync(path.join(path.dirname(SELF), '..', 'config', 'gemini.json'), 'utf8'));
+    const c = j && j.max_tasks_per_day;
+    return Number.isInteger(c) && c > 0 && c <= 1000 ? c : 12;
+  } catch { return 12; }
+}
 const TASK_ID = /^\d{8}-\d{6}-[a-z0-9-]{1,40}$/;
 const PHONE = ['config', 'setup', 'run', 'trust', 'reject', 'keys', 'enable', 'disable', 'login', 'install', 'uninstall'];
 
@@ -71,6 +85,12 @@ export function readCrossings(n = 20) {
   const out = [];
   for (const l of lines.slice(-n)) { try { out.push(JSON.parse(l)); } catch {} }
   return out;
+}
+
+// Offers the Gemini chain made in the last hour (route G3, written by core/hook_bus.py).
+export function offered1h(now = Date.now()) {
+  return readCrossings(MAX_CROSSINGS).filter(c => c && (c.route === 'G3' || (c.event === 'offered' && c.to === 'gemini'))
+    && now - Date.parse(c.at || '') <= 3600 * 1000 && now - Date.parse(c.at || '') >= 0).length;
 }
 
 // ---------------------------------------------------------------- what waits
@@ -197,7 +217,7 @@ export function status(now = Date.now()) {
     waiting: { claude: waitingFor('claude', now), gemini: waitingFor('gemini', now) },
     in_flight: all.filter(m => m.status === 'taken').map(m => ({ id: m.id, title: short(m.title) })),
     held: all.filter(m => holdOf(m.id, now)).map(m => m.id),   // any state: a held taken task is the case a hold exists for
-    routes: { claude_wait: waitRoute('claude'), gemini_wait: waitRoute('gemini') },
+    routes: { claude_wait: waitRoute('claude'), gemini_wait: waitRoute('gemini'), gemini_chain: { on: geminiChainOn(), offered_1h: offered1h(now) } },
     last_crossings: readCrossings(5),
   };
 }
@@ -289,7 +309,7 @@ export function openItem({ task = '', handoff = '' }) {
 }
 
 // ---------------------------------------------------------------- CLI
-const USAGE = 'usage: wk-bridge status [--json] | wait --for claude|gemini [--max <minutes>] | on | off | crossings [--json] | open --task <id>|--handoff <workspace> [--json]';
+const USAGE = 'usage: wk-bridge status [--json] | wait --for claude|gemini [--max <minutes>] | on | off | crossings [--json] | open --task <id>|--handoff <workspace> [--json] | gemini-chain on|off|status';
 function flag(argv, name) { const i = argv.indexOf(name); return i >= 0 ? (argv[i + 1] ?? '') : null; }
 function age(at, now = Date.now()) {
   const ms = now - Date.parse(at || ''); if (!Number.isFinite(ms) || ms < 0) return 'just now';
@@ -319,6 +339,25 @@ export async function main(argv, out = s => process.stdout.write(s + '\n'), err 
     touchInbox();
     out(`Bridge is ${cmd}.${killed() ? ' The kill switch is on, so nothing moves until it is off.' : ''}`);
     return 0;
+  }
+  if (cmd === 'gemini-chain') {
+    const sub = argv[1] || 'status';
+    if (sub === 'on' || sub === 'off') {
+      mkdirPrivate(bridgeDir());
+      if (sub === 'on') fs.writeFileSync(geminiChainFile(), new Date().toISOString() + '\n', { mode: 0o600 });
+      else { try { fs.unlinkSync(geminiChainFile()); } catch {} }
+      out(sub === 'on'
+        ? `Gemini chain is on. When an Antigravity turn ends and a task is queued, the next one is offered with the Desk rules (cap 3 an hour per conversation, ${geminiDayCap()} a day).${killed() ? ' The kill switch is on, so nothing is offered until it is off.' : ''}${isOn() ? '' : ' The Bridge is off, so nothing is offered until wk-bridge on.'}`
+        : 'Gemini chain is off. Antigravity turns end as before.');
+      return 0;
+    }
+    if (sub === 'status') {
+      const on = geminiChainOn(), n = offered1h();
+      if (json) { out(JSON.stringify({ on, offered_1h: n, cap_per_hour_per_conversation: CHAIN_CAP })); return 0; }
+      out(`Gemini chain is ${on ? 'on' : 'off'}. Offers in the last hour (all conversations): ${n}. Cap 3 an hour per conversation.`);
+      return 0;
+    }
+    err(USAGE); return 2;
   }
   if (cmd === 'crossings') {
     const c = readCrossings(20);

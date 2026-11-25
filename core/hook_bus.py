@@ -308,15 +308,26 @@ def _bridge_release(item_id: str) -> None:
         pass
 
 
-def _bridge_chain_take(sid: str) -> bool:
-    """Count one Stop-hook chain for this session; False when 3 already ran in the last hour."""
+def _bridge_chain_take(sid: str, wait_s: float = 5.0, strict: bool = False) -> bool:
+    """Count one Stop-hook chain for this session; False when 3 already ran in the last hour.
+
+    strict (the Antigravity Gemini chain, P2-279 fix round): a chains file that exists but cannot be read counts as
+    the cap reached, and nothing is written, so a corrupt file never resets the cap."""
     d = _wk_home_dir() / "bridge" / "chains"
     try:
         d.mkdir(parents=True, exist_ok=True, mode=0o700)
         f = d / f"{_bridge_hash(sid or 'unknown')}.json"
-        with _exclusive_file_lock(d / f"{f.name}.lock"):
+        with _exclusive_file_lock(d / f"{f.name}.lock", wait_s=wait_s):
             now = time.time()
-            data = read_json_safe(f, {})
+            if strict and f.exists():
+                try:
+                    data = json.loads(f.read_text(encoding="utf-8"))
+                except (OSError, ValueError):
+                    return False
+                if not isinstance(data, dict) or not isinstance(data.get("at"), list):
+                    return False
+            else:
+                data = read_json_safe(f, {})
             stamps = [float(t) for t in (data.get("at") if isinstance(data, dict) and isinstance(data.get("at"), list) else []) if isinstance(t, (int, float)) and now - float(t) < 3600]
             if len(stamps) >= _BRIDGE_CHAIN_CAP:
                 return False
@@ -368,6 +379,114 @@ def _bridge_stop_reason(sid: str, cwd: str = "") -> str:
             return f'Bridge: a handoff from Gemini waits: {it["title"]}. Run /wk-take-task --handoff --cwd "{repo}" to take it.'
         return f"Bridge: a handoff from Gemini waits: {it['title']}. Run /wk-take-task --handoff to take it."
     return ""
+
+
+# P2-279 Gemini chain: the Antigravity Stop hook offers the next queued task with the owner's Desk rules. Off by default
+# (marker ~/.wk/bridge/gemini-chain-on, set by `wk-bridge gemini-chain on`). File reads only, plus one crossing line and
+# the chain count; the hook never takes the task. Any exception means no offer, so Antigravity gets {}.
+_GEMINI_DAY_CAP_DEFAULT = 12
+_GEMINI_LOCK_WAIT_S = 0.3
+_TASK_ID = re.compile(r"^\d{8}-\d{6}-[a-z0-9-]{1,40}$")
+
+
+def _gemini_config() -> dict[str, Any]:
+    raw = read_json_safe(ROOT / "config" / "gemini.json", {})
+    return raw if isinstance(raw, dict) else {}
+
+
+def _gemini_chain_on() -> bool:
+    b = _wk_home_dir() / "bridge"
+    return (b / "gemini-chain-on").exists() and not (b / "off").exists()
+
+
+_GEMINI_SCAN_BUDGET_S = 0.5
+
+
+def _gemini_tasks() -> list[dict[str, Any]]:
+    """Every task meta.json, sorted by id (the order wk-task takes them in).
+
+    The hook must answer within 1 s: a scan that runs past _GEMINI_SCAN_BUDGET_S raises, which means no offer."""
+    d = _wk_home_dir() / "tasks"
+    if not d.is_dir():
+        return []
+    deadline = time.monotonic() + _GEMINI_SCAN_BUDGET_S
+    out: list[dict[str, Any]] = []
+    for p in sorted(d.iterdir(), key=lambda x: x.name):
+        if time.monotonic() > deadline:
+            raise TimeoutError("task scan over budget")
+        if not _TASK_ID.match(p.name):
+            continue
+        m = read_json_safe(p / "meta.json", None)
+        if isinstance(m, dict) and m.get("id") == p.name:
+            out.append(m)
+    return out
+
+
+def _gemini_held(task_id: str, now: float) -> bool:
+    """Same rule as wk-bridge.mjs holdOf: a hold file whose `until` has passed counts as released."""
+    h = read_json_safe(_wk_home_dir() / "tasks" / task_id / "hold", None)
+    if not isinstance(h, dict):
+        return False
+    until = h.get("until")
+    if until:
+        try:
+            if dt.datetime.fromisoformat(str(until).replace("Z", "+00:00")).timestamp() <= now:
+                return False
+        except (TypeError, ValueError):
+            pass
+    return True
+
+
+def _gemini_same_local_day(iso: Any, today: dt.date) -> bool:
+    """Same count as wk-task takeTask: stamp(d).slice(0, 8), the local calendar day."""
+    try:
+        t = dt.datetime.fromisoformat(str(iso).replace("Z", "+00:00"))
+    except (TypeError, ValueError):
+        return False
+    if t.tzinfo is not None:
+        t = t.astimezone()
+    return t.date() == today
+
+
+def _bridge_stop_reason_ag(payload: dict[str, Any]) -> str:
+    """Antigravity Stop: the Desk rules plus the first queued task when every condition holds; empty otherwise."""
+    try:
+        if _kill_switch_active() or not _gemini_chain_on():
+            return ""
+        if payload.get("terminationReason") != "model_stop" or payload.get("fullyIdle") is not True or payload.get("continuationActive") is True:
+            return ""
+        cfg = _gemini_config()
+        rules = _bridge_line(cfg.get("desk_rules"))
+        if not rules:
+            return ""
+        cap = cfg.get("max_tasks_per_day")
+        cap = cap if isinstance(cap, int) and not isinstance(cap, bool) and 0 < cap <= 1000 else _GEMINI_DAY_CAP_DEFAULT
+        now = time.time()
+        today = dt.datetime.fromtimestamp(now).date()
+        all_tasks = _gemini_tasks()
+        if sum(1 for m in all_tasks if m.get("taken_at") and _gemini_same_local_day(m.get("taken_at"), today)) >= cap:
+            return ""
+        queued = [m for m in all_tasks if m.get("status") == "queued" and not _gemini_held(str(m.get("id")), now)]
+        if not queued:
+            return ""
+        conv = _bridge_line(payload.get("conversationId")) or "unknown"
+        if not _bridge_chain_take(f"ag:{conv}", wait_s=_GEMINI_LOCK_WAIT_S, strict=True):
+            return ""
+        first = queued[0]
+        tid, title = str(first.get("id")), _bridge_short(first.get("title"))
+        line = {"at": dt.datetime.now(dt.timezone.utc).isoformat().replace("+00:00", "Z"), "route": "G3", "kind": "task", "id": tid,
+                "from": "watchkeeper", "to": "gemini", "event": "offered", "conversation_id": conv, "task_id": tid, "title": title}
+        b = _wk_home_dir() / "bridge"
+        b.mkdir(parents=True, exist_ok=True, mode=0o700)
+        fd = os.open(str(b / "crossings.jsonl"), os.O_CREAT | os.O_APPEND | os.O_WRONLY, 0o600)
+        try:
+            os.write(fd, (json.dumps(line) + "\n").encode("utf-8"))
+        finally:
+            os.close(fd)
+        n = len(queued)
+        return f"{rules} {n} proposal{'' if n == 1 else 's'} wait{'s' if n == 1 else ''}. First: {title} ({tid}). Begin with /wk-take-task {tid}."
+    except Exception:
+        return ""
 
 
 def _workspace_from_payload(payload: dict[str, Any]) -> Path:
@@ -805,7 +924,8 @@ def handle_event(
 
         msgs = [m for m in (clip_msg, ho_msg, wd_msg) if m]
         if is_ag:
-            return _ag_stop_output(None, payload, msgs)
+            # Gemini chain (P2-279): off by default; offers the next queued task with the Desk rules, never takes it.
+            return _ag_stop_output(None if killed else _bridge_stop_reason_ag(payload), payload, msgs)
         # Bridge (P2-277), Claude only: chain to a waiting handoff, claimed first so two tabs never take one.
         b_reason = "" if killed else _bridge_stop_reason(sid, str(payload.get("cwd") or ""))
         if b_reason:

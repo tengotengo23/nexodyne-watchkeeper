@@ -657,3 +657,19 @@ test('item 12: Watchkeeper rules apply only to the conversations that do Watchke
   hook(ev('wk-7', 'run_command', { CommandLine: 'wk-state --json' }));
   const all = marked(); assert.equal(all.length, 500); assert.equal(all[499], 'wk-7'); assert.equal(all[0], 'old-101');
 });
+
+// P2-279 review M2: take with no id skips a held task (the offer names the task to begin with), and an expired hold counts as released.
+test('take with no id skips a held task; an expired hold counts as released', () => {
+  const w = world();
+  const first = w.add('a first job'), second = w.add('b second job');
+  const hold = path.join(w.wk, 'tasks', first, 'hold');
+  fs.writeFileSync(hold, JSON.stringify({ at: new Date().toISOString(), until: null, note: 'mine' }));
+  let t = w.task(['take']);
+  assert.equal(t.status, 0, t.stderr);
+  assert.equal(w.meta(first).status, 'queued', 'the held task stays queued');
+  assert.equal(w.meta(second).status, 'taken', 'take skipped the held task');
+  fs.writeFileSync(hold, JSON.stringify({ at: '2026-11-01T00:00:00Z', until: '2026-11-01T01:00:00Z', note: '' }));
+  t = w.task(['take']);
+  assert.equal(t.status, 0, t.stderr);
+  assert.equal(w.meta(first).status, 'taken', 'an expired hold no longer blocks take');
+});

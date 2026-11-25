@@ -99,5 +99,15 @@
         "timeout": 8
       }
     ]
+  },
+  "watchkeeper-gemini-chain": {
+    "enabled": true,
+    "Stop": [
+      {
+        "type": "command",
+        "command": "\"{{PYTHON}}\" \"{{WK_BIN_DIR}}/wk-gemini-chain-hook.py\"",
+        "timeout": 3
+      }
+    ]
   }
 }

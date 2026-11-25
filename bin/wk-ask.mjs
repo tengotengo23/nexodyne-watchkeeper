@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 // wk-ask (P2-278): the API drive. One agent asks the other model one question through the official API, with the
-// user's own key: Claude Code hands easy, bulky or long-context work to Gemini; Antigravity hands hard reasoning or
-// review to Claude. One-shot by design: the answer is text (an answer, a plan or a unified diff); the calling agent
+// user's own key: Claude Code hands a small, quick question that cannot wait to Gemini (big or long work goes in the
+// queue with wk-task add, on the Antigravity plan); Antigravity hands hard reasoning or review to Claude. One-shot by design: the answer is text (an answer, a plan or a unified diff); the calling agent
 // reviews and applies it. No tool loop, no child process, and the key never goes into argv, env, a log or the output.
 //   wk-ask gemini|claude "<task>" [--file <path>]... [--model <alias|id>] [--max-out N] [--system "<text>"] [--json]
 //   wk-ask gemini|claude - ...            the task comes on stdin
